@@ -1,4 +1,4 @@
-import type { DraftQuestion, PaperMeta, ParseOptions, QuestionType, RecentUpload } from './types'
+import type { DraftQuestion, PaperMeta, ParseOptions, QuestionType, RecentUpload, UsageCall, UsageSummary } from './types'
 
 type Seed = {
   type: QuestionType
@@ -88,6 +88,8 @@ export function buildMockQuestions(jobId: string, opts: ParseOptions): DraftQues
     options: s.options ?? [],
     answer: opts.answer ? s.answer : null,
     analysis: opts.answer ? s.analysis ?? null : null,
+    answerSource: opts.answer && s.answer ? 'paper' : null,
+    answerNote: null,
     knowledgePoints: opts.knowledge ? s.kps.map(kpRef) : [],
     coef: s.coef,
     confidence: s.confidence,
@@ -135,4 +137,60 @@ ${lines}
 
 function escapeXml(s: string) {
   return s.replace(/[<>&"]/g, c => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;' })[c]!)
+}
+
+// ---------- AI 用量（示例单价，仅用于演示界面） ----------
+
+const MOCK_PRICE = { input: 2.4, output: 9.6, cachedInput: 0.48, perPage: 0.05 } // 元 / 百万 tokens、元 / 页
+
+function callCost(c: Omit<UsageCall, 'cost'>) {
+  if (c.provider === 'mineru') return c.pages * MOCK_PRICE.perPage
+  const fresh = c.promptTokens - c.cachedTokens
+  return (fresh * MOCK_PRICE.input + c.cachedTokens * MOCK_PRICE.cachedInput + c.completionTokens * MOCK_PRICE.output) / 1e6
+}
+
+export function buildMockUsage(pages: number, questionCount: number): UsageCall[] {
+  const now = new Date().toISOString()
+  const raw: Omit<UsageCall, 'cost'>[] = [
+    { id: 1, provider: 'mineru', purpose: 'parse', model: 'mineru-vlm', promptTokens: 0, completionTokens: 0, reasoningTokens: 0, cachedTokens: 0, pages, durationMs: 41000, estimated: false, status: 'ok', createdAt: now },
+    { id: 2, provider: 'llm', purpose: 'classify', model: 'qwen-plus', promptTokens: 912, completionTokens: 118, reasoningTokens: 0, cachedTokens: 0, pages: 0, durationMs: 2300, estimated: false, status: 'ok', createdAt: now },
+    { id: 3, provider: 'llm', purpose: 'segment', model: 'qwen-plus', promptTokens: 620 * questionCount, completionTokens: 190 * questionCount, reasoningTokens: 80 * questionCount, cachedTokens: 640, pages: 0, durationMs: 38000, estimated: false, status: 'ok', createdAt: now },
+  ]
+  return raw.map(c => ({ ...c, cost: callCost(c) }))
+}
+
+export function summarizeMockUsage(calls: UsageCall[]): UsageSummary {
+  const llm = calls.filter(c => c.provider === 'llm')
+  const sum = (xs: UsageCall[], f: (c: UsageCall) => number) => xs.reduce((a, c) => a + f(c), 0)
+  const llmCost = sum(llm, c => c.cost ?? 0)
+  const mineruCost = sum(calls.filter(c => c.provider === 'mineru'), c => c.cost ?? 0)
+  return {
+    calls: calls.length,
+    llmCalls: llm.length,
+    errors: calls.filter(c => c.status !== 'ok').length,
+    promptTokens: sum(llm, c => c.promptTokens),
+    completionTokens: sum(llm, c => c.completionTokens),
+    reasoningTokens: sum(llm, c => c.reasoningTokens),
+    cachedTokens: sum(llm, c => c.cachedTokens),
+    totalTokens: sum(llm, c => c.promptTokens + c.completionTokens),
+    pages: sum(calls, c => c.pages),
+    durationMs: sum(calls, c => c.durationMs),
+    estimated: calls.some(c => c.estimated),
+    cost: llmCost + mineruCost,
+    llmCost,
+    mineruCost,
+    priced: true,
+    unpricedModels: [],
+    currency: '¥',
+  }
+}
+
+/** 演示用的 AI 答案：选择题给 A，其余给占位结论 */
+export function mockAiAnswer(q: DraftQuestion): Pick<DraftQuestion, 'answer' | 'analysis' | 'answerNote'> {
+  const choice = q.type === '单选题' || q.type === '多选题'
+  return {
+    answer: choice ? 'A' : q.type === '填空题' ? '（示例答案）' : '（1）（示例结论）；（2）（示例结论）',
+    analysis: '【演示数据】此处为 AI 生成的解析示例，连接后端后由大模型生成。',
+    answerNote: q.images.length ? '题目含图，AI 未看到图片，答案可能不准确' : null,
+  }
 }

@@ -50,12 +50,16 @@ def _counts(s: Session, job_id: str) -> tuple[int, int, int]:
 
 
 def job_out(s: Session, job: ParseJob) -> ParseJobOut:
+    from .usage import job_rows, summarize  # 避免循环导入
+
     total, review, saved = _counts(s, job.id)
+    rows = job_rows(s, job.id)
     return ParseJobOut(
         id=job.id, file_name=job.file_name, file_count=job.file_count, file_size=job.file_size,
         file_type=job.file_type, page_count=job.page_count, options=job.options, parser=job.parser,
         status=job.status, progress=job.progress, stages=job.stages, meta=job.meta,
-        question_count=total, review_count=review, saved_count=saved, error=job.error, created_at=job.created_at,
+        question_count=total, review_count=review, saved_count=saved, error=job.error,
+        usage=summarize(rows) if rows else None, answer_task=job.answer_task, created_at=job.created_at,
     )
 
 
@@ -104,6 +108,10 @@ def merge_with_previous(s: Session, q: DraftQuestion) -> None:
     prev.options = prev.options or q.options
     prev.answer = "；".join(x for x in (prev.answer, q.answer) if x) or None
     prev.analysis = "\n".join(x for x in (prev.analysis, q.analysis) if x) or None
+    # 合并后来源不一致时视为人工处理过；只有一方有答案时沿用那一方的来源
+    sources = {x.answer_source for x in (prev, q) if x.answer}
+    prev.answer_source = sources.pop() if len(sources) == 1 else ("manual" if sources else None)
+    prev.answer_note = "；".join(x for x in (prev.answer_note, q.answer_note) if x) or None
     prev.coef = round((prev.coef * prev.score + q.coef * q.score) / score, 2) if score else prev.coef
     prev.score = score
     prev.knowledge_points = kps
@@ -146,7 +154,8 @@ def split_sub_questions(s: Session, q: DraftQuestion) -> None:
             score=q.score - each * (n - 1) if i == n - 1 else each, page=q.page,
             stem=head + part, options=list(q.options),
             answer=answers[i] if answers and len(answers) == n else (q.answer if i == 0 else None),
-            analysis=q.analysis if i == 0 else None, knowledge_points=list(q.knowledge_points), coef=q.coef,
+            analysis=q.analysis if i == 0 else None, answer_source=q.answer_source, answer_note=q.answer_note,
+            knowledge_points=list(q.knowledge_points), coef=q.coef,
             confidence=q.confidence, block_ids=list(q.block_ids), regions=list(q.regions), images=list(q.images),
             duplicate_of=None, status="draft",
         ))

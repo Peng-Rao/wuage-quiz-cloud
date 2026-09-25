@@ -144,3 +144,38 @@ def test_broken_pdf_fails_with_message(client):
     done = wait_done(client, job["id"])
     assert done["status"] == "failed" and done["error"]
     assert any(s["status"] == "failed" for s in done["stages"])
+
+
+def test_usage_endpoints(client, parsed, monkeypatch):
+    from app.config import get_settings
+    from app.usage import record
+
+    job_id = parsed["id"]
+    # 不受本机 .env 中单价配置影响
+    monkeypatch.setattr(get_settings(), "llm_prices", {})
+    monkeypatch.setattr(get_settings(), "mineru_price_per_page", None)
+    # 未启用大模型与 MinerU 时没有用量
+    assert client.get(f"/api/parse-jobs/{job_id}").json()["usage"] is None
+    record("llm", "classify", "qwen-test", prompt_tokens=800, completion_tokens=100, job_id=job_id)
+    record("llm", "segment", "qwen-test", prompt_tokens=6000, completion_tokens=2000, reasoning_tokens=900, job_id=job_id)
+    record("mineru", "parse", "mineru-vlm", pages=3, job_id=job_id)
+
+    u = client.get(f"/api/parse-jobs/{job_id}/usage").json()
+    assert [c["purpose"] for c in u["calls"]] == ["classify", "segment", "parse"]
+    assert u["summary"]["totalTokens"] == 8900 and u["summary"]["pages"] == 3
+    assert u["summary"]["cost"] is None and u["summary"]["priced"] is False
+
+    # 补填单价后，历史用量按新单价重算
+    monkeypatch.setattr(get_settings(), "llm_prices", {"qwen-test": {"input": 2, "output": 8}})
+    monkeypatch.setattr(get_settings(), "mineru_price_per_page", 0.1)
+    u = client.get(f"/api/parse-jobs/{job_id}/usage").json()
+    expected = (6800 * 2 + 2100 * 8) / 1e6 + 0.3
+    assert u["summary"]["priced"] is True and u["summary"]["cost"] == pytest.approx(expected)
+    assert u["calls"][2]["cost"] == pytest.approx(0.3)
+    assert client.get(f"/api/parse-jobs/{job_id}").json()["usage"]["cost"] == pytest.approx(expected)
+
+    ov = client.get("/api/usage/summary?days=30").json()
+    assert ov["jobs"] >= 1 and ov["summary"]["pages"] >= 3
+    assert ov["costPerJob"] == pytest.approx(ov["summary"]["cost"] / ov["jobs"])
+    assert ov["daily"] and ov["daily"][-1]["cost"] is not None
+    assert client.get("/api/usage/summary?days=0").status_code == 422

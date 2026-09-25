@@ -425,7 +425,7 @@ async def segment(units: list[Unit], settings: Settings, *, with_answer: bool) -
 
     known = {u.id: u for u in units}
     try:
-        data = await chat_json(LLM_SYSTEM, _llm_payload(units), settings)
+        data = await chat_json(LLM_SYSTEM, _llm_payload(units), settings, purpose="segment")
         groups = _validate_llm(data, known)
     except (LLMError, ValueError) as e:
         log.warning("大模型拆题结果不可用：%s", e)

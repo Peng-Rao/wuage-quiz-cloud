@@ -3,6 +3,8 @@ import {
   REVIEW_CONFIDENCE,
   type DraftQuestion,
   type ParseApi,
+  type UsageCall,
+  type UsageOverview,
   type ParseJob,
   type ParseJobEvent,
   type ParseOptions,
@@ -10,7 +12,10 @@ import {
   type RecentUpload,
   type StageState,
 } from './types'
-import { MOCK_META, MOCK_PAGE_COUNT, MOCK_RECENT, buildMockQuestions, mockPageImage } from './mockData'
+import {
+  MOCK_META, MOCK_PAGE_COUNT, MOCK_RECENT, buildMockQuestions, buildMockUsage, mockAiAnswer, mockPageImage,
+  summarizeMockUsage,
+} from './mockData'
 
 /**
  * 内存版解析服务：模拟上传、分阶段进度推送和草稿题编辑。
@@ -29,6 +34,7 @@ const jobs = new Map<string, ParseJob>()
 const questions = new Map<string, DraftQuestion[]>()
 const listeners = new Map<string, Set<(job: ParseJobEvent) => void>>()
 const recent: RecentUpload[] = [...MOCK_RECENT]
+const usage = new Map<string, UsageCall[]>()
 
 const STAGE_NOTES: Record<ParseStage, (job: ParseJob, qs: DraftQuestion[]) => string> = {
   ocr: job => `识别 ${job.pageCount} 页`,
@@ -114,6 +120,9 @@ function runPipeline(job: ParseJob) {
     if (job.status === 'done') {
       clearInterval(timer)
       questions.set(job.id, qs)
+      const calls = buildMockUsage(job.pageCount ?? MOCK_PAGE_COUNT, qs.length)
+      usage.set(job.id, calls)
+      job.usage = summarizeMockUsage(calls)
       recent.unshift({
         jobId: job.id, fileName: job.fileName, questionCount: job.questionCount,
         reviewCount: job.reviewCount, savedCount: 0, createdAt: job.createdAt,
@@ -162,6 +171,8 @@ export const mockParseApi: ParseApi = {
       questionCount: 0,
       reviewCount: 0,
       savedCount: 0,
+      usage: null,
+      answerTask: null,
       createdAt: new Date().toISOString(),
     }
     jobs.set(id, job)
@@ -197,7 +208,9 @@ export const mockParseApi: ParseApi = {
     const { jobId, list, idx } = locate(questionId)
     // 人工修改过的题视为已核对
     const touchesContent = ['stem', 'options', 'answer', 'type'].some(k => k in patch)
+    const touchesAnswer = 'answer' in patch || 'analysis' in patch
     list[idx] = { ...list[idx], ...clone(patch), ...(touchesContent ? { confidence: 1 } : {}) }
+    if (touchesAnswer) list[idx] = { ...list[idx], answerSource: list[idx].answer ? 'manual' : null, answerNote: null }
     renumber(jobId, list)
     return clone(list[idx])
   },
@@ -281,5 +294,58 @@ export const mockParseApi: ParseApi = {
   async listRecent() {
     await sleep(100)
     return clone(recent.slice(0, 5))
+  },
+
+  async generateAnswers(jobId, { questionIds, overwrite = false } = {}) {
+    await sleep(150)
+    const job = requireJob(jobId)
+    if (job.answerTask && ['queued', 'running'].includes(job.answerTask.status)) throw new Error('正在生成答案，请等待当前任务完成')
+    const list = questions.get(jobId) ?? []
+    const wanted = questionIds ? new Set(questionIds) : null
+    const targets = list.filter(q => (!wanted || wanted.has(q.id)) && (overwrite || !q.answer))
+    if (!targets.length) throw new Error('没有需要生成答案的题目')
+    job.answerTask = { status: 'running', total: targets.length, done: 0, failed: 0, error: null, questionIds: targets.map(t => t.id) }
+    // 逐题模拟生成，每题约 0.6 秒
+    targets.forEach((t, i) => setTimeout(() => {
+      const cur = questions.get(jobId)?.find(q => q.id === t.id)
+      if (cur) Object.assign(cur, mockAiAnswer(cur), { answerSource: 'ai', status: 'draft' })
+      job.answerTask!.done += 1
+      if (job.answerTask!.done === job.answerTask!.total) job.answerTask!.status = 'done'
+      notify(jobId)
+    }, 600 * (i + 1)))
+    return clone(job.answerTask)
+  },
+
+  async getUsage(jobId) {
+    await sleep(100)
+    requireJob(jobId)
+    const calls = usage.get(jobId) ?? []
+    return { summary: summarizeMockUsage(calls), calls: clone(calls) }
+  },
+
+  async getUsageOverview(days) {
+    await sleep(100)
+    // 历史记录按每份 4 页、9 题的示例用量计入
+    const history = MOCK_RECENT.map(() => buildMockUsage(MOCK_PAGE_COUNT, 9))
+    const all = [...history, ...usage.values()]
+    const calls = all.flat()
+    const summary = summarizeMockUsage(calls)
+    const jobsN = all.length
+    const pages = calls.reduce((a, c) => a + c.pages, 0)
+    const questionsN = MOCK_RECENT.reduce((a, r) => a + r.questionCount, 0)
+      + [...questions.values()].reduce((a, qs) => a + qs.length, 0)
+    const overview: UsageOverview = {
+      days,
+      jobs: jobsN,
+      pages,
+      questions: questionsN,
+      summary,
+      costPerJob: summary.cost! / jobsN,
+      costPerPage: pages ? summary.cost! / pages : null,
+      costPerQuestion: questionsN ? summary.cost! / questionsN : null,
+      tokensPerJob: Math.round(summary.totalTokens / jobsN),
+      daily: [],
+    }
+    return overview
   },
 }

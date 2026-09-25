@@ -7,10 +7,13 @@
 import json
 import logging
 import re
+import time
+from dataclasses import dataclass
 from typing import Any
 
 import httpx
 
+from .. import usage as usage_log
 from ..config import Settings
 
 log = logging.getLogger(__name__)
@@ -43,9 +46,32 @@ def describe(e: BaseException) -> str:
     return f"{type(e).__name__}: {msg}" if msg else type(e).__name__
 
 
-async def _read_stream(r: httpx.Response) -> str:
-    """拼接 SSE 中的 delta.content；思考模型的 reasoning_content 不计入结果。"""
+@dataclass
+class Usage:
+    prompt: int = 0
+    completion: int = 0
+    reasoning: int = 0
+    cached: int = 0
+
+    @classmethod
+    def parse(cls, u: dict[str, Any] | None) -> "Usage | None":
+        if not u:
+            return None
+        details = u.get("completion_tokens_details") or {}
+        prompt_details = u.get("prompt_tokens_details") or {}
+        return cls(
+            prompt=int(u.get("prompt_tokens") or 0),
+            completion=int(u.get("completion_tokens") or 0),
+            reasoning=int(details.get("reasoning_tokens") or 0),
+            # OpenAI / 通义：prompt_tokens_details.cached_tokens；DeepSeek：prompt_cache_hit_tokens
+            cached=int(prompt_details.get("cached_tokens") or u.get("prompt_cache_hit_tokens") or 0),
+        )
+
+
+async def _read_stream(r: httpx.Response) -> tuple[str, Usage | None]:
+    """拼接 SSE 中的 delta.content；思考模型的 reasoning_content 不计入结果。用量在最后一个数据块中返回。"""
     parts: list[str] = []
+    usage: Usage | None = None
     async for line in r.aiter_lines():
         if not line.startswith("data:"):
             continue
@@ -55,12 +81,26 @@ async def _read_stream(r: httpx.Response) -> str:
         chunk = json.loads(data)
         if err := chunk.get("error"):
             raise LLMError(f"大模型返回错误：{err.get('message', err) if isinstance(err, dict) else err}")
+        usage = Usage.parse(chunk.get("usage")) or usage
         for choice in chunk.get("choices") or []:
             parts.append((choice.get("delta") or {}).get("content") or "")
-    return "".join(parts)
+    return "".join(parts), usage
 
 
-async def chat_json(system: str, user: str, settings: Settings, *, retries: int = 1) -> Any:
+def _log_usage(settings: Settings, purpose: str, prompt_text: str, content: str, u: Usage | None,
+               started: float, status: str) -> None:
+    estimated = u is None
+    if u is None:
+        # 服务端未返回用量（或请求中途失败）：按字符数估算；失败请求多数厂商仍按输入计费
+        u = Usage(prompt=usage_log.estimate_tokens(prompt_text), completion=usage_log.estimate_tokens(content))
+    usage_log.record(
+        "llm", purpose, settings.llm_model, prompt_tokens=u.prompt, completion_tokens=u.completion,
+        reasoning_tokens=u.reasoning, cached_tokens=u.cached, duration_ms=int((time.monotonic() - started) * 1000),
+        estimated=estimated, status=status,
+    )
+
+
+async def chat_json(system: str, user: str, settings: Settings, *, purpose: str = "other", retries: int = 1) -> Any:
     if not settings.llm_enabled:
         raise LLMError("未配置大模型")
     url = settings.llm_base_url.rstrip("/") + "/chat/completions"
@@ -70,12 +110,16 @@ async def chat_json(system: str, user: str, settings: Settings, *, retries: int 
         "temperature": 0,
         "response_format": {"type": "json_object"},
         "stream": True,
+        "stream_options": {"include_usage": True},
         **settings.llm_extra_body,
     }
     headers = {"Authorization": f"Bearer {settings.llm_api_key}"}
     last: Exception | None = None
     async with httpx.AsyncClient(timeout=settings.llm_timeout, transport=transport) as client:
+        prompt_text = system + user
         for attempt in range(retries + 1):
+            started = time.monotonic()
+            content, used = "", None
             try:
                 async with client.stream("POST", url, json=body, headers=headers) as r:
                     if r.status_code in (401, 403):
@@ -84,18 +128,24 @@ async def chat_json(system: str, user: str, settings: Settings, *, retries: int 
                         await r.aread()
                         raise httpx.HTTPStatusError(f"HTTP {r.status_code}：{r.text[:200]}", request=r.request, response=r)
                     if r.headers.get("content-type", "").startswith("text/event-stream"):
-                        content = await _read_stream(r)
+                        content, used = await _read_stream(r)
                     else:  # 不支持流式的服务直接返回完整 JSON
                         await r.aread()
-                        content = r.json()["choices"][0]["message"]["content"]
+                        payload = r.json()
+                        content = payload["choices"][0]["message"]["content"]
+                        used = Usage.parse(payload.get("usage"))
                 if not content.strip():
                     raise LLMError("大模型返回内容为空")
-                return _parse_json(content)
+                result = _parse_json(content)
+                _log_usage(settings, purpose, prompt_text, content, used, started, "ok")
+                return result
             except LLMError as e:
                 if "Key" in str(e):
                     raise
                 last = e
             except (httpx.HTTPError, KeyError, IndexError, json.JSONDecodeError) as e:
                 last = e
+            # 请求已发出即可能计费，失败也记一笔
+            _log_usage(settings, purpose, prompt_text, content, used, started, "error")
             log.warning("大模型调用失败（第 %d 次）：%s", attempt + 1, describe(last))
     raise LLMError(f"大模型调用失败：{describe(last)}")  # type: ignore[arg-type]

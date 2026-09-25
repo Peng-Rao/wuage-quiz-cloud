@@ -11,4 +11,14 @@ os.environ.update({
     "LLM_API_KEY": "",
     "LLM_MODEL": "",
     "PARSER_CHAIN": '["mineru_cloud","lite"]',
+    "LLM_PRICES": "{}",
 })
+
+import pytest  # noqa: E402
+
+
+@pytest.fixture(autouse=True, scope="session")
+def _db():
+    # 用量记录等会直接写库，所有测试共用已建好表的临时数据库
+    from app.db import init_db
+    init_db()

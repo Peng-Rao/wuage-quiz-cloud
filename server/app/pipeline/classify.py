@@ -97,7 +97,7 @@ async def classify(head_text: str, settings: Settings) -> tuple[PaperMeta, list[
     if not settings.llm_enabled:
         return meta, warnings
     try:
-        data = await chat_json(LLM_SYSTEM, head_text[:3000], settings)
+        data = await chat_json(LLM_SYSTEM, head_text[:3000], settings, purpose="classify")
         llm = _valid(PaperMeta.model_validate({k: str(v or "").strip() for k, v in (data or {}).items()}))
     except (LLMError, ValueError) as e:
         log.warning("大模型分类失败：%s", e)

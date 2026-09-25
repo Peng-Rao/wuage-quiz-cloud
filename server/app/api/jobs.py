@@ -9,9 +9,12 @@ from sqlalchemy.orm import Session
 from ..db import BankQuestion, ParseJob, SessionLocal, get_session
 from ..pipeline.files import validate_kinds
 from ..schemas import (
-    PARSE_STAGES, CommitRequest, CommitResult, CreateJobRequest, DraftQuestionOut, PaperMeta, ParseJobOut,
-    RecentUpload,
+    PARSE_STAGES, AnswerTask, CommitRequest, CommitResult, CreateJobRequest, DraftQuestionOut, GenerateAnswersRequest,
+    JobUsage, PaperMeta, ParseJobOut, RecentUpload,
 )
+from ..config import get_settings
+from ..pipeline.answer import pick_questions
+from ..usage import calls_out, job_rows, summarize
 from ..services import current_school, get_job, job_out, list_questions, question_out, recent_out
 from ..storage import get_store
 from ..worker import worker
@@ -66,6 +69,33 @@ def list_recent(s: Session = Depends(get_session)) -> list[RecentUpload]:
 @router.get("/{job_id}", response_model=ParseJobOut)
 def read_job(job_id: str, s: Session = Depends(get_session)) -> ParseJobOut:
     return job_out(s, get_job(s, job_id))
+
+
+@router.post("/{job_id}/generate-answers", response_model=AnswerTask, status_code=202)
+def generate_answers(job_id: str, req: GenerateAnswersRequest, s: Session = Depends(get_session)) -> AnswerTask:
+    """为缺少答案的题（或指定的题）排队生成 AI 答案，进度见 ParseJob.answerTask。"""
+    job = get_job(s, job_id)
+    if job.status != "done":
+        raise HTTPException(400, "解析尚未完成")
+    if not get_settings().llm_enabled:
+        raise HTTPException(400, "未配置大模型，无法生成答案")
+    if (job.answer_task or {}).get("status") in ("queued", "running"):
+        raise HTTPException(409, "正在生成答案，请等待当前任务完成")
+    qids = pick_questions(job_id, req.question_ids, req.overwrite)
+    if not qids:
+        raise HTTPException(400, "没有需要生成答案的题目")
+    job.answer_task = {"status": "queued", "total": len(qids), "done": 0, "failed": 0, "error": None,
+                       "questionIds": qids, "overwrite": req.overwrite}
+    s.commit()
+    worker.enqueue_answers(job_id)
+    return AnswerTask.model_validate(job.answer_task)
+
+
+@router.get("/{job_id}/usage", response_model=JobUsage)
+def read_usage(job_id: str, s: Session = Depends(get_session)) -> JobUsage:
+    get_job(s, job_id)
+    rows = job_rows(s, job_id)
+    return JobUsage(summary=summarize(rows), calls=calls_out(rows))
 
 
 @router.get("/{job_id}/events")
@@ -128,6 +158,7 @@ def commit(job_id: str, req: CommitRequest, s: Session = Depends(get_session)) -
                                                source_job_id=job_id, source_draft_id=q.id)
         b.type, b.score, b.stem, b.options = q.type, q.score, q.stem, q.options
         b.answer, b.analysis, b.knowledge_points, b.coef = q.answer, q.analysis, q.knowledge_points, q.coef
+        b.answer_source = q.answer_source
         b.images, b.meta = q.images, job.meta
         s.add(b)
         q.status = "saved"

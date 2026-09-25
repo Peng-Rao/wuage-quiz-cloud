@@ -5,11 +5,14 @@ import {
   parseApi,
   type DraftQuestion,
   type DraftQuestionPatch,
+  type GenerateAnswersOptions,
+  type JobUsage,
   type PaperMeta,
   type ParseJob,
   type ParseOptions,
   type RecentUpload,
   type SourceImage,
+  type UsageOverview,
 } from '@/api/parse'
 
 export type ParsePhase = 'idle' | 'uploading' | 'parsing' | 'done' | 'failed'
@@ -27,13 +30,22 @@ export const useParseJobStore = defineStore('parseJob', () => {
   /** 正在请求中的题目 id，用于按钮禁用 */
   const busy = ref(new Set<string>())
   const savedCount = ref(0)
+  const usage = ref<JobUsage | null>(null)
+  const usageOverview = ref<UsageOverview | null>(null)
+  const OVERVIEW_DAYS = 30
 
   let unsubscribe: (() => void) | null = null
+  let answerTimer: ReturnType<typeof setTimeout> | null = null
 
   const isLow = (q: DraftQuestion) => q.confidence < REVIEW_CONFIDENCE
   const reviewCount = computed(() => questions.value.filter(isLow).length)
   const selectedCount = computed(() => questions.value.filter((q) => selected.value.has(q.id)).length)
   const allSelected = computed(() => !!questions.value.length && selectedCount.value === questions.value.length)
+  const missingAnswerCount = computed(() => questions.value.filter((q) => !q.answer).length)
+  const answerTask = computed(() => job.value?.answerTask ?? null)
+  const answering = computed(() => !!answerTask.value && ['queued', 'running'].includes(answerTask.value.status))
+  /** 本次任务中尚未拿到答案的题 */
+  const isAnswering = (q: DraftQuestion) => answering.value && !q.answer && !!answerTask.value?.questionIds.includes(q.id)
 
   /** 上传进度占总进度的前 10%，解析进度占后 90% */
   const overallPct = computed(() => {
@@ -43,7 +55,17 @@ export const useParseJobStore = defineStore('parseJob', () => {
   })
 
   async function loadRecent() {
-    recent.value = await parseApi.listRecent().catch(() => [])
+    const [r, o] = await Promise.all([
+      parseApi.listRecent().catch(() => []),
+      parseApi.getUsageOverview(OVERVIEW_DAYS).catch(() => null),
+    ])
+    recent.value = r
+    usageOverview.value = o
+  }
+
+  async function loadUsage() {
+    if (!job.value) return
+    usage.value = await parseApi.getUsage(job.value.id).catch(() => null)
   }
 
   async function start(files: File[]) {
@@ -64,6 +86,7 @@ export const useParseJobStore = defineStore('parseJob', () => {
     job.value = next
     if (next.status === 'failed') {
       stop()
+      loadUsage()
       phase.value = 'failed'
       error.value = next.error ?? '解析失败，请稍后重试'
     } else if (next.status === 'done' && phase.value === 'parsing') {
@@ -71,6 +94,7 @@ export const useParseJobStore = defineStore('parseJob', () => {
       applyQuestions(await parseApi.listQuestions(next.id))
       selected.value = new Set(questions.value.map((q) => q.id))
       phase.value = 'done'
+      loadUsage()
       loadRecent()
     }
   }
@@ -78,6 +102,47 @@ export const useParseJobStore = defineStore('parseJob', () => {
   function stop() {
     unsubscribe?.()
     unsubscribe = null
+    if (answerTimer) clearTimeout(answerTimer)
+    answerTimer = null
+  }
+
+  /** 发起 AI 生成答案；默认补全所有缺答案的题 */
+  async function generateAnswers(opts: GenerateAnswersOptions = {}) {
+    if (!job.value) return
+    error.value = ''
+    const key = opts.questionIds?.length === 1 ? opts.questionIds[0] : 'answers'
+    await withBusy(key, async () => {
+      const task = await parseApi.generateAnswers(job.value!.id, opts)
+      job.value = { ...job.value!, answerTask: task }
+      pollAnswers(task.done + task.failed)
+    })
+  }
+
+  /** 轮询生成进度：每有题目完成就刷新题目列表，答案逐题出现 */
+  function pollAnswers(lastFinished: number) {
+    if (answerTimer) clearTimeout(answerTimer)
+    answerTimer = setTimeout(async () => {
+      if (!job.value) return
+      const jobId = job.value.id
+      let next: ParseJob
+      try {
+        next = await parseApi.getJob(jobId)
+      } catch {
+        pollAnswers(lastFinished)
+        return
+      }
+      if (job.value?.id !== jobId) return
+      job.value = next
+      const task = next.answerTask
+      const finished = task ? task.done + task.failed : 0
+      const running = !!task && ['queued', 'running'].includes(task.status)
+      if (finished !== lastFinished || !running) applyQuestions(await parseApi.listQuestions(jobId))
+      if (running) pollAnswers(finished)
+      else {
+        if (task?.status === 'failed' || task?.error) error.value = task.error ?? 'AI 生成答案失败'
+        loadUsage()
+      }
+    }, 1500)
   }
 
   /** 合并 / 拆分后 id 会变化，保持原有选中状态，新产生的题默认选中 */
@@ -156,10 +221,13 @@ export const useParseJobStore = defineStore('parseJob', () => {
     selected.value = new Set()
     error.value = ''
     savedCount.value = 0
+    usage.value = null
   }
 
   return {
     phase, options, uploadPct, overallPct, job, questions, selected, recent, error, busy, savedCount,
+    usage, usageOverview, OVERVIEW_DAYS, loadUsage,
+    missingAnswerCount, answerTask, answering, isAnswering, generateAnswers,
     reviewCount, selectedCount, allSelected, isLow,
     loadRecent, start, stop, updateQuestion, mergeWithPrevious, splitSubQuestions, getSource, updateMeta,
     toggleSelect, toggleAll, commit, reset,

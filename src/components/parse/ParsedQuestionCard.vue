@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import type { DraftQuestion } from '@/api/parse'
 import { coefToDiff, type Difficulty } from '@/data/mock'
 import MathText from '@/components/MathText.vue'
@@ -10,8 +10,11 @@ const props = defineProps<{
   busy: boolean
   low: boolean
   isFirst: boolean
+  /** 本题在排队或正在由 AI 生成答案 */
+  answering?: boolean
 }>()
 defineEmits<{
+  aiAnswer: []
   toggle: []
   cycleType: []
   cycleDiff: []
@@ -28,6 +31,14 @@ const diff = computed(() => coefToDiff(props.q.coef))
 const filled = computed(() => Math.max(1, Math.round((1 - props.q.coef) * 5)))
 const hasAnswer = computed(() => !!props.q.answer)
 const showAnswer = ref(false)
+
+const SOURCE_LABEL = { paper: '已关联答案解析', ai: 'AI 生成答案', manual: '已人工修改答案' } as const
+const answerLabel = computed(() => SOURCE_LABEL[props.q.answerSource ?? 'paper'])
+
+// AI 答案生成后自动展开，方便老师立即核对
+watch(() => props.q.answerSource, (src, prev) => {
+  if (src === 'ai' && prev !== 'ai') showAnswer.value = true
+})
 </script>
 
 <template>
@@ -53,9 +64,11 @@ const showAnswer = ref(false)
         <div v-if="q.options.length" class="opts serif">
           <span v-for="(o, i) in q.options" :key="i"><b>{{ LETTERS[i] }}．</b><MathText :text="o" /></span>
         </div>
-        <div v-if="showAnswer && hasAnswer" class="ans">
+        <div v-if="showAnswer && hasAnswer" class="ans" :class="{ ai: q.answerSource === 'ai' }">
+          <span v-if="q.answerSource === 'ai'" class="ai-tag">AI 生成 · 请核对</span>
           <p><b>【答案】</b><MathText :text="q.answer ?? ''" /></p>
           <p v-if="q.analysis"><b>【解析】</b><MathText :text="q.analysis" /></p>
+          <p v-if="q.answerNote" class="ai-note">⚠ {{ q.answerNote }}</p>
         </div>
         <div v-if="q.knowledgePoints.length" class="kps">
           <span v-for="k in q.knowledgePoints" :key="k.id">{{ k.name }}</span>
@@ -75,10 +88,14 @@ const showAnswer = ref(false)
       <button class="btn-link" :disabled="busy || isFirst" @click="$emit('merge')">与上题合并</button>
       <button class="btn-link" :disabled="busy" @click="$emit('split')">拆分小问</button>
       <button class="btn-link" :disabled="busy" @click="$emit('source')">查看原图</button>
-      <button v-if="hasAnswer" class="btn-link ans-note" @click="showAnswer = !showAnswer">
-        已关联答案解析 · {{ showAnswer ? '收起' : '查看' }}
+      <button v-if="hasAnswer" class="btn-link ans-note" :class="{ 'is-ai': q.answerSource === 'ai' }" @click="showAnswer = !showAnswer">
+        <template v-if="q.answerNote">⚠ </template>{{ answerLabel }} · {{ showAnswer ? '收起' : '查看' }}
       </button>
-      <span v-else class="ans-note missing">未识别到答案</span>
+      <span v-else-if="answering" class="ans-note pending">AI 解答中…</span>
+      <span v-else class="ans-note missing">
+        未识别到答案
+        <button class="btn-link is-primary ai-btn" :disabled="busy" @click="$emit('aiAnswer')">AI 解答</button>
+      </span>
     </div>
   </article>
 </template>
@@ -133,7 +150,13 @@ const showAnswer = ref(false)
 .pq-foot .btn-link:disabled { color: var(--c-text-4); cursor: not-allowed; }
 .ans-note { margin-left: auto; }
 .pq-foot .ans-note.btn-link { color: var(--c-text-3); }
-.ans-note.missing { color: #A0301F; }
+.ans-note.missing { color: #A0301F; display: inline-flex; gap: 10px; align-items: center; }
+.ans-note.pending { color: var(--c-primary); }
+.pq-foot .ans-note.is-ai { color: var(--c-primary); }
+.pq-foot .ai-btn { font-size: 12px; color: var(--c-primary); font-weight: 600; }
+.ans.ai { border-color: var(--c-primary-line); background: #FDF8F3; }
+.ai-tag { display: inline-block; font-size: 11px; color: var(--c-primary-dark); background: var(--c-primary-soft); border-radius: 4px; padding: 0 6px; margin-bottom: 4px; }
+.ai-note { color: #8F4115; font-size: 12.5px; margin-top: 4px !important; }
 
 @media (max-width: 800px) {
   .pq-diff { flex: 1 1 100%; border-left: none; padding-left: 0; border-top: 1px solid var(--c-divider); padding-top: 10px; }

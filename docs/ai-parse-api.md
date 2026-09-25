@@ -39,6 +39,9 @@ POST /api/parse-jobs/{id}/commit    → 入校本题库
 | POST | `/api/draft-questions/{qid}/split` | — | `DraftQuestion[]`（重排后的完整列表） |
 | GET | `/api/draft-questions/{qid}/source` | — | `SourceImage[]` |
 | POST | `/api/parse-jobs/{id}/commit` | `{ questionIds: string[] }` | `{ savedCount }` |
+| POST | `/api/parse-jobs/{id}/generate-answers` | `{ questionIds?: string[], overwrite?: boolean }` | `AnswerTask`（202） |
+| GET | `/api/parse-jobs/{id}/usage` | — | `JobUsage`（汇总 + 每次调用明细） |
+| GET | `/api/usage/summary?days=30` | — | `UsageOverview`（近 N 天用量与平均成本） |
 
 ### 本地存储（P1）
 
@@ -79,6 +82,25 @@ POST /api/parse-jobs/{id}/commit    → 入校本题库
 - `split`：按「（1）/(1)/⑴」小问标记拆分，公共题干复制到每个小问，分值均分（余数给最后一问）；无标记时返回 400。
 - 合并 / 拆分会产生新的题目 id，前端以返回的完整列表为准。
 - `commit` 只把选中题目标记为 `saved`，可多次调用。
+
+### AI 生成答案
+
+- 由老师在核对页手动触发，不在解析流程中自动执行（避免不可控的费用）。
+- 不传 `questionIds` 时处理本卷所有缺少答案的题；`overwrite=false`（默认）时跳过已有答案的题。
+- 后台排队执行，每题一次大模型调用，并发数由 `ANSWER_CONCURRENCY` 控制（默认 3）；进度见 `ParseJob.answerTask`
+  （`status / total / done / failed / questionIds`），前端轮询 `GET /api/parse-jobs/{id}`。同一试卷同时只能有一个任务，重复发起返回 409。
+- `DraftQuestion.answerSource`：`paper` 原卷识别 / `ai` 大模型生成 / `manual` 人工修改（PATCH `answer` 或 `analysis` 后变为 `manual`）。
+- `DraftQuestion.answerNote`：AI 答案的提示，如题目含图（大模型看不到图片）、模型自认不确定、选择题答案不符合题型。
+- 入校本题库时保留答案来源；用量记为 `purpose=answer`。
+
+### AI 用量与成本
+
+- 每次大模型调用记录输入 / 输出 / 思考 / 缓存命中 tokens 与耗时；MinerU 按解析页数记录（解析完成即记，下载结果失败也计入）。
+- 大模型流式请求带 `stream_options.include_usage`，从最后一个数据块读取用量；服务端未返回时按字符数估算，`estimated=true`。
+- 失败的调用同样记录（`status=error`），多数厂商对失败请求仍按输入计费。
+- 费用不落库，查询时按服务端配置的单价计算（`LLM_PRICES` 按模型名，元 / 百万 tokens；`MINERU_PRICE_PER_PAGE` 元 / 页）。
+  未配置单价时 `cost=null`；部分缺失时 `priced=false`，`unpricedModels` 列出缺少单价的模型。
+- `ParseJob.usage` 为本任务的 `UsageSummary`，随 SSE 推送；`UsageOverview` 给出每份试卷、每页、每题的平均成本，用于估算后续费用。
 
 ### 尚未覆盖
 

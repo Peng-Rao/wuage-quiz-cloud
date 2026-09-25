@@ -12,9 +12,11 @@ import PaperMetaPanel from '@/components/parse/PaperMetaPanel.vue'
 import ParsedQuestionCard from '@/components/parse/ParsedQuestionCard.vue'
 import EditQuestionDialog from '@/components/parse/EditQuestionDialog.vue'
 import SourceImageDialog from '@/components/parse/SourceImageDialog.vue'
+import UsageCard from '@/components/parse/UsageCard.vue'
+import CostOverviewCard from '@/components/parse/CostOverviewCard.vue'
 
 const store = useParseJobStore()
-const { phase, job, questions, selected, recent, error, busy, options } = storeToRefs(store)
+const { phase, job, questions, selected, recent, error, busy, options, usage, usageOverview } = storeToRefs(store)
 const basket = useBasketStore()
 
 onMounted(() => store.loadRecent())
@@ -171,6 +173,7 @@ const note = computed(() =>
           </div>
           <span v-if="!recent.length" class="recent-meta">暂无记录</span>
         </div>
+        <CostOverviewCard :overview="usageOverview" />
       </div>
     </div>
 
@@ -195,6 +198,7 @@ const note = computed(() =>
           <DifficultyBar :easy="cnt('容易')" :mid="cnt('适中')" :hard="cnt('较难')" :height="10" show-counts />
           <span class="hint">难度系数为预估得分率（0–1），越低越难。依据知识点层级、解题步数与同类题历史作答数据估算。</span>
         </div>
+        <UsageCard :usage="usage" :question-count="questions.length" />
         <div v-if="kpCover.length" class="card panel kp-panel">
           <span class="card-title">知识点分值</span>
           <div v-for="k in kpCover" :key="k.name" class="kp">
@@ -208,6 +212,14 @@ const note = computed(() =>
         <div class="card summary">
           <span class="summary-count">已拆分 <b>{{ questions.length }}</b> 道题</span>
           <span v-if="store.reviewCount" class="warn">{{ store.reviewCount }} 道题识别置信度较低，建议核对</span>
+          <span v-if="store.answering && store.answerTask" class="ai-progress">
+            AI 解答中 {{ store.answerTask.done + store.answerTask.failed }} / {{ store.answerTask.total }}
+          </span>
+          <button
+            v-else-if="store.missingAnswerCount" class="ai-gen" :disabled="busy.has('answers')"
+            title="为缺少答案的题生成答案与解析，结果会标记为「AI 生成」，请老师核对"
+            @click="store.generateAnswers()"
+          >AI 生成答案（{{ store.missingAnswerCount }} 题）</button>
           <div class="ptabs">
             <button v-for="t in PTABS" :key="t" class="chip" :class="{ 'is-soft': ptab === t, dark: ptab === t }" @click="ptab = t">{{ t }}</button>
           </div>
@@ -220,10 +232,11 @@ const note = computed(() =>
         <ParsedQuestionCard
           v-for="q in shown" :key="q.id"
           :q="q" :selected="selected.has(q.id)" :busy="busy.has(q.id)" :low="store.isLow(q)" :is-first="q.no === 1"
+          :answering="store.isAnswering(q)"
           @toggle="store.toggleSelect(q.id)"
           @cycle-type="cycleType(q)" @cycle-diff="cycleDiff(q)"
           @edit="openEdit(q)" @merge="store.mergeWithPrevious(q.id)" @split="store.splitSubQuestions(q.id)"
-          @source="openSource(q)"
+          @source="openSource(q)" @ai-answer="store.generateAnswers({ questionIds: [q.id] })"
         />
         <div v-if="!shown.length" class="card empty">当前筛选下没有题目</div>
 
@@ -284,6 +297,8 @@ const note = computed(() =>
 
 /* 核对 · 左侧 */
 .review-side { flex: 1 0 280px; max-width: 320px; display: flex; flex-direction: column; gap: 14px; }
+/* 侧栏吸顶；内容超出屏幕高度时单独滚动，避免下方卡片永远看不到 */
+.review-side.sticky-side { max-height: calc(100vh - 96px); overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
 .avg { display: flex; align-items: baseline; gap: 8px; }
 .avg-num { font-size: 32px; font-weight: 700; color: var(--c-primary); line-height: 1; }
 .avg-label { font-size: 13px; color: var(--c-text-3); }
@@ -301,6 +316,13 @@ const note = computed(() =>
 .summary-count b { color: var(--c-primary); }
 .warn { font-size: 13px; color: var(--c-primary-dark); background: var(--c-primary-soft); border-radius: var(--r-sm); padding: 3px 10px; }
 .ptabs { margin-left: auto; display: flex; gap: 4px; flex-wrap: wrap; }
+.ai-gen {
+  border: 1px solid var(--c-primary); background: #fff; color: var(--c-primary); border-radius: var(--r-sm);
+  padding: 3px 10px; font-size: 13px; font-weight: 600;
+}
+.ai-gen:hover:not(:disabled) { background: var(--c-primary-soft); }
+.ai-gen:disabled { opacity: .5; cursor: not-allowed; }
+.ai-progress { font-size: 13px; color: var(--c-primary); background: var(--c-primary-soft); border-radius: var(--r-sm); padding: 3px 10px; }
 .chip.dark { color: var(--c-primary-dark); }
 .err-bar {
   padding: 10px 18px; display: flex; align-items: center; justify-content: space-between; gap: 12px;
@@ -326,6 +348,7 @@ const note = computed(() =>
 
 @media (max-width: 800px) {
   .sticky-side { position: static; }
+  .review-side.sticky-side { max-height: none; overflow: visible; }
   .review-side { max-width: none; }
   .steps { margin-left: 0; }
 }

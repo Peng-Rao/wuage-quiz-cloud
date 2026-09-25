@@ -36,8 +36,17 @@ class Settings(BaseSettings):
     llm_timeout: float = 300.0
     # 附加到请求体的厂商参数（JSON），如通义千问关闭思考：{"enable_thinking": false}
     llm_extra_body: dict[str, Any] = {}
+    # AI 生成答案时同时进行的请求数
+    answer_concurrency: int = 3
     #  单次拆题请求最多发送的版面单元数，超过则只用规则结果
     llm_max_units: int = 800
+
+    # 成本估算单价（留空则只统计用量，不估算费用）。按模型配置，单位：元 / 百万 tokens
+    # 例：LLM_PRICES={"qwen-plus": {"input": 0.8, "output": 2, "cached_input": 0.16}}
+    llm_prices: dict[str, dict[str, float]] = {}
+    # MinerU 单价：元 / 页
+    mineru_price_per_page: float | None = None
+    currency: str = "¥"
 
     # 页面渲染分辨率（查看原图）
     page_dpi: int = 110
