@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue'
 import type { DraftQuestion } from '@/api/parse'
 import { coefToDiff, type Difficulty } from '@/data/mock'
+import MathText from '@/components/MathText.vue'
 
 const props = defineProps<{
   q: DraftQuestion
@@ -45,13 +46,16 @@ const showAnswer = ref(false)
           <span v-if="q.duplicateOf" class="dup-tag" :title="`题库题目 ${q.duplicateOf}`">题库已有相似题</span>
           <span v-if="q.status === 'saved'" class="saved-tag">已入库</span>
         </div>
-        <div class="pq-stem serif">{{ q.stem }}</div>
+        <div class="pq-stem serif"><MathText :text="q.stem" /></div>
+        <div v-if="q.images.length" class="figs">
+          <img v-for="src in q.images" :key="src" :src="src" alt="题目配图" loading="lazy">
+        </div>
         <div v-if="q.options.length" class="opts serif">
-          <span v-for="(o, i) in q.options" :key="i"><b>{{ LETTERS[i] }}．</b>{{ o }}</span>
+          <span v-for="(o, i) in q.options" :key="i"><b>{{ LETTERS[i] }}．</b><MathText :text="o" /></span>
         </div>
         <div v-if="showAnswer && hasAnswer" class="ans">
-          <p><b>【答案】</b>{{ q.answer }}</p>
-          <p v-if="q.analysis"><b>【解析】</b>{{ q.analysis }}</p>
+          <p><b>【答案】</b><MathText :text="q.answer ?? ''" /></p>
+          <p v-if="q.analysis"><b>【解析】</b><MathText :text="q.analysis" /></p>
         </div>
         <div v-if="q.knowledgePoints.length" class="kps">
           <span v-for="k in q.knowledgePoints" :key="k.id">{{ k.name }}</span>
@@ -99,6 +103,8 @@ const showAnswer = ref(false)
 .dup-tag { color: #6B4E0F; background: #F8EFD9; border-radius: 4px; padding: 1px 6px; cursor: help; }
 .saved-tag { color: #3F7340; background: #E9F1E7; border-radius: 4px; padding: 1px 6px; }
 .pq-stem { font-size: 15px; line-height: 1.85; color: var(--c-ink); text-wrap: pretty; white-space: pre-line; }
+.figs { display: flex; flex-wrap: wrap; gap: 8px; }
+.figs img { max-width: min(100%, 320px); max-height: 220px; border: 1px solid var(--c-divider); border-radius: var(--r-sm); background: #fff; }
 .opts { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 4px 16px; font-size: 14.5px; line-height: 1.7; }
 .opts b { font-weight: 400; }
 .ans { background: var(--c-surface-2); border: 1px solid var(--c-divider); border-radius: var(--r-md); padding: 10px 12px; font-size: 13.5px; line-height: 1.75; }
