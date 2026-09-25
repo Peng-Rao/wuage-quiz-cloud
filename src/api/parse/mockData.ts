@@ -93,6 +93,7 @@ export function buildMockQuestions(jobId: string, opts: ParseOptions): DraftQues
     confidence: s.confidence,
     blockIds: [`${jobId}_b${i + 1}`],
     regions: [{ page: s.page, bbox: [0.08, s.y[0], 0.92, s.y[1]] }],
+    images: [],
     duplicateOf: opts.dedupe ? s.dup ?? null : null,
     status: 'draft',
   }))

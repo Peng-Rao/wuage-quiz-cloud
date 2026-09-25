@@ -132,6 +132,8 @@ export interface DraftQuestion {
   /** 组成本题的 IR Block，用于合并 / 拆分与原图回溯 */
   blockIds: string[]
   regions: SourceRegion[]
+  /** 题目内配图（几何图、函数图像等）的访问地址 */
+  images: string[]
   /** 查重命中的已有题目 id */
   duplicateOf: string | null
   status: 'draft' | 'saved'

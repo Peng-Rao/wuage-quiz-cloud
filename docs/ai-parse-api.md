@@ -1,7 +1,7 @@
-# 试卷解析接口契约（P0）
+# 试卷解析接口契约
 
 前端类型定义：`src/api/parse/types.ts`（以此为准，本文档是其说明）。
-前端默认使用内存 mock（`src/api/parse/mock.ts`）；设置 `VITE_PARSE_API=http` 后切换为 `src/api/parse/http.ts` 对接本文接口。
+前端默认使用内存 mock（`src/api/parse/mock.ts`）；`npm run dev:api`（即 `VITE_PARSE_API=http`）切换为 `src/api/parse/http.ts`，对接 `server/` 中的实现（见 [server/README.md](../server/README.md)）。
 
 ## 约定
 
@@ -40,6 +40,11 @@ POST /api/parse-jobs/{id}/commit    → 入校本题库
 | GET | `/api/draft-questions/{qid}/source` | — | `SourceImage[]` |
 | POST | `/api/parse-jobs/{id}/commit` | `{ questionIds: string[] }` | `{ savedCount }` |
 
+### 本地存储（P1）
+
+后端使用本地磁盘存储时，`uploadUrl` 为 `/api/files/uploads/…`（同源 PUT，请求体为文件原始字节）；
+页面图与题图通过 `GET /api/files/jobs/…` 读取。换成 OSS / S3 后 `uploadUrl` 为预签名地址，前端代码不变。
+
 ### 上传校验
 
 - 一次解析任务：1 个 `.pdf` / `.docx`，或 1–N 张 `.jpg/.png`（按上传顺序作为连续页）。
@@ -54,11 +59,18 @@ POST /api/parse-jobs/{id}/commit    → 入校本题库
 | `ocr` | 版面识别与文字提取（MinerU / 本地引擎） | `识别 4 页` |
 | `classify` | 学段 / 学科 / 类型分类，完成后写入 `meta` | `高中 · 数学 · 期中` |
 | `segment` | 题目切分、题型判断、答案关联 | `9 道题` |
-| `knowledge` | 知识点标注（从知识树候选中选择） | `11 个知识点` |
-| `difficulty` | 难度评估 | `预估得分率` |
+| `knowledge` | 知识点标注（从知识树候选中选择）；P1 固定为 `skipped` | `11 个知识点` |
+| `difficulty` | 难度评估；P1 为基线估计 | `预估得分率` / `基线估计` |
+
+`segment` 未启用大模型时 note 带「（规则）」后缀，如 `9 道题（规则）`。
 
 `progress` 由后端给出（0–100），前端把上传进度映射到总进度的前 10%。
 `parser` 返回实际使用的引擎：`mineru_cloud` / `mineru_local` / `lite`（含降级结果）。
+
+### DraftQuestion.images
+
+题目内配图（几何图、函数图像、表格截图）的访问地址数组，按原卷顺序；没有配图时为空数组。
+题干、选项、答案中的公式以 `$...$`（行内）/ `$$...$$`（独立）包裹的 LaTeX 表示，前端用 KaTeX 渲染。
 
 ### 草稿题编辑语义
 
@@ -68,7 +80,7 @@ POST /api/parse-jobs/{id}/commit    → 入校本题库
 - 合并 / 拆分会产生新的题目 id，前端以返回的完整列表为准。
 - `commit` 只把选中题目标记为 `saved`，可多次调用。
 
-### 前端未覆盖（P1 之后）
+### 尚未覆盖
 
 - 知识点修改（需要知识树接口）、公式编辑器、查重命中后的「合并到已有题」操作。
 - 刷新页面后恢复进行中的任务（需要把 jobId 放进路由，mock 为内存存储，刷新即丢失）。
