@@ -1,0 +1,775 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;600;700&family=Noto+Serif+SC:wght@500;600;700&display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#F6F5F1;color:#1B2430;font-family:"Noto Sans SC",system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+*{box-sizing:border-box}
+a{color:#B8561F;text-decoration:none}
+a:hover{color:#8F4115;text-decoration:underline}
+button{font-family:inherit}
+input{font-family:inherit}
+</style>
+</helmet>
+
+<div style="min-height:100vh;display:flex;flex-direction:column">
+
+<header style="position:sticky;top:0;z-index:20;background:#FFFFFF;border-bottom:1px solid #E4E1D8">
+  <div style="max-width:1320px;margin:0 auto;padding:0 24px;height:60px;display:flex;align-items:center;gap:20px">
+    <div style="display:flex;align-items:center;gap:10px;cursor:pointer;flex-shrink:0;white-space:nowrap" onClick="{{ goHome }}">
+      <svg viewBox="0 0 450 365" style="width:34px;height:28px;flex-shrink:0;display:block" fill="#C96A30"><rect x="0" y="0" width="87" height="365"></rect><rect x="0" y="0" width="450" height="95"></rect><path d="M175,133 H442 V365 H162 V283 H300 A52.5 52.5 0 0 0 300,178 H175 A22.5 22.5 0 0 1 175,133 Z"></path></svg>
+      <div style="display:flex;flex-direction:column;line-height:1.15;gap:1px">
+        <span style="font-weight:700;font-size:17px;letter-spacing:1px;color:#B8561F">福格云上题库</span>
+        <span style="font-size:10px;letter-spacing:.5px;color:#8A8F95;font-weight:500">FG Education</span>
+      </div>
+    </div>
+    <div style="position:relative;flex-shrink:0">
+      <button onClick="{{ toggleSubj }}" style="white-space:nowrap;height:34px;padding:0 12px;border:1px solid #E4E1D8;background:#F6F5F1;border-radius:8px;display:flex;align-items:center;gap:8px;font-size:14px;color:#1B2430;cursor:pointer">
+        <span style="color:#B8561F;font-weight:600">{{ stage }}</span><span>{{ subject }}</span><span style="font-size:10px;color:#8A8F95">▼</span>
+      </button>
+      <sc-if value="{{ subjOpen }}" hint-placeholder-val="{{ false }}">
+        <div style="position:absolute;top:42px;left:0;width:420px;background:#fff;border:1px solid #E4E1D8;border-radius:12px;box-shadow:0 12px 32px rgba(27,36,48,.12);padding:16px;display:flex;flex-direction:column;gap:14px">
+          <sc-for list="{{ stageRows }}" as="row" hint-placeholder-count="3">
+            <div style="display:flex;gap:14px;align-items:flex-start">
+              <span style="width:36px;flex-shrink:0;font-size:13px;color:#8A8F95;padding-top:5px">{{ row.name }}</span>
+              <div style="display:flex;flex-wrap:wrap;gap:6px">
+                <sc-for list="{{ row.subjects }}" as="s">
+                  <button onClick="{{ s.pick }}" style="border:none;border-radius:6px;padding:5px 10px;font-size:13px;cursor:pointer;background:{{ s.bg }};color:{{ s.fg }}">{{ s.name }}</button>
+                </sc-for>
+              </div>
+            </div>
+          </sc-for>
+        </div>
+      </sc-if>
+    </div>
+    <nav style="display:flex;gap:2px;flex:1;min-width:0;overflow:hidden">
+      <sc-for list="{{ navItems }}" as="n" hint-placeholder-count="5">
+        <button onClick="{{ n.go }}" style="flex-shrink:0;white-space:nowrap;border:none;background:transparent;height:60px;padding:0 12px;font-size:15px;cursor:pointer;color:{{ n.fg }};font-weight:{{ n.fw }};border-bottom:2px solid {{ n.bd }}">{{ n.label }}</button>
+      </sc-for>
+    </nav>
+    <button onClick="{{ goPaper }}" style="flex-shrink:0;white-space:nowrap;height:34px;padding:0 14px;border:1px solid #B8561F;background:#fff;color:#B8561F;border-radius:8px;font-size:14px;cursor:pointer;display:flex;align-items:center;gap:8px">
+      试题篮<span style="min-width:20px;height:20px;border-radius:10px;background:#1B2430;color:#fff;font-size:12px;display:flex;align-items:center;justify-content:center;padding:0 6px">{{ basketCount }}</span>
+    </button>
+    <div style="width:32px;height:32px;border-radius:16px;background:#FBEEE4;color:#B8561F;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:600;flex-shrink:0">王</div>
+  </div>
+</header>
+
+<sc-if value="{{ isHome }}" hint-placeholder-val="{{ true }}">
+<main data-screen-label="01 首页" style="flex:1">
+  <section style="background:#B8561F;color:#fff">
+    <div style="max-width:1320px;margin:0 auto;padding:56px 24px 64px;display:flex;flex-direction:column;gap:22px">
+      <h1 style="margin:0;font-family:'Noto Serif SC',serif;font-size:36px;font-weight:700;letter-spacing:1px">为老师准备的干净题库</h1>
+      <p style="margin:0;font-size:16px;color:#FFF1E6;max-width:620px;line-height:1.7">按教材章节或知识点选题，加入试题篮后一键排版，导出 Word / PDF 试卷。</p>
+      <div style="display:flex;max-width:720px;background:#fff;border-radius:10px;padding:6px;gap:6px">
+        <input placeholder="输入题干关键词、知识点或试卷名称" style="flex:1;border:none;outline:none;font-size:15px;padding:0 14px;color:#1B2430;background:transparent">
+        <button onClick="{{ goPick }}" style="border:none;background:#1B2430;color:#fff;border-radius:7px;padding:0 26px;height:42px;font-size:15px;font-weight:600;cursor:pointer">搜 题</button>
+      </div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;font-size:13px;color:#FFF1E6">
+        <span>热门：</span><span>函数零点</span><span>数列求和</span><span>三角恒等变换</span><span>2026 新高考 I 卷</span><span>立体几何</span>
+      </div>
+    </div>
+  </section>
+
+  <div style="max-width:1320px;margin:-28px auto 0;padding:0 24px 56px;display:flex;flex-direction:column;gap:28px">
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px">
+      <sc-for list="{{ entries }}" as="e" hint-placeholder-count="4">
+        <div onClick="{{ e.go }}" style="background:#fff;border:1px solid #E4E1D8;border-radius:12px;padding:20px;display:flex;flex-direction:column;gap:8px;cursor:pointer;box-shadow:0 4px 14px rgba(27,36,48,.05)" style-hover="border-color:#B8561F">
+          <div style="display:flex;align-items:center;gap:10px">
+            <span style="width:34px;height:34px;border-radius:8px;background:#FBEEE4;color:#B8561F;display:flex;align-items:center;justify-content:center;font-family:'Noto Serif SC',serif;font-weight:700">{{ e.mark }}</span>
+            <span style="font-size:16px;font-weight:600">{{ e.title }}</span>
+          </div>
+          <span style="font-size:13px;color:#6A6F76;line-height:1.6">{{ e.desc }}</span>
+        </div>
+      </sc-for>
+    </div>
+
+    <div style="display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:24px">
+      <section style="background:#fff;border:1px solid #E4E1D8;border-radius:12px;padding:20px 24px">
+        <div style="display:flex;align-items:center;gap:18px;border-bottom:1px solid #EFECE4;padding-bottom:12px">
+          <h2 style="margin:0;font-size:17px;font-weight:600">最新试卷</h2>
+          <div style="display:flex;gap:4px">
+            <sc-for list="{{ paperTabs }}" as="t" hint-placeholder-count="4">
+              <button onClick="{{ t.pick }}" style="border:none;border-radius:6px;padding:4px 10px;font-size:13px;cursor:pointer;background:{{ t.bg }};color:{{ t.fg }}">{{ t.label }}</button>
+            </sc-for>
+          </div>
+          <a href="#" style="margin-left:auto;font-size:13px">更多 ›</a>
+        </div>
+        <div style="display:flex;flex-direction:column">
+          <sc-for list="{{ papers }}" as="p" hint-placeholder-count="6">
+            <div style="display:flex;align-items:center;gap:14px;padding:13px 0;border-bottom:1px dashed #EFECE4">
+              <span style="font-size:12px;color:#B8561F;background:#FBEEE4;border-radius:4px;padding:2px 6px;flex-shrink:0">{{ p.tag }}</span>
+              <span style="flex:1;font-size:14px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ p.title }}</span>
+              <span style="font-size:12px;color:#8A8F95;flex-shrink:0">{{ p.region }}</span>
+              <span style="font-size:12px;color:#8A8F95;flex-shrink:0;width:72px;text-align:right">{{ p.date }}</span>
+            </div>
+          </sc-for>
+        </div>
+      </section>
+      <aside style="display:flex;flex-direction:column;gap:16px">
+        <section style="background:#fff;border:1px solid #E4E1D8;border-radius:12px;padding:20px">
+          <h2 style="margin:0 0 12px;font-size:16px;font-weight:600">我的组卷</h2>
+          <div style="display:flex;flex-direction:column;gap:12px">
+            <sc-for list="{{ myPapers }}" as="m" hint-placeholder-count="3">
+              <div style="display:flex;flex-direction:column;gap:3px">
+                <span style="font-size:14px">{{ m.title }}</span>
+                <span style="font-size:12px;color:#8A8F95">{{ m.meta }}</span>
+              </div>
+            </sc-for>
+          </div>
+        </section>
+        <section style="background:#FBF3EA;border:1px solid #F0DCC4;border-radius:12px;padding:20px;display:flex;flex-direction:column;gap:8px">
+          <span style="font-size:15px;font-weight:600;color:#8A4B12">校本题库</span>
+          <span style="font-size:13px;color:#6A5A48;line-height:1.6">上传本校试卷，自动拆分为单题，与教研组共享。</span>
+          <button onClick="{{ goUpload }}" style="align-self:flex-start;margin-top:4px;border:1px solid #1B2430;background:#fff;color:#B5661B;border-radius:6px;padding:5px 12px;font-size:13px;cursor:pointer">上传试卷</button>
+        </section>
+      </aside>
+    </div>
+  </div>
+</main>
+</sc-if>
+
+<sc-if value="{{ isPick }}" hint-placeholder-val="{{ false }}">
+<main data-screen-label="02 选题组卷" style="flex:1;max-width:1320px;width:100%;margin:0 auto;padding:20px 24px 48px;display:flex;flex-wrap:wrap;gap:18px;align-items:flex-start">
+  <aside style="flex:0 0 250px;background:#fff;border:1px solid #E4E1D8;border-radius:12px;position:sticky;top:80px;overflow:hidden">
+    <div style="display:flex;border-bottom:1px solid #EFECE4">
+      <sc-for list="{{ treeTabs }}" as="t" hint-placeholder-count="2">
+        <button onClick="{{ t.pick }}" style="flex:1;border:none;background:transparent;height:44px;font-size:14px;cursor:pointer;color:{{ t.fg }};font-weight:{{ t.fw }};border-bottom:2px solid {{ t.bd }}">{{ t.label }}</button>
+      </sc-for>
+    </div>
+    <div style="padding:12px 14px;border-bottom:1px solid #EFECE4">
+      <div style="height:32px;border:1px solid #E4E1D8;border-radius:6px;display:flex;align-items:center;justify-content:space-between;padding:0 10px;font-size:13px;color:#3A424C">{{ treeBook }}<span style="font-size:10px;color:#8A8F95">▼</span></div>
+    </div>
+    <div style="padding:8px 6px 14px;display:flex;flex-direction:column;max-height:calc(100vh - 220px);overflow:auto">
+      <sc-for list="{{ chapters }}" as="c" hint-placeholder-count="5">
+        <div style="display:flex;flex-direction:column">
+          <button onClick="{{ c.toggle }}" style="border:none;background:transparent;text-align:left;padding:8px 8px;font-size:14px;color:#1B2430;cursor:pointer;display:flex;gap:6px;align-items:flex-start;border-radius:6px;line-height:1.5" style-hover="background:#F6F5F1">
+            <span style="font-size:10px;color:#8A8F95;width:10px;padding-top:4px">{{ c.caret }}</span><span>{{ c.name }}</span>
+          </button>
+          <sc-if value="{{ c.open }}">
+            <div style="display:flex;flex-direction:column;padding-left:18px">
+              <sc-for list="{{ c.sections }}" as="s">
+                <button onClick="{{ s.pick }}" style="border:none;text-align:left;padding:6px 10px;font-size:13px;cursor:pointer;border-radius:6px;background:{{ s.bg }};color:{{ s.fg }}">{{ s.name }}</button>
+              </sc-for>
+            </div>
+          </sc-if>
+        </div>
+      </sc-for>
+    </div>
+  </aside>
+
+  <section style="flex:999 1 480px;display:flex;flex-direction:column;gap:14px;min-width:0">
+    <div style="background:#fff;border:1px solid #E4E1D8;border-radius:12px;padding:14px 18px;display:flex;flex-direction:column;gap:10px">
+      <sc-for list="{{ filterGroups }}" as="g" hint-placeholder-count="4">
+        <div style="display:flex;gap:12px;align-items:flex-start">
+          <span style="width:40px;flex-shrink:0;font-size:13px;color:#8A8F95;padding-top:4px">{{ g.label }}</span>
+          <div style="display:flex;flex-wrap:wrap;gap:4px">
+            <sc-for list="{{ g.options }}" as="o">
+              <button onClick="{{ o.pick }}" style="border:none;border-radius:5px;padding:4px 10px;font-size:13px;cursor:pointer;background:{{ o.bg }};color:{{ o.fg }}">{{ o.label }}</button>
+            </sc-for>
+          </div>
+        </div>
+      </sc-for>
+    </div>
+
+    <div style="display:flex;flex-wrap:wrap;align-items:center;gap:10px 16px;font-size:13px;color:#6A6F76;padding:0 4px;white-space:nowrap">
+      <span>当前：<b style="color:#1B2430;font-weight:600">{{ currentSection }}</b></span>
+      <span>共 <b style="color:#B8561F">{{ resultCount }}</b> 道题</span>
+      <div style="margin-left:auto;display:flex;gap:14px">
+        <span style="color:#B8561F;font-weight:600">综合排序</span><span>最新</span><span>组卷次数</span>
+      </div>
+      <button onClick="{{ toggleAllAns }}" style="border:1px solid #E4E1D8;background:#fff;border-radius:6px;padding:4px 10px;font-size:13px;cursor:pointer;color:#3A424C">{{ allAnsLabel }}</button>
+    </div>
+
+    <sc-for list="{{ questions }}" as="q" hint-placeholder-count="4">
+      <article style="background:#fff;border:1px solid {{ q.border }};border-radius:12px;overflow:hidden">
+        <div style="padding:18px 22px 14px;display:flex;flex-direction:column;gap:12px">
+          <div style="display:flex;gap:8px;font-size:12px;color:#8A8F95;align-items:center">
+            <span style="color:#B8561F;background:#FBEEE4;border-radius:4px;padding:1px 6px">{{ q.type }}</span>
+            <span>{{ q.source }}</span>
+          </div>
+          <div style="font-family:'Noto Serif SC',serif;font-size:15.5px;line-height:1.9;color:#1B2430;text-wrap:pretty">{{ q.stem }}</div>
+          <sc-if value="{{ q.hasOptions }}">
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:4px 20px;font-family:'Noto Serif SC',serif;font-size:15px;line-height:1.9">
+              <sc-for list="{{ q.options }}" as="o"><span>{{ o }}</span></sc-for>
+            </div>
+          </sc-if>
+        </div>
+        <sc-if value="{{ q.showAns }}">
+          <div style="margin:0 22px 14px;padding:12px 16px;background:#F6F5F1;border-radius:8px;display:flex;flex-direction:column;gap:6px;font-size:14px;line-height:1.8">
+            <div><b style="color:#B8561F;font-weight:600">【答案】</b>{{ q.answer }}</div>
+            <div><b style="color:#B8561F;font-weight:600">【解析】</b>{{ q.analysis }}</div>
+            <div style="color:#6A6F76"><b style="color:#B8561F;font-weight:600">【知识点】</b>{{ q.knowledge }}</div>
+          </div>
+        </sc-if>
+        <div style="border-top:1px solid #EFECE4;padding:10px 22px;display:flex;align-items:center;gap:18px;font-size:12px;color:#8A8F95;background:#FCFBF8">
+          <span>难度 <b style="color:#3A424C;font-weight:500">{{ q.diff }}</b></span>
+          <span>组卷 {{ q.uses }} 次</span>
+          <span>更新 {{ q.date }}</span>
+          <div style="margin-left:auto;display:flex;gap:14px;align-items:center">
+            <button onClick="{{ q.toggleAns }}" style="border:none;background:transparent;color:#B8561F;font-size:13px;cursor:pointer">{{ q.ansLabel }}</button>
+            <button style="border:none;background:transparent;color:#6A6F76;font-size:13px;cursor:pointer">收藏</button>
+            <button style="border:none;background:transparent;color:#6A6F76;font-size:13px;cursor:pointer">纠错</button>
+            <button onClick="{{ q.toggle }}" style="border:none;border-radius:6px;padding:6px 14px;font-size:13px;cursor:pointer;background:{{ q.btnBg }};color:{{ q.btnFg }}">{{ q.btnLabel }}</button>
+          </div>
+        </div>
+      </article>
+    </sc-for>
+
+    <div style="display:flex;justify-content:center;gap:6px;padding:8px 0">
+      <span style="width:32px;height:32px;border-radius:6px;background:#B8561F;color:#fff;display:flex;align-items:center;justify-content:center;font-size:13px">1</span>
+      <span style="width:32px;height:32px;border-radius:6px;background:#fff;border:1px solid #E4E1D8;display:flex;align-items:center;justify-content:center;font-size:13px">2</span>
+      <span style="width:32px;height:32px;border-radius:6px;background:#fff;border:1px solid #E4E1D8;display:flex;align-items:center;justify-content:center;font-size:13px">3</span>
+      <span style="padding:0 6px;display:flex;align-items:center;color:#8A8F95">…</span>
+      <span style="width:40px;height:32px;border-radius:6px;background:#fff;border:1px solid #E4E1D8;display:flex;align-items:center;justify-content:center;font-size:13px">86</span>
+    </div>
+  </section>
+
+  <aside style="flex:1 0 250px;position:sticky;top:80px;background:#fff;border:1px solid #E4E1D8;border-radius:12px;padding:18px;display:flex;flex-direction:column;gap:14px">
+    <div style="display:flex;align-items:baseline;justify-content:space-between">
+      <span style="font-size:16px;font-weight:600">试题篮</span>
+      <button onClick="{{ clearBasket }}" style="border:none;background:transparent;color:#8A8F95;font-size:12px;cursor:pointer">清空</button>
+    </div>
+    <div style="display:flex;align-items:baseline;gap:6px">
+      <span style="font-size:34px;font-weight:700;color:#1B2430;line-height:1">{{ basketCount }}</span><span style="font-size:13px;color:#6A6F76">道题</span>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:8px;border-top:1px solid #EFECE4;padding-top:12px">
+      <sc-for list="{{ basketTypes }}" as="b" hint-placeholder-count="4">
+        <div style="display:flex;justify-content:space-between;font-size:13px">
+          <span style="color:#3A424C">{{ b.type }}</span><span style="color:#1B2430;font-weight:600">{{ b.n }}</span>
+        </div>
+      </sc-for>
+      <sc-if value="{{ basketEmpty }}">
+        <span style="font-size:13px;color:#8A8F95;line-height:1.6">还没有选题。点击题目下方的「加入试题篮」。</span>
+      </sc-if>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:6px;border-top:1px solid #EFECE4;padding-top:12px">
+      <span style="font-size:12px;color:#8A8F95">难度分布</span>
+      <div style="display:flex;height:8px;border-radius:4px;overflow:hidden;background:#EFECE4">
+        <div style="width:{{ dEasy }};background:#6E9E6B"></div>
+        <div style="width:{{ dMid }};background:#D9922E"></div>
+        <div style="width:{{ dHard }};background:#B23A2A"></div>
+      </div>
+      <div style="display:flex;gap:10px;font-size:11px;color:#6A6F76">
+        <span><b style="color:#6E9E6B">●</b> 容易</span><span><b style="color:#D9922E">●</b> 适中</span><span><b style="color:#B23A2A">●</b> 较难</span>
+      </div>
+    </div>
+    <button onClick="{{ goPaper }}" style="border:none;background:#B8561F;color:#fff;border-radius:8px;height:42px;font-size:15px;font-weight:600;cursor:pointer">生成试卷</button>
+    <button style="border:1px solid #E4E1D8;background:#fff;color:#3A424C;border-radius:8px;height:36px;font-size:13px;cursor:pointer">智能补题</button>
+  </aside>
+</main>
+</sc-if>
+
+<sc-if value="{{ isPaper }}" hint-placeholder-val="{{ false }}">
+<main data-screen-label="03 试卷编辑" style="flex:1;width:100%;max-width:1320px;margin:0 auto;padding:20px 24px 48px;display:flex;flex-wrap:wrap;gap:18px;align-items:flex-start">
+  <aside style="flex:0 0 220px;position:sticky;top:80px;background:#fff;border:1px solid #E4E1D8;border-radius:12px;padding:16px;display:flex;flex-direction:column;gap:10px">
+    <span style="font-size:15px;font-weight:600">试卷结构</span>
+    <sc-for list="{{ paperSections }}" as="s" hint-placeholder-count="4">
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 10px;background:#F6F5F1;border-radius:6px;font-size:13px">
+        <span>{{ s.title }}</span><span style="color:#6A6F76">{{ s.count }} 题 · {{ s.score }} 分</span>
+      </div>
+    </sc-for>
+    <div style="display:flex;justify-content:space-between;font-size:13px;border-top:1px solid #EFECE4;padding-top:10px">
+      <span style="color:#6A6F76">总分</span><span style="font-weight:700;color:#B8561F">{{ totalScore }} 分</span>
+    </div>
+    <button onClick="{{ goPick }}" style="border:1px dashed #B8561F;background:#fff;color:#B8561F;border-radius:6px;height:34px;font-size:13px;cursor:pointer">＋ 继续选题</button>
+  </aside>
+
+  <section style="background:#fff;border:1px solid #E4E1D8;border-radius:4px;box-shadow:0 10px 30px rgba(27,36,48,.08);padding:56px 56px 72px;font-family:'Noto Serif SC',serif;color:#1B2430;display:flex;flex-direction:column;gap:18px;min-width:0;flex:999 1 520px">
+    <div style="text-align:center;display:flex;flex-direction:column;gap:10px">
+      <div style="font-size:12px;letter-spacing:4px;color:#6A6F76">绝密★启用前</div>
+      <h1 style="margin:0;font-size:24px;font-weight:700;letter-spacing:1px">2026—2027学年高一上学期期中考试</h1>
+      <div style="font-size:20px;font-weight:600;letter-spacing:6px">数 学 试 卷</div>
+      <div style="font-size:13px;color:#3A424C">考试时间：120 分钟　满分：{{ totalScore }} 分</div>
+      <div style="display:flex;flex-wrap:wrap;justify-content:center;gap:8px 28px;font-size:13px;color:#3A424C;padding-top:4px">
+        <span>学校：__________</span><span>姓名：__________</span><span>班级：__________</span><span>考号：__________</span>
+      </div>
+    </div>
+    <div style="border:1px solid #D8D4C8;padding:10px 14px;font-size:13px;line-height:1.8;color:#3A424C">
+      注意事项：1. 答题前填写好自己的姓名、班级、考号等信息。2. 请将答案正确填写在答题卡上。
+    </div>
+    <sc-for list="{{ paperSections }}" as="s" hint-placeholder-count="3">
+      <div style="display:flex;flex-direction:column;gap:14px">
+        <div style="font-size:15.5px;font-weight:700;font-family:'Noto Sans SC',sans-serif">{{ s.heading }}</div>
+        <sc-for list="{{ s.items }}" as="q">
+          <div style="display:flex;flex-direction:column;gap:6px;font-size:15px;line-height:1.9" style-hover="background:#FBFAF6">
+            <div style="text-wrap:pretty">{{ q.no }}．{{ q.stem }}</div>
+            <sc-if value="{{ q.hasOptions }}">
+              <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:0 20px;padding-left:1.5em">
+                <sc-for list="{{ q.options }}" as="o"><span>{{ o }}</span></sc-for>
+              </div>
+            </sc-if>
+            <sc-if value="{{ paperShowAns }}">
+              <div style="font-size:13px;color:#B8561F;font-family:'Noto Sans SC',sans-serif;padding-left:1.5em">【答案】{{ q.answer }}</div>
+            </sc-if>
+          </div>
+        </sc-for>
+      </div>
+    </sc-for>
+  </section>
+
+  <aside style="flex:1 0 260px;position:sticky;top:80px;display:flex;flex-direction:column;gap:14px">
+    <div style="background:#fff;border:1px solid #E4E1D8;border-radius:12px;padding:18px;display:flex;flex-direction:column;gap:12px">
+      <span style="font-size:15px;font-weight:600">排版设置</span>
+      <sc-for list="{{ paperOpts }}" as="o" hint-placeholder-count="4">
+        <div onClick="{{ o.toggle }}" style="display:flex;justify-content:space-between;align-items:center;font-size:13px;cursor:pointer">
+          <span style="color:#3A424C">{{ o.label }}</span>
+          <span style="width:34px;height:20px;border-radius:10px;background:{{ o.track }};position:relative;display:block">
+            <span style="position:absolute;top:2px;left:{{ o.knob }};width:16px;height:16px;border-radius:8px;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.2)"></span>
+          </span>
+        </div>
+      </sc-for>
+      <div style="display:flex;flex-direction:column;gap:6px;border-top:1px solid #EFECE4;padding-top:12px">
+        <span style="font-size:12px;color:#8A8F95">纸张</span>
+        <div style="display:flex;gap:6px">
+          <span style="flex:1;text-align:center;padding:5px 0;font-size:13px;border-radius:6px;background:#B8561F;color:#fff">A4</span>
+          <span style="flex:1;text-align:center;padding:5px 0;font-size:13px;border-radius:6px;background:#F6F5F1;color:#3A424C">A3 双栏</span>
+          <span style="flex:1;text-align:center;padding:5px 0;font-size:13px;border-radius:6px;background:#F6F5F1;color:#3A424C">B4</span>
+        </div>
+      </div>
+    </div>
+    <button style="border:none;background:#B8561F;color:#fff;border-radius:8px;height:42px;font-size:15px;font-weight:600;cursor:pointer">下载 Word</button>
+    <button style="border:1px solid #B8561F;background:#fff;color:#B8561F;border-radius:8px;height:38px;font-size:14px;cursor:pointer">导出 PDF</button>
+    <button style="border:1px solid #E4E1D8;background:#fff;color:#3A424C;border-radius:8px;height:38px;font-size:14px;cursor:pointer">生成答题卡</button>
+  </aside>
+</main>
+</sc-if>
+
+<sc-if value="{{ isUpload }}" hint-placeholder-val="{{ false }}">
+<main data-screen-label="05 试卷解析" style="flex:1;width:100%;max-width:1320px;margin:0 auto;padding:24px 24px 56px;display:flex;flex-direction:column;gap:18px">
+  <div style="display:flex;flex-wrap:wrap;align-items:flex-end;gap:12px">
+    <div style="display:flex;flex-direction:column;gap:6px">
+      <h1 style="margin:0;font-size:24px;font-weight:700">试卷解析</h1>
+      <span style="font-size:14px;color:#6A6F76">上传整份试卷，自动识别学科与试卷类型，拆分为单题，并评估每题难度。</span>
+    </div>
+    <div style="margin-left:auto;display:flex;gap:6px;font-size:13px">
+      <sc-for list="{{ upSteps }}" as="s" hint-placeholder-count="3">
+        <span style="padding:5px 12px;border-radius:14px;background:{{ s.bg }};color:{{ s.fg }}">{{ s.label }}</span>
+      </sc-for>
+    </div>
+  </div>
+
+  <sc-if value="{{ upIdle }}" hint-placeholder-val="{{ true }}">
+    <div style="display:flex;flex-wrap:wrap;gap:18px;align-items:flex-start">
+      <div onClick="{{ startUpload }}" style="flex:999 1 520px;min-height:340px;background:#fff;border:2px dashed #E9B894;border-radius:14px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;cursor:pointer;padding:32px;text-align:center" style-hover="background:#FDF6F0;border-color:#B8561F">
+        <div style="width:56px;height:56px;border-radius:14px;background:#FBEEE4;color:#B8561F;display:flex;align-items:center;justify-content:center;font-size:28px">＋</div>
+        <span style="font-size:17px;font-weight:600">拖拽试卷到此处，或点击选择文件</span>
+        <span style="font-size:13px;color:#6A6F76;line-height:1.7">支持 Word（.docx）、PDF、图片（JPG / PNG，可多张拍照）<br>单个文件不超过 50 MB</span>
+        <button style="margin-top:6px;border:none;background:#B8561F;color:#fff;border-radius:8px;height:40px;padding:0 24px;font-size:14px;font-weight:600;cursor:pointer">选择文件</button>
+      </div>
+      <div style="flex:1 0 300px;display:flex;flex-direction:column;gap:14px">
+        <div style="background:#fff;border:1px solid #E4E1D8;border-radius:12px;padding:18px;display:flex;flex-direction:column;gap:12px">
+          <span style="font-size:15px;font-weight:600">解析选项</span>
+          <sc-for list="{{ upOpts }}" as="o" hint-placeholder-count="4">
+            <div onClick="{{ o.toggle }}" style="display:flex;justify-content:space-between;align-items:center;gap:12px;font-size:13px;cursor:pointer">
+              <span style="color:#3A424C">{{ o.label }}</span>
+              <span style="flex-shrink:0;width:34px;height:20px;border-radius:10px;background:{{ o.track }};position:relative;display:block">
+                <span style="position:absolute;top:2px;left:{{ o.knob }};width:16px;height:16px;border-radius:8px;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.2)"></span>
+              </span>
+            </div>
+          </sc-for>
+        </div>
+        <div style="background:#fff;border:1px solid #E4E1D8;border-radius:12px;padding:18px;display:flex;flex-direction:column;gap:12px">
+          <span style="font-size:15px;font-weight:600">最近上传</span>
+          <sc-for list="{{ recentUploads }}" as="r" hint-placeholder-count="3">
+            <div style="display:flex;flex-direction:column;gap:3px">
+              <span style="font-size:13.5px">{{ r.name }}</span>
+              <span style="font-size:12px;color:#8A8F95">{{ r.meta }}</span>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{ upParsing }}" hint-placeholder-val="{{ false }}">
+    <div style="background:#fff;border:1px solid #E4E1D8;border-radius:14px;padding:28px 32px;display:flex;flex-direction:column;gap:22px;max-width:760px;width:100%;margin:12px auto 0">
+      <div style="display:flex;align-items:center;gap:14px">
+        <div style="width:44px;height:52px;border-radius:6px;background:#FBEEE4;color:#B8561F;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex-shrink:0">PDF</div>
+        <div style="display:flex;flex-direction:column;gap:4px;min-width:0;flex:1">
+          <span style="font-size:15px;font-weight:600">{{ fileName }}</span>
+          <span style="font-size:12px;color:#8A8F95">4 页 · 2.8 MB</span>
+        </div>
+        <span style="font-size:22px;font-weight:700;color:#B8561F">{{ upPct }}</span>
+      </div>
+      <div style="height:6px;border-radius:3px;background:#EFECE4;overflow:hidden"><div style="height:100%;width:{{ upPct }};background:#B8561F"></div></div>
+      <div style="display:flex;flex-direction:column;gap:12px">
+        <sc-for list="{{ parseTasks }}" as="t" hint-placeholder-count="5">
+          <div style="display:flex;align-items:center;gap:12px;font-size:14px">
+            <span style="width:22px;height:22px;border-radius:11px;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:12px;background:{{ t.dotBg }};color:{{ t.dotFg }}">{{ t.mark }}</span>
+            <span style="color:{{ t.fg }};flex:1">{{ t.label }}</span>
+            <span style="font-size:12px;color:#8A8F95">{{ t.note }}</span>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{ upDone }}" hint-placeholder-val="{{ false }}">
+    <div style="display:flex;flex-wrap:wrap;gap:18px;align-items:flex-start">
+      <aside style="flex:1 0 280px;max-width:320px;position:sticky;top:80px;display:flex;flex-direction:column;gap:14px">
+        <div style="background:#fff;border:1px solid #E4E1D8;border-radius:12px;padding:18px;display:flex;flex-direction:column;gap:12px">
+          <div style="display:flex;align-items:baseline;justify-content:space-between">
+            <span style="font-size:15px;font-weight:600">自动分类</span>
+            <span style="font-size:12px;color:#8A8F95">点击可修改</span>
+          </div>
+          <sc-for list="{{ paperMeta }}" as="m" hint-placeholder-count="7">
+            <div style="display:flex;justify-content:space-between;align-items:center;font-size:13px;gap:10px">
+              <span style="color:#6A6F76">{{ m.k }}</span>
+              <span style="padding:3px 10px;border:1px solid #E4E1D8;border-radius:6px;color:#1B2430;cursor:pointer" style-hover="border-color:#B8561F">{{ m.v }}</span>
+            </div>
+          </sc-for>
+        </div>
+        <div style="background:#fff;border:1px solid #E4E1D8;border-radius:12px;padding:18px;display:flex;flex-direction:column;gap:14px">
+          <span style="font-size:15px;font-weight:600">难度评估</span>
+          <div style="display:flex;align-items:baseline;gap:8px">
+            <span style="font-size:32px;font-weight:700;color:#B8561F;line-height:1">{{ avgCoef }}</span>
+            <span style="font-size:13px;color:#6A6F76">整卷难度系数 · {{ avgLabel }}</span>
+          </div>
+          <div style="display:flex;height:10px;border-radius:5px;overflow:hidden;background:#EFECE4">
+            <div style="width:{{ pEasy }};background:#6E9E6B"></div>
+            <div style="width:{{ pMid }};background:#D9922E"></div>
+            <div style="width:{{ pHard }};background:#B23A2A"></div>
+          </div>
+          <div style="display:flex;justify-content:space-between;font-size:12px;color:#3A424C">
+            <span><b style="color:#6E9E6B">●</b> 容易 {{ nEasy }}</span><span><b style="color:#D9922E">●</b> 适中 {{ nMid }}</span><span><b style="color:#B23A2A">●</b> 较难 {{ nHard }}</span>
+          </div>
+          <span style="font-size:12px;color:#6A6F76;line-height:1.6">难度系数为预估得分率（0–1），越低越难。依据知识点层级、解题步数与同类题历史作答数据估算。</span>
+        </div>
+        <div style="background:#fff;border:1px solid #E4E1D8;border-radius:12px;padding:18px;display:flex;flex-direction:column;gap:10px">
+          <span style="font-size:15px;font-weight:600">知识点分值</span>
+          <sc-for list="{{ kpCover }}" as="k" hint-placeholder-count="5">
+            <div style="display:flex;flex-direction:column;gap:4px">
+              <div style="display:flex;justify-content:space-between;font-size:13px"><span>{{ k.name }}</span><span style="color:#6A6F76">{{ k.score }} 分</span></div>
+              <div style="height:4px;border-radius:2px;background:#EFECE4"><div style="height:100%;border-radius:2px;width:{{ k.w }};background:#E9A877"></div></div>
+            </div>
+          </sc-for>
+        </div>
+      </aside>
+
+      <section style="flex:999 1 520px;min-width:0;display:flex;flex-direction:column;gap:12px">
+        <div style="background:#fff;border:1px solid #E4E1D8;border-radius:12px;padding:14px 18px;display:flex;flex-wrap:wrap;align-items:center;gap:10px 16px">
+          <span style="font-size:14px">已拆分 <b style="color:#B8561F">{{ parsedCount }}</b> 道题</span>
+          <sc-if value="{{ hasReview }}">
+            <span style="font-size:13px;color:#8F4115;background:#FBEEE4;border-radius:6px;padding:3px 10px">{{ reviewCount }} 道题识别置信度较低，建议核对</span>
+          </sc-if>
+          <div style="margin-left:auto;display:flex;gap:4px;flex-wrap:wrap">
+            <sc-for list="{{ ptabs }}" as="t" hint-placeholder-count="6">
+              <button onClick="{{ t.pick }}" style="border:none;border-radius:6px;padding:4px 10px;font-size:13px;cursor:pointer;background:{{ t.bg }};color:{{ t.fg }}">{{ t.label }}</button>
+            </sc-for>
+          </div>
+        </div>
+
+        <sc-for list="{{ parsedList }}" as="q" hint-placeholder-count="5">
+          <article style="background:#fff;border:1px solid {{ q.border }};border-radius:12px;overflow:hidden">
+            <div style="padding:16px 20px;display:flex;flex-wrap:wrap;gap:14px">
+              <button onClick="{{ q.toggleSel }}" style="flex-shrink:0;width:20px;height:20px;margin-top:3px;border-radius:5px;border:1.5px solid {{ q.chkBd }};background:{{ q.chkBg }};color:#fff;font-size:12px;line-height:1;cursor:pointer;padding:0">{{ q.chk }}</button>
+              <div style="flex:1 1 300px;min-width:0;display:flex;flex-direction:column;gap:10px">
+                <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;font-size:12px">
+                  <span style="font-weight:700;color:#1B2430;font-size:13px">第 {{ q.no }} 题</span>
+                  <button onClick="{{ q.cycleType }}" style="border:1px dashed #E9B894;color:#8F4115;background:#FBEEE4;border-radius:4px;padding:1px 6px;font-size:12px;cursor:pointer">{{ q.type }} ▾</button>
+                  <span style="color:#6A6F76">{{ q.score }} 分 · 原卷第 {{ q.page }} 页</span>
+                  <sc-if value="{{ q.review }}">
+                    <span style="color:#A0301F;background:#FBEAE6;border-radius:4px;padding:1px 6px">待核对 · 置信度 {{ q.conf }}</span>
+                  </sc-if>
+                </div>
+                <div style="font-family:'Noto Serif SC',serif;font-size:15px;line-height:1.85;color:#1B2430;text-wrap:pretty">{{ q.stem }}</div>
+                <div style="display:flex;flex-wrap:wrap;gap:6px">
+                  <sc-for list="{{ q.kps }}" as="k"><span style="font-size:12px;color:#3A424C;background:#F6F5F1;border-radius:4px;padding:2px 8px">{{ k }}</span></sc-for>
+                </div>
+              </div>
+              <div style="flex:0 0 140px;display:flex;flex-direction:column;gap:6px;border-left:1px solid #EFECE4;padding-left:16px">
+                <span style="font-size:12px;color:#6A6F76">难度评估</span>
+                <div style="display:flex;align-items:baseline;gap:6px">
+                  <span style="font-size:20px;font-weight:700;color:{{ q.dColor }}">{{ q.coef }}</span>
+                  <span style="font-size:13px;color:{{ q.dColor }}">{{ q.diff }}</span>
+                </div>
+                <div style="display:flex;gap:2px">
+                  <sc-for list="{{ q.bars }}" as="b"><span style="flex:1;height:5px;border-radius:2px;background:{{ b }}"></span></sc-for>
+                </div>
+                <button onClick="{{ q.cycleDiff }}" style="align-self:flex-start;border:none;background:transparent;color:#B8561F;font-size:12px;cursor:pointer;padding:2px 0">调整难度</button>
+              </div>
+            </div>
+            <div style="border-top:1px solid #EFECE4;padding:8px 20px;display:flex;flex-wrap:wrap;gap:8px 16px;font-size:12px;background:#FCFBF8;color:#6A6F76">
+              <button style="border:none;background:transparent;color:#3A424C;font-size:12px;cursor:pointer;padding:0">编辑题目</button>
+              <button style="border:none;background:transparent;color:#3A424C;font-size:12px;cursor:pointer;padding:0">与上题合并</button>
+              <button style="border:none;background:transparent;color:#3A424C;font-size:12px;cursor:pointer;padding:0">拆分小问</button>
+              <button style="border:none;background:transparent;color:#3A424C;font-size:12px;cursor:pointer;padding:0">查看原图</button>
+              <span style="margin-left:auto">{{ q.ansNote }}</span>
+            </div>
+          </article>
+        </sc-for>
+
+        <div style="position:sticky;bottom:16px;background:#1B2430;color:#fff;border-radius:12px;padding:12px 16px 12px 20px;display:flex;flex-wrap:wrap;align-items:center;gap:10px 14px;box-shadow:0 10px 30px rgba(27,36,48,.25)">
+          <span style="font-size:14px">已选 <b style="color:#F4B98C">{{ selCount }}</b> / {{ parsedCount }} 题</span>
+          <button onClick="{{ toggleAllSel }}" style="border:none;background:transparent;color:#D8DCE0;font-size:13px;cursor:pointer">{{ selAllLabel }}</button>
+          <span style="font-size:13px;color:#F4B98C">{{ savedNote }}</span>
+          <div style="margin-left:auto;display:flex;gap:8px;flex-wrap:wrap">
+            <button onClick="{{ resetUpload }}" style="border:1px solid #4A5561;background:transparent;color:#fff;border-radius:8px;height:36px;padding:0 14px;font-size:13px;cursor:pointer">重新上传</button>
+            <button onClick="{{ addParsedToBasket }}" style="border:1px solid #fff;background:#fff;color:#1B2430;border-radius:8px;height:36px;padding:0 14px;font-size:13px;cursor:pointer">加入试题篮</button>
+            <button onClick="{{ saveParsed }}" style="border:none;background:#B8561F;color:#fff;border-radius:8px;height:36px;padding:0 16px;font-size:13px;font-weight:600;cursor:pointer">保存到校本题库</button>
+          </div>
+        </div>
+      </section>
+    </div>
+  </sc-if>
+</main>
+</sc-if>
+
+<sc-if value="{{ isPlan }}" hint-placeholder-val="{{ false }}">
+<main data-screen-label="04 设计方案" style="flex:1;width:100%;max-width:1080px;margin:0 auto;padding:40px 24px 64px;display:flex;flex-direction:column;gap:28px">
+  <div style="display:flex;flex-direction:column;gap:8px">
+    <span style="font-size:13px;color:#B8561F;letter-spacing:2px">前端设计方案 · v0.1</span>
+    <h1 style="margin:0;font-family:'Noto Serif SC',serif;font-size:30px">福格云上题库</h1>
+    <p style="margin:0;font-size:15px;color:#6A6F76;line-height:1.8;max-width:720px">面向中小学教师的题库与组卷平台。功能对标组卷网：章节/知识点选题、试卷库、试题篮、在线排版与导出；去除所有广告位与弹窗。</p>
+  </div>
+  <section style="display:flex;flex-direction:column;gap:12px">
+    <h2 style="margin:0;font-size:18px">技术选型</h2>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px">
+      <sc-for list="{{ stack }}" as="s" hint-placeholder-count="8">
+        <div style="background:#fff;border:1px solid #E4E1D8;border-radius:10px;padding:14px 16px;display:flex;flex-direction:column;gap:4px">
+          <div style="display:flex;justify-content:space-between;gap:8px"><span style="font-size:12px;color:#8A8F95">{{ s.layer }}</span></div>
+          <span style="font-size:15px;font-weight:600">{{ s.name }}</span>
+          <span style="font-size:13px;color:#6A6F76;line-height:1.6">{{ s.why }}</span>
+        </div>
+      </sc-for>
+    </div>
+  </section>
+  <section style="display:flex;flex-direction:column;gap:12px">
+    <h2 style="margin:0;font-size:18px">页面清单</h2>
+    <div style="background:#fff;border:1px solid #E4E1D8;border-radius:10px;overflow:hidden">
+      <sc-for list="{{ pages }}" as="p" hint-placeholder-count="8">
+        <div style="display:grid;grid-template-columns:160px minmax(0,1fr);gap:16px;padding:12px 16px;border-bottom:1px solid #EFECE4;font-size:14px">
+          <span style="font-weight:600">{{ p.name }}</span><span style="color:#6A6F76;line-height:1.6">{{ p.desc }}</span>
+        </div>
+      </sc-for>
+    </div>
+  </section>
+  <section style="display:flex;flex-direction:column;gap:12px">
+    <h2 style="margin:0;font-size:18px">视觉规范</h2>
+    <div style="display:flex;gap:12px;flex-wrap:wrap">
+      <sc-for list="{{ swatches }}" as="c" hint-placeholder-count="6">
+        <div style="width:150px;background:#fff;border:1px solid #E4E1D8;border-radius:10px;overflow:hidden">
+          <div style="height:56px;background:{{ c.hex }}"></div>
+          <div style="padding:8px 10px;display:flex;flex-direction:column;gap:2px"><span style="font-size:13px;font-weight:600">{{ c.name }}</span><span style="font-size:12px;color:#8A8F95">{{ c.hex }}</span></div>
+        </div>
+      </sc-for>
+    </div>
+    <p style="margin:0;font-size:14px;color:#6A6F76;line-height:1.8">界面文字用思源黑体（Noto Sans SC），题干与试卷用思源宋体（Noto Serif SC），贴近纸质试卷的阅读习惯。圆角 6/8/12，描边优先于阴影，信息密度适中。</p>
+  </section>
+</main>
+</sc-if>
+
+<footer style="border-top:1px solid #E4E1D8;background:#fff">
+  <div style="max-width:1320px;margin:0 auto;padding:18px 24px;display:flex;gap:20px;font-size:12px;color:#8A8F95">
+    <span>© 2026 福格云上题库</span><span>关于我们</span><span>用户协议</span><span>隐私政策</span><span style="margin-left:auto">无广告 · 教师专用</span>
+  </div>
+</footer>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;defaultScreen&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;home&quot;,&quot;pick&quot;,&quot;paper&quot;,&quot;plan&quot;,&quot;upload&quot;],&quot;default&quot;:&quot;upload&quot;,&quot;tsType&quot;:&quot;'home'|'pick'|'paper'|'plan'|'upload'&quot;},&quot;showAnswers&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;}}">
+const QS = [
+  {id:1,type:'单选题',diff:'容易',source:'2025·北京卷·高考真题',uses:3812,date:'2026-08-21',stem:'已知集合 A = { x | x² − 3x + 2 = 0 }，B = { x | 0 < x < 5，x ∈ N }，则满足 A ⊆ C ⊆ B 的集合 C 的个数为（　　）',options:['A．1','B．2','C．3','D．4'],answer:'D',analysis:'A = {1, 2}，B = {1, 2, 3, 4}，C 必含 1、2，3、4 可选可不选，共 2² = 4 个。',knowledge:'集合间的基本关系；子集个数'},
+  {id:2,type:'单选题',diff:'适中',source:'2026·山东济南·高一期中',uses:1265,date:'2026-09-02',stem:'函数 f(x) = ln(x + 1) − 2/x 的零点所在的大致区间是（　　）',options:['A．(0, 1)','B．(1, 2)','C．(2, e)','D．(3, 4)'],answer:'B',analysis:'f(1) = ln2 − 2 < 0，f(2) = ln3 − 1 > 0，由零点存在定理知零点在 (1, 2) 内。',knowledge:'函数零点存在定理'},
+  {id:3,type:'多选题',diff:'较难',source:'2026·新高考Ⅰ卷·高考真题',uses:5420,date:'2026-06-10',stem:'已知函数 f(x) = x³ − 3x + 1，则下列说法正确的是（　　）',options:['A．f(x) 有两个极值点','B．f(x) 有三个零点','C．点 (0, 1) 是曲线 y = f(x) 的对称中心','D．直线 y = −3x 是曲线 y = f(x) 的切线'],answer:'ABC',analysis:"f'(x) = 3x² − 3，极值点 x = ±1；f(−1) = 3 > 0，f(1) = −1 < 0，结合端点趋势知有三个零点；f(x) + f(−x) = 2，故关于 (0, 1) 对称。",knowledge:'导数与极值；函数零点；函数对称性'},
+  {id:4,type:'填空题',diff:'容易',source:'2026·江苏南京·高一月考',uses:986,date:'2026-09-12',stem:'已知向量 a = (1, 2)，b = (m, −1)，若 a ⊥ b，则 m = ________.',options:[],answer:'2',analysis:'a · b = m − 2 = 0，得 m = 2。',knowledge:'平面向量垂直的坐标表示'},
+  {id:5,type:'单选题',diff:'容易',source:'2026·浙江杭州·高一期末',uses:2230,date:'2026-07-01',stem:'sin 15° · cos 15° 的值为（　　）',options:['A．1/4','B．√3/4','C．1/2','D．√3/2'],answer:'A',analysis:'sin 15° cos 15° = ½ sin 30° = 1/4。',knowledge:'二倍角公式'},
+  {id:6,type:'解答题',diff:'适中',source:'2026·广东深圳·高二联考',uses:1744,date:'2026-09-18',stem:'已知数列 {aₙ} 满足 a₁ = 1，aₙ₊₁ = 2aₙ + 1.（1）证明：数列 {aₙ + 1} 是等比数列；（2）求数列 {aₙ} 的前 n 项和 Sₙ.',options:[],answer:'（1）略；（2）Sₙ = 2ⁿ⁺¹ − n − 2',analysis:'aₙ₊₁ + 1 = 2(aₙ + 1)，首项 2，公比 2，故 aₙ = 2ⁿ − 1，分组求和得 Sₙ = 2ⁿ⁺¹ − 2 − n。',knowledge:'等比数列的判定；分组求和'}
+];
+const STAGES = {小学:['语文','数学','英语','科学','道德与法治'],初中:['语文','数学','英语','物理','化学','生物','历史','地理','道德与法治'],高中:['语文','数学','英语','物理','化学','生物','历史','地理','政治','信息技术']};
+const CHAPTERS = [
+  {name:'第一章 集合与常用逻辑用语',sections:['1.1 集合的概念','1.2 集合间的基本关系','1.3 集合的基本运算','1.4 充分条件与必要条件','1.5 全称量词与存在量词']},
+  {name:'第二章 一元二次函数、方程和不等式',sections:['2.1 等式性质与不等式性质','2.2 基本不等式','2.3 二次函数与一元二次方程、不等式']},
+  {name:'第三章 函数的概念与性质',sections:['3.1 函数的概念及其表示','3.2 函数的基本性质','3.3 幂函数','3.4 函数的应用（一）']},
+  {name:'第四章 指数函数与对数函数',sections:['4.1 指数','4.2 指数函数','4.3 对数','4.4 对数函数','4.5 函数的应用（二）']},
+  {name:'第五章 三角函数',sections:['5.1 任意角和弧度制','5.2 三角函数的概念','5.3 诱导公式','5.4 三角函数的图象与性质','5.5 三角恒等变换']}
+];
+const FILTERS = [
+  {key:'type',label:'题型',options:['全部','单选题','多选题','填空题','解答题']},
+  {key:'diff',label:'难度',options:['全部','容易','适中','较难']},
+  {key:'cat',label:'题类',options:['全部','高考真题','模拟题','期中期末','月考','常考题','易错题']},
+  {key:'year',label:'年份',options:['全部','2026','2025','2024','更早']}
+];
+const PAPERS = {
+  '期中':[{tag:'期中',title:'北京市海淀区 2026—2027 学年高一上学期期中数学试题',region:'北京',date:'09-24'},{tag:'期中',title:'江苏省南京师大附中 2026—2027 学年高一上学期期中考试数学试卷',region:'江苏',date:'09-23'},{tag:'期中',title:'浙江省杭州市学军中学高二上学期期中数学试题（含答案）',region:'浙江',date:'09-22'},{tag:'期中',title:'广东省深圳中学 2026 届高三上学期期中数学试题',region:'广东',date:'09-21'},{tag:'期中',title:'湖北省武汉市部分重点中学高一上学期期中联考数学试卷',region:'湖北',date:'09-20'},{tag:'期中',title:'四川省成都七中高二上学期半期考试数学试题',region:'四川',date:'09-19'}],
+  '月考':[{tag:'月考',title:'山东省实验中学 2027 届高三第一次月考数学试题',region:'山东',date:'09-25'},{tag:'月考',title:'河南省郑州一中高一 9 月月考数学试卷',region:'河南',date:'09-24'},{tag:'月考',title:'湖南师大附中高二上学期第一次月考数学试题',region:'湖南',date:'09-22'},{tag:'月考',title:'福建省福州一中高三 9 月质量检测数学试题',region:'福建',date:'09-20'}],
+  '高考真题':[{tag:'真题',title:'2026 年普通高等学校招生全国统一考试（新高考Ⅰ卷）数学',region:'全国',date:'06-08'},{tag:'真题',title:'2026 年普通高等学校招生全国统一考试（新高考Ⅱ卷）数学',region:'全国',date:'06-08'},{tag:'真题',title:'2026 年高考北京卷数学真题',region:'北京',date:'06-08'},{tag:'真题',title:'2026 年高考天津卷数学真题',region:'天津',date:'06-08'}],
+  '专题':[{tag:'专题',title:'导数压轴题专项训练：极值点偏移（30 题）',region:'通用',date:'09-18'},{tag:'专题',title:'数列求和方法归纳：错位相减与裂项相消',region:'通用',date:'09-15'},{tag:'专题',title:'圆锥曲线定点定值问题专题练习',region:'通用',date:'09-12'}]
+};
+const SCORE = {单选题:5,多选题:6,填空题:5,解答题:12};
+const ORDER = ['单选题','多选题','填空题','解答题'];
+const CN = ['一','二','三','四'];
+
+const PARSED = [
+  {no:1,type:'单选题',score:5,page:1,coef:0.86,conf:'98%',stem:'已知集合 A = {−1, 0, 1, 2}，B = { x | x² ≤ 1 }，则 A ∩ B = （　　）',kps:['集合的基本运算','一元二次不等式'],ans:true},
+  {no:2,type:'单选题',score:5,page:1,coef:0.79,conf:'97%',stem:'命题“∀x > 0，x² + x > 0”的否定是（　　）',kps:['全称量词与存在量词'],ans:true},
+  {no:3,type:'单选题',score:5,page:1,coef:0.64,conf:'96%',stem:'“a > 1”是“1/a < 1”的（　　）',kps:['充分条件与必要条件','不等式性质'],ans:true},
+  {no:4,type:'单选题',score:5,page:1,coef:0.52,conf:'71%',stem:'若 x > 0，y > 0，且 x + 2y = 1，则 1/x + 1/y 的最小值为（　　）',kps:['基本不等式'],ans:false},
+  {no:5,type:'多选题',score:6,page:2,coef:0.41,conf:'95%',stem:'已知函数 f(x) = x² − 2ax + 3 在区间 (−∞, 2] 上单调递减，则实数 a 的取值可以是（　　）',kps:['二次函数的单调性'],ans:true},
+  {no:6,type:'填空题',score:5,page:2,coef:0.73,conf:'99%',stem:'函数 f(x) = √(x − 1) + 1/(x − 3) 的定义域为 ________.',kps:['函数的概念及其表示'],ans:true},
+  {no:7,type:'填空题',score:5,page:2,coef:0.35,conf:'68%',stem:'已知 f(x) 是定义在 R 上的奇函数，当 x ≥ 0 时 f(x) = x² − 2x，则不等式 f(x) > x 的解集为 ________.',kps:['函数的奇偶性','一元二次不等式'],ans:false},
+  {no:8,type:'解答题',score:12,page:3,coef:0.58,conf:'94%',stem:'已知集合 A = { x | x² − 4x + 3 < 0 }，B = { x | m − 1 < x < 2m + 1 }.（1）当 m = 2 时，求 A ∪ B；（2）若 A ∩ B = B，求实数 m 的取值范围.',kps:['集合的基本运算','集合间的基本关系'],ans:true},
+  {no:9,type:'解答题',score:12,page:4,coef:0.27,conf:'92%',stem:'已知函数 f(x) = x + a/x（a > 0）.（1）判断 f(x) 在 (0, √a) 上的单调性并用定义证明；（2）若对任意 x ∈ [1, 2]，f(x) ≥ 4 恒成立，求 a 的取值范围.',kps:['函数的单调性','基本不等式','恒成立问题'],ans:true}
+];
+const COEFS = [0.82, 0.58, 0.32];
+const dOf = c => c >= 0.7 ? '容易' : c >= 0.4 ? '适中' : '较难';
+const D_TEXT = {容易:'#3F7340',适中:'#A3620F',较难:'#A0301F'};
+const D_BAR = {容易:'#6E9E6B',适中:'#D9922E',较难:'#B23A2A'};
+
+class Component extends DCLogic {
+  state = {
+    screen: this.props.defaultScreen ?? 'upload', stage:'高中', subject:'数学', subjOpen:false,
+    basket:[1,3,6], ansOpen:{}, allAns:false, filters:{type:'全部',diff:'全部',cat:'全部',year:'全部'},
+    openCh:{0:true}, section:'1.2 集合间的基本关系', treeTab:'章节', paperTab:'期中',
+    popts:{showAns:false,binding:true,score:true,card:false},
+    upStage:'idle', upProg:0, upo:{ocr:true,ans:true,dedupe:true,kp:true}, sel:Object.fromEntries(PARSED.map(q=>[q.no,true])), ptab:'全部', ed:{}, saved:false
+  };
+  componentWillUnmount(){ clearInterval(this.t); }
+  startUpload = () => { clearInterval(this.t); this.setState({upStage:'parsing',upProg:0,saved:false}); this.t = setInterval(() => { const p = Math.min(100, this.state.upProg + 3); if (p >= 100) { clearInterval(this.t); this.setState({upProg:100, upStage:'done'}); } else this.setState({upProg:p}); }, 90); };
+  go = s => () => this.setState({screen:s, subjOpen:false});
+  uploadVals(st, P) {
+    const qs = PARSED.map(q => { const e = st.ed[q.no] || {}; const coef = e.coef ?? q.coef; return {...q, type: e.type ?? q.type, coef, diff: dOf(coef)}; });
+    const cnt = d => qs.filter(q=>q.diff===d).length;
+    const pct = d => (cnt(d)/qs.length*100)+'%';
+    const tot = qs.reduce((a,q)=>a+q.score,0);
+    const avg = qs.reduce((a,q)=>a+q.coef*q.score,0)/tot;
+    const low = q => parseInt(q.conf) < 80;
+    const kp = {}; qs.forEach(q => { kp[q.kps[0]] = (kp[q.kps[0]]||0) + q.score; });
+    const kpArr = Object.entries(kp).sort((a,b)=>b[1]-a[1]).slice(0,6); const kmax = kpArr[0][1];
+    const shown = qs.filter(q => st.ptab==='全部' ? true : st.ptab==='待核对' ? low(q) : q.type===st.ptab);
+    const selN = PARSED.filter(q=>st.sel[q.no]).length;
+    const review = qs.filter(low).length;
+    const stepIdx = {idle:0,parsing:1,done:2}[st.upStage];
+    const tasks = [['版面识别与文字提取（OCR）',20,'识别 4 页'],['试卷分类：学段 / 学科 / 类型',40,'高中 · 数学 · 期中'],['题目切分与题型判断',60,'9 道题'],['知识点标注',80,'11 个知识点'],['难度评估',100,'预估得分率']];
+    const ed = (no, patch) => this.setState({ed:{...st.ed,[no]:{...(st.ed[no]||{}),...patch}}});
+    return {
+      upIdle: st.upStage==='idle', upParsing: st.upStage==='parsing', upDone: st.upStage==='done',
+      startUpload: this.startUpload, resetUpload: () => this.setState({upStage:'idle',upProg:0,ed:{},saved:false}),
+      upSteps: ['1 上传试卷','2 智能解析','3 核对入库'].map((l,i) => ({label:l, bg: i===stepIdx?P:i<stepIdx?'#FBEEE4':'#EFECE4', fg: i===stepIdx?'#fff':i<stepIdx?'#8F4115':'#6A6F76'})),
+      upOpts: [['ocr','图片 / 扫描件文字识别'],['ans','识别并关联答案解析'],['dedupe','与题库查重，合并重复题'],['kp','自动标注知识点']].map(([k,l]) => { const on = st.upo[k]; return {label:l, track:on?P:'#D8D4C8', knob:on?'16px':'2px', toggle:()=>this.setState({upo:{...st.upo,[k]:!on}})}; }),
+      recentUploads: [{name:'高一数学 9 月月考（学生版）.pdf',meta:'18 题 · 已入库 · 9 月 20 日'},{name:'暑期衔接测试卷.docx',meta:'22 题 · 已入库 · 8 月 28 日'},{name:'集合单元小测（拍照 3 张）',meta:'10 题 · 待核对 2 题 · 8 月 25 日'}],
+      fileName: '北京市海淀区 2026—2027 学年高一上期中数学.pdf',
+      upPct: st.upProg + '%',
+      parseTasks: tasks.map(([l,th,note]) => { const done = st.upProg >= th, act = !done && st.upProg >= th-20; return {label:l, note: done?note:act?'进行中…':'', mark: done?'✓':act?'…':'', dotBg: done?P:act?'#FBEEE4':'#EFECE4', dotFg: done?'#fff':'#8F4115', fg: done||act?'#1B2430':'#8A8F95'}; }),
+      paperMeta: [['学段','高中'],['学科','数学'],['年级','高一'],['试卷类型','期中考试'],['地区','北京 · 海淀'],['学年','2026—2027 上'],['教材版本','人教A版（2019）']].map(([k,v])=>({k,v})),
+      avgCoef: avg.toFixed(2), avgLabel: dOf(avg), pEasy:pct('容易'), pMid:pct('适中'), pHard:pct('较难'), nEasy:cnt('容易'), nMid:cnt('适中'), nHard:cnt('较难'),
+      kpCover: kpArr.map(([name,score]) => ({name, score, w:(score/kmax*100)+'%'})),
+      parsedCount: qs.length, reviewCount: review, hasReview: review>0,
+      ptabs: ['全部','单选题','多选题','填空题','解答题','待核对'].map(k => ({label:k, bg:k===st.ptab?'#FBEEE4':'transparent', fg:k===st.ptab?'#8F4115':'#3A424C', pick:()=>this.setState({ptab:k})})),
+      parsedList: shown.map(q => { const on = !!st.sel[q.no], filled = Math.max(1, Math.round((1-q.coef)*5)); return {...q,
+        review: low(q), coef: q.coef.toFixed(2), dColor: D_TEXT[q.diff],
+        bars: [0,1,2,3,4].map(i => i < filled ? D_BAR[q.diff] : '#EFECE4'),
+        border: low(q) ? '#EFC2B8' : '#E4E1D8',
+        chk: on?'✓':'', chkBg: on?P:'#fff', chkBd: on?P:'#C9C5BA',
+        toggleSel: () => this.setState({sel:{...st.sel,[q.no]:!on}}),
+        cycleType: () => ed(q.no, {type: ORDER[(ORDER.indexOf(q.type)+1)%ORDER.length]}),
+        cycleDiff: () => { const i = COEFS.findIndex(c => dOf(c)===q.diff); ed(q.no, {coef: COEFS[(i+1)%3]}); },
+        ansNote: q.ans ? '已关联答案解析' : '未识别到答案'}; }),
+      selCount: selN, selAllLabel: selN===PARSED.length ? '取消全选' : '全选',
+      toggleAllSel: () => { const all = selN===PARSED.length; this.setState({sel:Object.fromEntries(PARSED.map(q=>[q.no,!all]))}); },
+      addParsedToBasket: () => this.setState({basket:[...new Set([...st.basket, ...PARSED.filter(q=>st.sel[q.no]).map(q=>'u'+q.no)])]}),
+      saveParsed: () => this.setState({saved:true}),
+      savedNote: st.saved ? '已保存 ' + selN + ' 题到校本题库' : ''
+    };
+  }
+  renderVals() {
+    const st = this.state, P = '#B8561F';
+    const active = on => ({bg: on ? P : 'transparent', fg: on ? '#fff' : '#3A424C'});
+    const soft = on => ({bg: on ? '#FBEEE4' : 'transparent', fg: on ? P : '#3A424C'});
+    const f = st.filters;
+    const list = QS.filter(q => (f.type==='全部'||q.type===f.type) && (f.diff==='全部'||q.diff===f.diff));
+    const inB = id => st.basket.includes(id);
+    const bq = QS.filter(q => inB(q.id));
+    const allAns = st.allAns || (this.props.showAnswers ?? false);
+    const byType = ORDER.map(t => ({type:t, n: bq.filter(q=>q.type===t).length})).filter(x=>x.n);
+    const dc = d => bq.length ? (bq.filter(q=>q.diff===d).length / bq.length * 100) + '%' : '0%';
+    const src = bq.length ? bq : QS;
+    let no = 0;
+    const paperSections = ORDER.map(t => ({t, items: src.filter(q=>q.type===t)})).filter(s=>s.items.length).map((s,i) => ({
+      title: CN[i] + '、' + s.t, count: s.items.length, score: s.items.length * SCORE[s.t],
+      heading: `${CN[i]}、${s.t}：本题共 ${s.items.length} 小题，每小题 ${SCORE[s.t]} 分，共 ${s.items.length*SCORE[s.t]} 分。`,
+      items: s.items.map(q => ({...q, no: ++no, hasOptions: q.options.length>0}))
+    }));
+    const optDefs = [['showAns','显示答案与解析'],['binding','装订线'],['score','显示分值'],['card','附答题卡']];
+    return {
+      stage: st.stage, subject: st.subject, subjOpen: st.subjOpen,
+      toggleSubj: () => this.setState({subjOpen: !st.subjOpen}),
+      stageRows: Object.keys(STAGES).map(name => ({name, subjects: STAGES[name].map(s => {
+        const on = name===st.stage && s===st.subject;
+        return {name:s, bg:on?P:'#F6F5F1', fg:on?'#fff':'#3A424C', pick:()=>this.setState({stage:name,subject:s,subjOpen:false})};
+      })})),
+      navItems: [['home','首页'],['pick','选题组卷'],['paper','试卷编辑'],['upload','试卷解析'],['plan','设计方案']].map(([k,l]) => {
+        const on = st.screen===k; return {label:l, go:this.go(k), fg:on?P:'#3A424C', fw:on?600:400, bd:on?P:'transparent'};
+      }),
+      goHome: this.go('home'), goPick: this.go('pick'), goPaper: this.go('paper'),
+      isHome: st.screen==='home', isPick: st.screen==='pick', isPaper: st.screen==='paper', isPlan: st.screen==='plan', isUpload: st.screen==='upload', goUpload: this.go('upload'),
+      basketCount: st.basket.length, basketEmpty: st.basket.length===0, basketTypes: byType,
+      clearBasket: () => this.setState({basket:[]}),
+      dEasy: dc('容易'), dMid: dc('适中'), dHard: dc('较难'),
+      entries: [
+        {mark:'章',title:'章节选题',desc:'按教材版本与章节同步选题',go:this.go('pick')},
+        {mark:'知',title:'知识点选题',desc:'按知识体系精准定位考点',go:this.go('pick')},
+        {mark:'智',title:'智能组卷',desc:'设定题量与难度，自动生成试卷',go:this.go('paper')},
+        {mark:'卷',title:'试卷库',desc:'期中、期末、月考与高考真题',go:this.go('home')}
+      ],
+      paperTabs: Object.keys(PAPERS).map(k => ({label:k, ...soft(k===st.paperTab), pick:()=>this.setState({paperTab:k})})),
+      papers: PAPERS[st.paperTab],
+      myPapers: [{title:'高一（3）班 集合单元测验',meta:'16 题 · 2 天前'},{title:'函数的概念与性质 周练',meta:'12 题 · 5 天前'},{title:'暑期衔接 综合卷',meta:'22 题 · 8 月 28 日'}],
+      treeTabs: ['章节','知识点'].map(k => { const on = st.treeTab===k; return {label:k, pick:()=>this.setState({treeTab:k}), fg:on?P:'#6A6F76', fw:on?600:400, bd:on?P:'transparent'}; }),
+      treeBook: st.treeTab==='章节' ? '人教A版（2019）必修第一册' : '高中数学知识体系',
+      chapters: CHAPTERS.map((c,i) => ({
+        name:c.name, open:!!st.openCh[i], caret: st.openCh[i]?'▼':'▶',
+        toggle:()=>this.setState({openCh:{...st.openCh,[i]:!st.openCh[i]}}),
+        sections: c.sections.map(s => ({name:s, ...soft(s===st.section), pick:()=>this.setState({section:s})}))
+      })),
+      currentSection: st.section, resultCount: list.length ? 1286 - (6-list.length)*173 : 0,
+      filterGroups: FILTERS.map(g => ({label:g.label, options:g.options.map(o => ({label:o, ...active(f[g.key]===o), pick:()=>this.setState({filters:{...f,[g.key]:o}})}))})),
+      allAnsLabel: allAns ? '收起全部解析' : '展开全部解析',
+      toggleAllAns: () => this.setState({allAns: !allAns, ansOpen:{}}),
+      questions: list.map(q => {
+        const b = inB(q.id), sa = st.ansOpen[q.id] ?? allAns;
+        return {...q, hasOptions:q.options.length>0, showAns:sa, ansLabel: sa?'收起解析':'查看解析',
+          toggleAns:()=>this.setState({ansOpen:{...st.ansOpen,[q.id]:!sa}}),
+          border: b ? '#E9B894' : '#E4E1D8',
+          btnLabel: b?'移出试题篮':'＋ 加入试题篮', btnBg: b?'#F6F5F1':P, btnFg: b?'#6A6F76':'#fff',
+          toggle:()=>this.setState({basket: b ? st.basket.filter(x=>x!==q.id) : [...st.basket,q.id]})};
+      }),
+      paperSections, totalScore: paperSections.reduce((a,s)=>a+s.score,0), paperShowAns: st.popts.showAns,
+      paperOpts: optDefs.map(([k,l]) => { const on = st.popts[k]; return {label:l, track:on?P:'#D8D4C8', knob:on?'16px':'2px', toggle:()=>this.setState({popts:{...st.popts,[k]:!on}})}; }),
+      ...this.uploadVals(st, P),
+      stack: [
+        {layer:'框架',name:'Vue 3 + TypeScript + Vite',why:'国内生态成熟、上手快；Vite 秒级热更新，TS 保证可维护性。'},
+        {layer:'SSR / SEO',name:'Nuxt 3',why:'试卷库、题目详情页需要被搜索引擎收录，服务端渲染首屏更快。'},
+        {layer:'组件库',name:'Naive UI（或 Element Plus）',why:'树形、表格、虚拟列表齐全，主题变量易于统一改色。'},
+        {layer:'样式',name:'UnoCSS',why:'原子化 CSS，按需生成，体积小，设计令牌集中配置。'},
+        {layer:'状态',name:'Pinia + VueUse',why:'试题篮、筛选条件、用户信息集中管理，并持久化到本地。'},
+        {layer:'公式渲染',name:'KaTeX（MathJax 兜底）',why:'KaTeX 渲染速度快，适合长题目列表；复杂公式回退 MathJax。'},
+        {layer:'题目编辑',name:'Tiptap',why:'校本题库录题：富文本 + 公式 + 图片，结构化存储。'},
+        {layer:'导出',name:'docx.js / Paged.js',why:'前端直接生成 Word 试卷；PDF 用分页打印，支持 A3 双栏。'},
+        {layer:'长列表',name:'vue-virtual-scroller',why:'题目列表数千条时仍保持流畅滚动。'},
+        {layer:'请求',name:'Axios + TanStack Query',why:'接口缓存、分页与重试，减少重复请求。'}
+      ],
+      pages: [
+        {name:'首页',desc:'学段学科切换、搜题、入口、最新试卷、我的组卷'},
+        {name:'章节 / 知识点选题',desc:'左侧教材或知识树，多维筛选，题目卡片，右侧试题篮'},
+        {name:'题目详情',desc:'答案解析、知识点、相似题推荐、收藏与纠错'},
+        {name:'试卷库',desc:'按类型 / 地区 / 年份浏览整卷，可一键加入试题篮'},
+        {name:'试卷编辑',desc:'拖拽排序、分值设置、排版选项，导出 Word / PDF / 答题卡'},
+        {name:'智能组卷',desc:'按知识点、题型数量与难度系数自动生成'},
+        {name:'校本题库',desc:'上传试卷自动拆题，教研组共享与审核'},
+        {name:'个人中心',desc:'组卷记录、收藏、下载记录、会员与账号设置'}
+      ],
+      swatches: [{name:'主色 · 福格橙',hex:'#B8561F'},{name:'标识橙',hex:'#C96A30'},{name:'墨色',hex:'#1B2430'},{name:'辅助文字',hex:'#6A6F76'},{name:'纸色背景',hex:'#F6F5F1'},{name:'浅橙底',hex:'#FBEEE4'}]
+    };
+  }
+}
+</script>
+</body>
+</html>
