@@ -10,6 +10,7 @@ from sqlalchemy import delete
 from ..config import get_settings
 from ..db import DraftQuestion, ParseBlock, ParseJob, SessionLocal
 from ..storage import get_store
+from ..usage import current_job
 from . import difficulty
 from .classify import classify
 from .files import normalize, pdf_page_count, render_pages
@@ -159,6 +160,7 @@ async def run_job(job_id: str) -> None:
             s.add(DraftQuestion(
                 id="q" + uuid.uuid4().hex[:20], job_id=job_id, no=i, type=q.type, score=q.score,
                 page=regions[0]["page"] if regions else 1, stem=q.stem, options=q.options, answer=q.answer,
+                answer_source="paper" if q.answer else None,
                 analysis=q.analysis, knowledge_points=[], coef=coef, confidence=q.confidence,
                 block_ids=q.unit_ids, regions=regions, images=images, duplicate_of=None, status="draft",
             ))
@@ -177,6 +179,8 @@ async def run_job(job_id: str) -> None:
 
 async def run_job_safely(job_id: str) -> None:
     ctx = JobContext(job_id)
+    # 本任务内的大模型 / MinerU 调用都记到该任务名下
+    current_job.set(job_id)
     try:
         await run_job(job_id)
     except UserFacingError as e:

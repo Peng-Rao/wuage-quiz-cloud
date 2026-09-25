@@ -22,6 +22,10 @@ def update_question(qid: str, patch: DraftQuestionPatch, s: Session = Depends(ge
         setattr(q, k, v)
     if _REVIEW_FIELDS & fields.keys():
         q.confidence = 1.0
+    if {"answer", "analysis"} & fields.keys():
+        # 老师改过的答案不再视为 AI 生成
+        q.answer_source = "manual" if q.answer else None
+        q.answer_note = None
     q.status = "draft"
     s.commit()
     return question_out(q)

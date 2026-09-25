@@ -6,7 +6,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from .api import files, jobs, questions
+from .api import files, jobs, questions, usage
 from .config import get_settings
 from .db import init_db
 from .worker import worker
@@ -54,3 +54,4 @@ def health() -> dict:
 app.include_router(files.router)
 app.include_router(jobs.router)
 app.include_router(questions.router)
+app.include_router(usage.router)

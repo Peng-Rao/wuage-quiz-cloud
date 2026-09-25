@@ -43,6 +43,90 @@ export interface StageState {
   note?: string
 }
 
+// ---------- AI 用量与成本 ----------
+
+/** AI 用量汇总；cost 为按当前单价估算的费用，未配置单价时为 null */
+export interface UsageSummary {
+  calls: number
+  llmCalls: number
+  errors: number
+  promptTokens: number
+  completionTokens: number
+  /** 思考 tokens，已包含在 completionTokens 中 */
+  reasoningTokens: number
+  /** 缓存命中的输入 tokens，已包含在 promptTokens 中 */
+  cachedTokens: number
+  totalTokens: number
+  /** MinerU 解析页数 */
+  pages: number
+  durationMs: number
+  /** 存在服务端未返回、按字符数估算的用量 */
+  estimated: boolean
+  cost: number | null
+  llmCost: number | null
+  mineruCost: number | null
+  /** false 表示部分调用缺少单价，cost 只包含已配置单价的部分 */
+  priced: boolean
+  unpricedModels: string[]
+  currency: string
+}
+
+export interface UsageCall {
+  id: number
+  provider: 'llm' | 'mineru'
+  /** classify 试卷分类 / segment 拆题 / parse 版面识别 */
+  purpose: string
+  model: string
+  promptTokens: number
+  completionTokens: number
+  reasoningTokens: number
+  cachedTokens: number
+  pages: number
+  durationMs: number
+  estimated: boolean
+  status: 'ok' | 'error'
+  cost: number | null
+  createdAt: string
+}
+
+export interface JobUsage {
+  summary: UsageSummary
+  calls: UsageCall[]
+}
+
+export interface UsageOverview {
+  days: number
+  /** 期间内完成的解析任务数 */
+  jobs: number
+  pages: number
+  questions: number
+  summary: UsageSummary
+  costPerJob: number | null
+  costPerPage: number | null
+  costPerQuestion: number | null
+  tokensPerJob: number | null
+  daily: { date: string; jobs: number; totalTokens: number; pages: number; cost: number | null }[]
+}
+
+// ---------- AI 生成答案 ----------
+
+export interface AnswerTask {
+  status: 'queued' | 'running' | 'done' | 'failed'
+  total: number
+  done: number
+  failed: number
+  error: string | null
+  /** 本次要生成答案的题 */
+  questionIds: string[]
+}
+
+export interface GenerateAnswersOptions {
+  /** 留空表示本卷所有缺少答案的题 */
+  questionIds?: string[]
+  /** 覆盖已有答案 */
+  overwrite?: boolean
+}
+
 export interface ParseJob {
   id: string
   /** 展示用文件名；多张图片时为「首个文件名 等 N 个文件」 */
@@ -65,6 +149,10 @@ export interface ParseJob {
   /** 已保存到校本题库的题数 */
   savedCount: number
   error?: string
+  /** 本任务的 AI 用量；尚未调用任何 AI 服务时为 null */
+  usage: UsageSummary | null
+  /** 最近一次 AI 生成答案任务；未发起过时为 null */
+  answerTask: AnswerTask | null
   createdAt: string
 }
 
@@ -124,6 +212,10 @@ export interface DraftQuestion {
   options: string[]
   answer: string | null
   analysis: string | null
+  /** 答案来源：paper 原卷识别 / ai 大模型生成 / manual 人工修改 */
+  answerSource: 'paper' | 'ai' | 'manual' | null
+  /** AI 生成答案的提示，如「题目含图，AI 未看到图片，答案可能不准确」 */
+  answerNote: string | null
   knowledgePoints: KnowledgePointRef[]
   /** 难度系数，即预估得分率 0–1，越低越难 */
   coef: number
@@ -183,4 +275,10 @@ export interface ParseApi {
   /** 保存选中题目到校本题库 */
   commit(jobId: string, questionIds: string[]): Promise<{ savedCount: number }>
   listRecent(): Promise<RecentUpload[]>
+  /** 任务的 AI 调用明细 */
+  getUsage(jobId: string): Promise<JobUsage>
+  /** 近 N 天用量与平均成本 */
+  getUsageOverview(days: number): Promise<UsageOverview>
+  /** 为缺少答案的题排队生成 AI 答案；进度通过 getJob 的 answerTask 获取 */
+  generateAnswers(jobId: string, options?: GenerateAnswersOptions): Promise<AnswerTask>
 }

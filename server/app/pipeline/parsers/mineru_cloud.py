@@ -18,6 +18,7 @@ import httpx
 
 from ...config import Settings
 from ..ir import Block, BlockType, ParsedDocument
+from ... import usage as usage_log
 from ..llm import describe
 from .base import ParserFailed, ParserUnavailable, ProgressFn, SourceFile
 
@@ -97,6 +98,17 @@ def read_result_zip(data: bytes) -> tuple[list[dict[str, Any]], dict[str, bytes]
     return content_list, images, pdf
 
 
+def _pdf_pages(src: SourceFile) -> int:
+    """MinerU 未返回页数时，PDF 直接读取页数；Word 无法得知，记 0。"""
+    if src.kind != "pdf":
+        return 0
+    try:
+        import pymupdf
+        return pymupdf.open(stream=src.data, filetype="pdf").page_count
+    except Exception:  # noqa: BLE001
+        return 0
+
+
 class MinerUCloudParser:
     name = "mineru_cloud"
 
@@ -148,17 +160,24 @@ class MinerUCloudParser:
         if put.status_code not in (200, 201):
             raise ParserFailed(f"上传到 MinerU 失败（HTTP {put.status_code}）")
 
-        deadline = time.monotonic() + self.s.mineru_timeout
+        started = time.monotonic()
+        deadline = started + self.s.mineru_timeout
+        last_total = 0
         while True:
             res = await self._api(client, "GET", f"/api/v4/extract-results/batch/{batch_id}")
             item = (res.get("extract_result") or [{}])[0]
             state = item.get("state")
             if state == "done":
                 zip_url = item["full_zip_url"]
+                # MinerU 按解析页数计费：解析完成即记录，即使之后下载结果失败
+                total = (item.get("extract_progress") or {}).get("total_pages") or last_total or _pdf_pages(src)
+                usage_log.record("mineru", "parse", f"mineru-{self.s.mineru_model_version}", pages=total,
+                                 duration_ms=int((time.monotonic() - started) * 1000))
                 break
             if state == "failed":
                 raise ParserFailed(f"MinerU 解析失败：{item.get('err_msg') or '未知原因'}")
             prog = item.get("extract_progress") or {}
+            last_total = prog.get("total_pages") or last_total
             if on_progress and prog.get("total_pages"):
                 await on_progress(min(0.99, prog.get("extracted_pages", 0) / prog["total_pages"]))
             if time.monotonic() > deadline:

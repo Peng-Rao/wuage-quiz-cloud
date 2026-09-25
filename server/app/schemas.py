@@ -48,6 +48,90 @@ class PaperMeta(Model):
     textbook: str = ""
 
 
+class UsageSummary(Model):
+    """AI 用量汇总。cost 为估算费用，未配置任何单价时为 null；priced=false 表示部分调用缺单价。"""
+
+    calls: int = 0
+    llm_calls: int = 0
+    errors: int = 0
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    reasoning_tokens: int = 0  # 已包含在 completion_tokens 中
+    cached_tokens: int = 0     # 已包含在 prompt_tokens 中
+    total_tokens: int = 0
+    pages: int = 0             # MinerU 解析页数
+    duration_ms: int = 0
+    estimated: bool = False    # 存在按字符数估算的用量
+    cost: float | None = None
+    llm_cost: float | None = None
+    mineru_cost: float | None = None
+    priced: bool = True
+    unpriced_models: list[str] = []
+    currency: str = "¥"
+
+
+class UsageCall(Model):
+    id: int
+    provider: Literal["llm", "mineru"]
+    purpose: str
+    model: str
+    prompt_tokens: int
+    completion_tokens: int
+    reasoning_tokens: int
+    cached_tokens: int
+    pages: int
+    duration_ms: int
+    estimated: bool
+    status: Literal["ok", "error"]
+    cost: float | None = None
+    created_at: UtcDatetime
+
+
+class JobUsage(Model):
+    summary: UsageSummary
+    calls: list[UsageCall]
+
+
+class DailyUsage(Model):
+    date: str
+    jobs: int
+    total_tokens: int
+    pages: int
+    cost: float | None
+
+
+class UsageOverview(Model):
+    days: int
+    jobs: int
+    pages: int
+    questions: int
+    summary: UsageSummary
+    cost_per_job: float | None
+    cost_per_page: float | None
+    cost_per_question: float | None
+    tokens_per_job: int | None
+    daily: list[DailyUsage]
+
+
+class AnswerTask(Model):
+    """AI 生成答案任务的进度。"""
+
+    status: Literal["queued", "running", "done", "failed"]
+    total: int
+    done: int = 0
+    failed: int = 0
+    error: str | None = None
+    # 本次要生成答案的题
+    question_ids: list[str] = []
+
+
+class GenerateAnswersRequest(Model):
+    # 留空表示本卷所有缺少答案的题
+    question_ids: list[str] | None = None
+    # true 时覆盖已有答案（原卷或人工填写的答案也会被替换）
+    overwrite: bool = False
+
+
 class ParseJobOut(Model):
     id: str
     file_name: str
@@ -65,6 +149,8 @@ class ParseJobOut(Model):
     review_count: int = 0
     saved_count: int = 0
     error: str | None = None
+    usage: UsageSummary | None = None
+    answer_task: AnswerTask | None = None
     created_at: UtcDatetime
 
 
@@ -89,6 +175,8 @@ class DraftQuestionOut(Model):
     options: list[str]
     answer: str | None
     analysis: str | None
+    answer_source: Literal["paper", "ai", "manual"] | None = None
+    answer_note: str | None = None
     knowledge_points: list[KnowledgePointRef]
     coef: float
     confidence: float

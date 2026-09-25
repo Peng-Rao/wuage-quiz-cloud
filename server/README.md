@@ -27,6 +27,11 @@ npm run dev:api
 | `MINERU_TOKEN` | MinerU 云端 Token（https://mineru.net/apiManage），未填时跳过云端 |
 | `MINERU_MODEL_VERSION` | `vlm`（默认，公式更准）或 `pipeline` |
 | `LLM_BASE_URL` / `LLM_API_KEY` / `LLM_MODEL` | OpenAI 兼容接口，三项齐全才启用；未配置时只用规则拆题 |
+| `LLM_EXTRA_BODY` | 附加到请求体的厂商参数（JSON），如 `{"enable_thinking": false}` |
+| `ANSWER_CONCURRENCY` | AI 生成答案时同时进行的请求数，默认 3 |
+| `LLM_PRICES` | 成本估算单价，按模型名，元 / 百万 tokens：`{"qwen-plus": {"input": 0.8, "output": 2, "cached_input": 0.16}}` |
+| `MINERU_PRICE_PER_PAGE` | MinerU 单价，元 / 页 |
+| `CURRENCY` | 金额前缀，默认 `¥` |
 | `DATABASE_URL` | 默认 `data/app.db`（SQLite） |
 
 ## 流水线
@@ -50,6 +55,20 @@ npm run dev:api
 | `app/pipeline/llm.py` | OpenAI 兼容 `/chat/completions` 客户端（JSON 输出） |
 | `app/worker.py` | 进程内队列，重启后恢复未完成任务 |
 | `app/storage.py` | 对象存储抽象，当前为本地磁盘 |
+
+### AI 生成答案
+
+核对页的「AI 生成答案」按钮或单题的「AI 解答」触发（`app/pipeline/answer.py`），后台逐题调用大模型，
+结果标记为 AI 生成并附提示（如含图题答案可能不准确），老师修改后变为人工修改。
+
+### 数据库迁移
+
+启动时 `init_db()` 会给已有表补上新增的可空列（轻量迁移，只加列）。改列、删列或上线 PostgreSQL 前需换成 Alembic。
+
+### AI 用量与成本
+
+每次大模型 / MinerU 调用写入 `ai_usage` 表（`app/usage.py`），失败的调用也会记录。费用在查询时按当前单价计算，
+所以单价可以事后补填或调整，历史数据随之重算。单价请以厂商官网为准；未配置时只统计 tokens 与页数。
 
 ### 置信度
 

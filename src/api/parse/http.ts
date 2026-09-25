@@ -1,4 +1,4 @@
-import type { DraftQuestion, ParseApi, ParseJob, PaperMeta, RecentUpload, SourceImage } from './types'
+import type { AnswerTask, DraftQuestion, JobUsage, ParseApi, ParseJob, PaperMeta, RecentUpload, SourceImage, UsageOverview } from './types'
 
 /** 按 docs/ai-parse-api.md 对接后端；P0 阶段未启用 */
 
@@ -67,4 +67,8 @@ export const httpParseApi: ParseApi = {
   getSource: id => request<SourceImage[]>('GET', `/api/draft-questions/${id}/source`),
   commit: (jobId, questionIds) => request('POST', `/api/parse-jobs/${jobId}/commit`, { questionIds }),
   listRecent: () => request<RecentUpload[]>('GET', '/api/parse-jobs?recent=1'),
+  getUsage: jobId => request<JobUsage>('GET', `/api/parse-jobs/${jobId}/usage`),
+  getUsageOverview: days => request<UsageOverview>('GET', `/api/usage/summary?days=${days}`),
+  generateAnswers: (jobId, options = {}) =>
+    request<AnswerTask>('POST', `/api/parse-jobs/${jobId}/generate-answers`, options),
 }
