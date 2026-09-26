@@ -6,11 +6,13 @@ import {
   type DraftQuestion,
   type DraftQuestionPatch,
   type GenerateAnswersOptions,
+  type JobListItem,
   type JobUsage,
   type PaperMeta,
   type ParseJob,
   type ParseOptions,
   type RecentUpload,
+  type SimilarQuestion,
   type SourceImage,
   type UsageOverview,
 } from '@/api/parse'
@@ -34,14 +36,28 @@ export const useParseJobStore = defineStore('parseJob', () => {
   const usageOverview = ref<UsageOverview | null>(null)
   const OVERVIEW_DAYS = 30
 
+  // 任务列表（批量后台解析）
+  const jobList = ref<JobListItem[]>([])
+  const jobsTotal = ref(0)
+  const jobsActive = ref(0)
+  const batchUploading = ref(false)
+  const batchPct = ref(0)
+  /** 批量上传后的提示，如「已加入后台队列：3 份试卷」 */
+  const notice = ref('')
+
   let unsubscribe: (() => void) | null = null
   let answerTimer: ReturnType<typeof setTimeout> | null = null
+  let jobsTimer: ReturnType<typeof setTimeout> | null = null
+  let watchingJobs = false
 
   const isLow = (q: DraftQuestion) => q.confidence < REVIEW_CONFIDENCE
   const reviewCount = computed(() => questions.value.filter(isLow).length)
   const selectedCount = computed(() => questions.value.filter((q) => selected.value.has(q.id)).length)
   const allSelected = computed(() => !!questions.value.length && selectedCount.value === questions.value.length)
   const missingAnswerCount = computed(() => questions.value.filter((q) => !q.answer).length)
+  const missingKnowledgeCount = computed(() => questions.value.filter((q) => !q.knowledgePoints.length).length)
+  const knowledgeRunning = computed(() => job.value?.stages.find((s) => s.stage === 'knowledge')?.status === 'running')
+  let knowledgeTimer: ReturnType<typeof setTimeout> | null = null
   const answerTask = computed(() => job.value?.answerTask ?? null)
   const answering = computed(() => !!answerTask.value && ['queued', 'running'].includes(answerTask.value.status))
   /** 本次任务中尚未拿到答案的题 */
@@ -68,7 +84,106 @@ export const useParseJobStore = defineStore('parseJob', () => {
     usage.value = await parseApi.getUsage(job.value.id).catch(() => null)
   }
 
+  // ---------- 任务列表 ----------
+
+  const JOBS_PAGE = 20
+
+  async function refreshJobs() {
+    try {
+      const page = await parseApi.listJobs({ limit: JOBS_PAGE })
+      jobList.value = page.items
+      jobsTotal.value = page.total
+      jobsActive.value = page.active
+    } catch {
+      // 列表刷新失败不打断当前操作，下次轮询重试
+    }
+    scheduleJobs()
+  }
+
+  /** 有排队或解析中的任务时，每 2 秒刷新列表 */
+  function scheduleJobs() {
+    if (jobsTimer) clearTimeout(jobsTimer)
+    jobsTimer = null
+    if (watchingJobs && jobsActive.value > 0) jobsTimer = setTimeout(refreshJobs, 2000)
+  }
+
+  /** 页面挂载时开启列表轮询，离开时关闭 */
+  function watchJobs(on: boolean) {
+    watchingJobs = on
+    if (on) refreshJobs()
+    else scheduleJobs()
+  }
+
+  /** 多份 PDF / Word：批量后台解析；其余（单份、或同一份试卷的多张图片）：单份解析 */
+  const isBatch = (files: File[]) => files.length > 1 && files.every((f) => !/\.(png|jpe?g)$/i.test(f.name))
+
+  async function startBatch(files: File[]) {
+    error.value = ''
+    notice.value = ''
+    batchUploading.value = true
+    batchPct.value = 0
+    try {
+      const batch = await parseApi.createBatch(files.map((f) => [f]), { ...options }, (p) => (batchPct.value = p))
+      notice.value = `已加入后台队列：${batch.total} 份试卷，可以继续上传或点击列表查看`
+    } catch (e) {
+      error.value = (e as Error).message
+    } finally {
+      batchUploading.value = false
+      refreshJobs()
+    }
+  }
+
+  /** 打开任意任务：已完成进入核对，未完成查看进度 */
+  async function openJob(jobId: string) {
+    reset()
+    let next: ParseJob
+    try {
+      next = await parseApi.getJob(jobId)
+    } catch (e) {
+      error.value = (e as Error).message
+      return
+    }
+    job.value = next
+    if (next.status === 'done') {
+      applyQuestions(await parseApi.listQuestions(jobId))
+      selected.value = new Set(questions.value.filter((q) => q.status !== 'saved').map((q) => q.id))
+      phase.value = 'done'
+      loadUsage()
+      if (next.answerTask && ['queued', 'running'].includes(next.answerTask.status)) {
+        pollAnswers(next.answerTask.done + next.answerTask.failed)
+      }
+      if (knowledgeRunning.value) pollKnowledge()
+    } else if (next.status === 'failed' || next.status === 'cancelled') {
+      phase.value = 'failed'
+      error.value = next.error ?? ''
+    } else {
+      phase.value = 'parsing'
+      unsubscribe = parseApi.subscribe(jobId, onJobEvent)
+    }
+  }
+
+  /** 回到上传页：只停止本页订阅，任务在后台继续 */
+  function backToList() {
+    reset()
+    refreshJobs()
+  }
+
+  async function retryJob(jobId: string) {
+    await withBusy('job:' + jobId, () => parseApi.retryJob(jobId))
+    if (job.value?.id === jobId) await openJob(jobId)
+    refreshJobs()
+  }
+
+  async function cancelJob(jobId: string) {
+    await withBusy('job:' + jobId, () => parseApi.cancelJob(jobId))
+    refreshJobs()
+  }
+
+  const getSimilar = (id: string): Promise<SimilarQuestion[] | undefined> =>
+    withBusy('similar:' + id, () => parseApi.getSimilar(id, { limit: 8, scope: 'all' }))
+
   async function start(files: File[]) {
+    if (isBatch(files)) return startBatch(files)
     reset()
     phase.value = 'uploading'
     try {
@@ -84,7 +199,7 @@ export const useParseJobStore = defineStore('parseJob', () => {
 
   async function onJobEvent(next: ParseJob) {
     job.value = next
-    if (next.status === 'failed') {
+    if (next.status === 'failed' || next.status === 'cancelled') {
       stop()
       loadUsage()
       phase.value = 'failed'
@@ -96,6 +211,7 @@ export const useParseJobStore = defineStore('parseJob', () => {
       phase.value = 'done'
       loadUsage()
       loadRecent()
+      refreshJobs()
     }
   }
 
@@ -104,6 +220,33 @@ export const useParseJobStore = defineStore('parseJob', () => {
     unsubscribe = null
     if (answerTimer) clearTimeout(answerTimer)
     answerTimer = null
+    if (knowledgeTimer) clearTimeout(knowledgeTimer)
+    knowledgeTimer = null
+  }
+
+  /** AI 补标知识点：后台执行，轮询 knowledge 阶段直到结束后刷新题目 */
+  async function tagKnowledge() {
+    if (!job.value) return
+    await withBusy('knowledge', async () => {
+      job.value = await parseApi.tagKnowledge(job.value!.id)
+      pollKnowledge()
+    })
+  }
+
+  function pollKnowledge() {
+    if (knowledgeTimer) clearTimeout(knowledgeTimer)
+    knowledgeTimer = setTimeout(async () => {
+      if (!job.value) return
+      const jobId = job.value.id
+      const next = await parseApi.getJob(jobId).catch(() => null)
+      if (!next || job.value?.id !== jobId) return pollKnowledge()
+      job.value = next
+      if (knowledgeRunning.value) return pollKnowledge()
+      applyQuestions(await parseApi.listQuestions(jobId))
+      const st = next.stages.find((s) => s.stage === 'knowledge')
+      if (st?.status === 'failed') error.value = st.note ?? '知识点标注失败'
+      loadUsage()
+    }, 1500)
   }
 
   /** 发起 AI 生成答案；默认补全所有缺答案的题 */
@@ -188,6 +331,8 @@ export const useParseJobStore = defineStore('parseJob', () => {
   async function updateMeta(meta: PaperMeta) {
     if (!job.value) return
     job.value = { ...job.value, meta: await parseApi.updateMeta(job.value.id, meta) }
+    // 出处由分类信息拼出，修改后刷新
+    applyQuestions(await parseApi.listQuestions(job.value.id))
   }
 
   function toggleSelect(id: string) {
@@ -227,7 +372,10 @@ export const useParseJobStore = defineStore('parseJob', () => {
   return {
     phase, options, uploadPct, overallPct, job, questions, selected, recent, error, busy, savedCount,
     usage, usageOverview, OVERVIEW_DAYS, loadUsage,
+    jobList, jobsTotal, jobsActive, batchUploading, batchPct, notice,
+    refreshJobs, watchJobs, openJob, backToList, retryJob, cancelJob, getSimilar,
     missingAnswerCount, answerTask, answering, isAnswering, generateAnswers,
+    missingKnowledgeCount, knowledgeRunning, tagKnowledge,
     reviewCount, selectedCount, allSelected, isLow,
     loadRecent, start, stop, updateQuestion, mergeWithPrevious, splitSubQuestions, getSource, updateMeta,
     toggleSelect, toggleAll, commit, reset,

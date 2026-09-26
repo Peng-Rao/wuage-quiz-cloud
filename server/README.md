@@ -28,6 +28,9 @@ npm run dev:api
 | `MINERU_MODEL_VERSION` | `vlm`（默认，公式更准）或 `pipeline` |
 | `LLM_BASE_URL` / `LLM_API_KEY` / `LLM_MODEL` | OpenAI 兼容接口，三项齐全才启用；未配置时只用规则拆题 |
 | `LLM_EXTRA_BODY` | 附加到请求体的厂商参数（JSON），如 `{"enable_thinking": false}` |
+| `WORKER_CONCURRENCY` | 同时解析的试卷数，批量上传时其余排队，默认 2 |
+| `EMBEDDING_MODEL` | 相似题语义检索的向量模型（如 `text-embedding-v4`），留空则只用字面相似度 |
+| `EMBEDDING_BASE_URL` / `EMBEDDING_API_KEY` | 向量接口地址与 Key，留空沿用 `LLM_BASE_URL` / `LLM_API_KEY` |
 | `ANSWER_CONCURRENCY` | AI 生成答案时同时进行的请求数，默认 3 |
 | `LLM_PRICES` | 成本估算单价，按模型名，元 / 百万 tokens：`{"qwen-plus": {"input": 0.8, "output": 2, "cached_input": 0.16}}` |
 | `MINERU_PRICE_PER_PAGE` | MinerU 单价，元 / 页 |
@@ -41,8 +44,9 @@ npm run dev:api
   ocr        文件归一化（多张图片合成 PDF）→ 解析引擎链 → IR（parse_block）+ 页面图
   classify   标题规则 + 大模型 → 学段 / 学科 / 年级 / 类型 / 地区 / 学年 / 教材
   segment    规则切分 + 大模型分组（只返回单元 id）→ 草稿题（draft_question）
-  knowledge  P2（当前为「已跳过」）
-  difficulty 基线估计（同题型内按题位递减），P2 替换
+  knowledge  大模型标注知识点（每题 1–3 个，未配置大模型时跳过；核对页可补标）
+  difficulty 基线估计：难度系数 0–1，越高越难（同题型内按题位递增），P2 替换
+  dedupe     与校本题库查重（字面相似度，可叠加向量语义相似度），标记疑似重复
 ```
 
 | 模块 | 说明 |
@@ -55,6 +59,11 @@ npm run dev:api
 | `app/pipeline/llm.py` | OpenAI 兼容 `/chat/completions` 客户端（JSON 输出） |
 | `app/worker.py` | 进程内队列，重启后恢复未完成任务 |
 | `app/storage.py` | 对象存储抽象，当前为本地磁盘 |
+
+### 相似题与批量解析
+
+- `app/similar.py`：字面 + 可选语义相似度；解析时查重，核对页与 `/api/similar/search` 查询相似题。
+- `app/api/batches.py`：批量上传，每份试卷一个任务，由 worker 按 `WORKER_CONCURRENCY` 并发处理；支持取消与重试。
 
 ### AI 生成答案
 
@@ -85,7 +94,8 @@ uv run pytest
 
 ## 当前限制（后续阶段）
 
-- 知识点标注、难度模型、题库查重：P2 / P4。
+- 难度模型：P2；知识点尚无正式知识树（名称由大模型生成）；相似题阈值需用真实题库标注数据校准。
+- 难度系数含义已改为「越高越难」，启动时会把旧数据一次性换算为 1 − 旧值（`app_meta.coef_semantics`）。
 - 本地 MinerU（`mineru_local`）：P3；Word 在未配置 MinerU 时无法解析（需要 LibreOffice 转换，P3）。
 - 队列为进程内实现，多实例部署需换成 Redis + 独立 Worker；存储需换成 OSS / S3 预签名直传。
 - 未接入账号体系，所有数据归属 `demo` 学校。

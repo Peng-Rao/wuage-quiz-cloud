@@ -14,10 +14,10 @@ export type QuestionType = (typeof QUESTION_TYPES)[number]
 export type ParserName = 'mineru_cloud' | 'mineru_local' | 'lite'
 
 /** 流水线阶段，顺序即执行顺序 */
-export const PARSE_STAGES = ['ocr', 'classify', 'segment', 'knowledge', 'difficulty'] as const
+export const PARSE_STAGES = ['ocr', 'classify', 'segment', 'knowledge', 'difficulty', 'dedupe'] as const
 export type ParseStage = (typeof PARSE_STAGES)[number]
 
-export type JobStatus = 'uploading' | 'queued' | 'running' | 'done' | 'failed'
+export type JobStatus = 'uploading' | 'queued' | 'running' | 'done' | 'failed' | 'cancelled'
 export type StageStatus = 'pending' | 'running' | 'done' | 'skipped' | 'failed'
 
 /** 置信度低于该值的题进入「待核对」 */
@@ -129,6 +129,8 @@ export interface GenerateAnswersOptions {
 
 export interface ParseJob {
   id: string
+  /** 批量上传时所属批次 */
+  batchId: string | null
   /** 展示用文件名；多张图片时为「首个文件名 等 N 个文件」 */
   fileName: string
   fileCount: number
@@ -159,9 +161,83 @@ export interface ParseJob {
 /** SSE `GET /api/parse-jobs/{id}/events` 推送的消息体，即任务快照 */
 export type ParseJobEvent = ParseJob
 
+// ---------- 任务列表与批量解析 ----------
+
+export interface JobListItem {
+  id: string
+  batchId: string | null
+  fileName: string
+  fileType: 'pdf' | 'docx' | 'image'
+  status: JobStatus
+  progress: number
+  /** 进行中的阶段 */
+  currentStage: ParseStage | null
+  questionCount: number
+  reviewCount: number
+  savedCount: number
+  error: string | null
+  createdAt: string
+}
+
+export interface JobListPage {
+  items: JobListItem[]
+  total: number
+  /** 排队中 + 解析中的任务数 */
+  active: number
+}
+
+export interface JobListQuery {
+  /** 如 ['queued', 'running'] */
+  status?: JobStatus[]
+  batchId?: string
+  limit?: number
+  offset?: number
+}
+
+export interface ParseBatch {
+  id: string
+  total: number
+  /** 各状态的任务数 */
+  counts: Partial<Record<JobStatus, number>>
+  jobs: JobListItem[]
+  createdAt: string
+}
+
+// ---------- 相似题 ----------
+
+export interface SimilarQuestion {
+  id: string
+  /** bank 校本题库 / draft 其他试卷中尚未入库的题 */
+  source: 'bank' | 'draft'
+  type: string
+  stem: string
+  options: string[]
+  answer: string | null
+  /** 综合相似度 0–1 */
+  score: number
+  lexical: number
+  /** 语义余弦；未启用向量模型时为 null */
+  semantic: number | null
+  /** 达到疑似重复阈值 */
+  duplicate: boolean
+  jobId: string | null
+  fileName: string | null
+  /** 出处 */
+  origin: QuestionSource | null
+  knowledgePoints: KnowledgePointRef[]
+}
+
+export interface SimilarQuery {
+  limit?: number
+  /** bank 仅校本题库；all 含其他试卷中尚未入库的题 */
+  scope?: 'bank' | 'all'
+  type?: string
+}
+
 // ---------- 试卷分类 ----------
 
 export interface PaperMeta {
+  title: string        // 试卷名称，取自卷首标题
   stage: string        // 学段：小学 / 初中 / 高中
   subject: string      // 学科
   grade: string        // 年级
@@ -183,6 +259,21 @@ export interface Block {
   content: string
   imageUrl?: string
   score?: number
+}
+
+/** 题目出处；随试卷分类信息实时拼出 */
+export interface QuestionSource {
+  title: string
+  fileName: string
+  schoolYear: string
+  region: string
+  grade: string
+  paperType: string
+  subject: string
+  no: number | null
+  page: number | null
+  /** 如「2026—2027 上 · 北京 · 海淀 · 高一期中考试《…》第 3 题」 */
+  label: string
 }
 
 export interface SourceRegion {
@@ -217,7 +308,7 @@ export interface DraftQuestion {
   /** AI 生成答案的提示，如「题目含图，AI 未看到图片，答案可能不准确」 */
   answerNote: string | null
   knowledgePoints: KnowledgePointRef[]
-  /** 难度系数，即预估得分率 0–1，越低越难 */
+  /** 难度系数 0–1，越高越难，1 为最难（约等于 1 − 预估得分率） */
   coef: number
   /** 识别置信度 0–1 */
   confidence: number
@@ -226,6 +317,8 @@ export interface DraftQuestion {
   regions: SourceRegion[]
   /** 题目内配图（几何图、函数图像等）的访问地址 */
   images: string[]
+  /** 出处 */
+  source: QuestionSource | null
   /** 查重命中的已有题目 id */
   duplicateOf: string | null
   status: 'draft' | 'saved'
@@ -281,4 +374,19 @@ export interface ParseApi {
   getUsageOverview(days: number): Promise<UsageOverview>
   /** 为缺少答案的题排队生成 AI 答案；进度通过 getJob 的 answerTask 获取 */
   generateAnswers(jobId: string, options?: GenerateAnswersOptions): Promise<AnswerTask>
+  /** 为尚未标注知识点的题补标（后台执行，进度见 stages 中 knowledge 阶段） */
+  tagKnowledge(jobId: string): Promise<ParseJob>
+  /** 批量上传：每一项是一份试卷的文件（1 个 PDF / Word，或多张图片），各自后台排队解析 */
+  createBatch(papers: File[][], options: ParseOptions, onUploadProgress?: (pct: number) => void): Promise<ParseBatch>
+  getBatch(batchId: string): Promise<ParseBatch>
+  /** 任务列表，最新的在前 */
+  listJobs(query?: JobListQuery): Promise<JobListPage>
+  /** 取消排队中的任务 */
+  cancelJob(jobId: string): Promise<ParseJob>
+  /** 重新解析失败或已取消的任务 */
+  retryJob(jobId: string): Promise<ParseJob>
+  /** 与草稿题相似的题 */
+  getSimilar(questionId: string, query?: SimilarQuery): Promise<SimilarQuestion[]>
+  /** 按文本搜索相似题 */
+  searchSimilar(text: string, query?: SimilarQuery): Promise<SimilarQuestion[]>
 }

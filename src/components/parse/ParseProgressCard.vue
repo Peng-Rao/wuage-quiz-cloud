@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import type { ParseJob, ParseStage } from '@/api/parse'
+import type { ParseJob } from '@/api/parse'
 import type { ParsePhase } from '@/stores/parseJob'
+import { STAGE_LABELS } from '@/utils/stages'
 
 const props = defineProps<{
   phase: ParsePhase
@@ -13,15 +14,8 @@ const props = defineProps<{
   fileSize: string
   error?: string
 }>()
-defineEmits<{ retry: [] }>()
+defineEmits<{ retry: []; back: []; background: [] }>()
 
-const STAGE_LABELS: Record<ParseStage, string> = {
-  ocr: '版面识别与文字提取（OCR）',
-  classify: '试卷分类：学段 / 学科 / 类型',
-  segment: '题目切分与题型判断',
-  knowledge: '知识点标注',
-  difficulty: '难度评估',
-}
 
 const kind = computed(() => {
   const t = props.job?.fileType
@@ -65,8 +59,15 @@ const meta = computed(() => [props.job?.pageCount ? `${props.job.pageCount} 页`
       </div>
     </div>
     <div v-if="phase === 'failed'" class="fail">
-      <span>{{ error || '解析失败' }}</span>
-      <button class="btn btn-outline" @click="$emit('retry')">重新上传</button>
+      <span>{{ job?.status === 'cancelled' ? '任务已取消' : error || '解析失败' }}</span>
+      <div class="fail-actions">
+        <button class="btn" @click="$emit('back')">返回任务列表</button>
+        <button v-if="job" class="btn btn-outline" @click="$emit('retry')">重新解析</button>
+      </div>
+    </div>
+    <div v-else-if="phase === 'parsing'" class="bg-row">
+      <span class="muted small">{{ job?.status === 'queued' ? '排队中，前面的试卷解析完后自动开始' : '解析在后台进行，关闭页面也不会中断' }}</span>
+      <button class="btn" @click="$emit('background')">转入后台，继续上传</button>
     </div>
   </div>
 </template>
@@ -98,5 +99,8 @@ const meta = computed(() => [props.job?.pageCount ? `${props.job.pageCount} 页`
 .task.skipped .task-label { text-decoration: line-through; }
 .task-label { flex: 1; }
 .task-note { font-size: 12px; color: var(--c-text-4); }
-.fail { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 14px; color: #A0301F; }
+.fail { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; font-size: 14px; color: #A0301F; }
+.fail-actions { display: flex; gap: 8px; }
+.bg-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; border-top: 1px solid var(--c-divider); padding-top: 16px; }
+.small { font-size: 12px; }
 </style>

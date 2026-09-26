@@ -1,22 +1,20 @@
 import asyncio
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from ..db import BankQuestion, ParseJob, SessionLocal, get_session
-from ..pipeline.files import validate_kinds
 from ..schemas import (
     PARSE_STAGES, AnswerTask, CommitRequest, CommitResult, CreateJobRequest, DraftQuestionOut, GenerateAnswersRequest,
-    JobUsage, PaperMeta, ParseJobOut, RecentUpload,
+    JobListPage, JobUsage, PaperMeta, ParseJobOut, RecentUpload,
 )
 from ..config import get_settings
 from ..pipeline.answer import pick_questions
 from ..usage import calls_out, job_rows, summarize
-from ..services import current_school, get_job, job_out, list_questions, question_out, recent_out
-from ..storage import get_store
+from ..services import current_school, get_job, job_out, list_item, list_questions, new_job, question_out, recent_out
 from ..worker import worker
 
 router = APIRouter(prefix="/api/parse-jobs")
@@ -24,46 +22,62 @@ router = APIRouter(prefix="/api/parse-jobs")
 
 @router.post("", response_model=ParseJobOut)
 def create_job(req: CreateJobRequest, s: Session = Depends(get_session)) -> ParseJobOut:
-    if len(req.file_keys) != len(req.file_names):
-        raise HTTPException(400, "fileKeys 与 fileNames 数量不一致")
-    try:
-        file_type = validate_kinds(req.file_names)
-    except ValueError as e:
-        raise HTTPException(400, str(e)) from e
-    store = get_store()
-    sizes = []
-    for key in req.file_keys:
-        if not key.startswith("uploads/") or not store.exists(key):
-            raise HTTPException(400, "文件尚未上传完成")
-        sizes.append(store.size(key))
-    names = req.file_names
-    job = ParseJob(
-        id=uuid.uuid4().hex[:16],
-        school_id=current_school(),
-        file_name=f"{names[0]} 等 {len(names)} 个文件" if len(names) > 1 else names[0],
-        file_count=len(names),
-        file_size=sum(sizes),
-        file_type=file_type,
-        file_keys=[{"key": k, "name": n} for k, n in zip(req.file_keys, names)],
-        options=req.options.model_dump(),
-        status="queued",
-        progress=0,
-        stages=[{"stage": st, "status": "pending", "note": None} for st in PARSE_STAGES],
-        warnings=[],
-    )
-    s.add(job)
+    job = new_job(s, req.file_keys, req.file_names, req.options)
     s.commit()
     worker.enqueue(job.id)
     return job_out(s, job)
 
 
-@router.get("", response_model=list[RecentUpload])
-def list_recent(s: Session = Depends(get_session)) -> list[RecentUpload]:
-    jobs = s.scalars(
-        select(ParseJob).where(ParseJob.school_id == current_school(), ParseJob.status == "done")
-        .order_by(ParseJob.created_at.desc()).limit(5)
-    )
-    return [recent_out(s, j) for j in jobs]
+@router.get("", response_model=list[RecentUpload] | JobListPage)
+def list_jobs(
+    recent: bool = False,
+    status: str | None = Query(None, description="逗号分隔，如 queued,running"),
+    batch_id: str | None = Query(None, alias="batchId"),
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    s: Session = Depends(get_session),
+) -> list[RecentUpload] | JobListPage:
+    """recent=1：最近完成的 5 份（兼容旧接口）；否则返回分页的任务列表，最新的在前。"""
+    school = current_school()
+    if recent:
+        jobs = s.scalars(select(ParseJob).where(ParseJob.school_id == school, ParseJob.status == "done")
+                         .order_by(ParseJob.created_at.desc()).limit(5))
+        return [recent_out(s, j) for j in jobs]
+    q = select(ParseJob).where(ParseJob.school_id == school)
+    if status:
+        q = q.where(ParseJob.status.in_([x.strip() for x in status.split(",") if x.strip()]))
+    if batch_id:
+        q = q.where(ParseJob.batch_id == batch_id)
+    total = s.scalar(select(func.count()).select_from(q.subquery())) or 0
+    active = s.scalar(select(func.count()).where(ParseJob.school_id == school,
+                                                 ParseJob.status.in_(["queued", "running"]))) or 0
+    jobs = s.scalars(q.order_by(ParseJob.created_at.desc()).limit(limit).offset(offset))
+    return JobListPage(items=[list_item(s, j) for j in jobs], total=total, active=active)
+
+
+@router.post("/{job_id}/cancel", response_model=ParseJobOut)
+def cancel_job(job_id: str, s: Session = Depends(get_session)) -> ParseJobOut:
+    """取消排队中的任务；已开始解析的任务不可取消。"""
+    job = get_job(s, job_id)
+    if job.status != "queued":
+        raise HTTPException(400, "只能取消排队中的任务")
+    job.status = "cancelled"
+    job.error = "已取消"
+    s.commit()
+    return job_out(s, job)
+
+
+@router.post("/{job_id}/retry", response_model=ParseJobOut)
+def retry_job(job_id: str, s: Session = Depends(get_session)) -> ParseJobOut:
+    """重新解析失败或已取消的任务（草稿题会被清空重建）。"""
+    job = get_job(s, job_id)
+    if job.status not in ("failed", "cancelled"):
+        raise HTTPException(400, "只能重试失败或已取消的任务")
+    job.status, job.error, job.progress, job.parser = "queued", None, 0, None
+    job.stages = [{"stage": st, "status": "pending", "note": None} for st in PARSE_STAGES]
+    s.commit()
+    worker.enqueue(job.id)
+    return job_out(s, job)
 
 
 @router.get("/{job_id}", response_model=ParseJobOut)
@@ -89,6 +103,25 @@ def generate_answers(job_id: str, req: GenerateAnswersRequest, s: Session = Depe
     s.commit()
     worker.enqueue_answers(job_id)
     return AnswerTask.model_validate(job.answer_task)
+
+
+@router.post("/{job_id}/tag-knowledge", response_model=ParseJobOut, status_code=202)
+def tag_knowledge(job_id: str, s: Session = Depends(get_session)) -> ParseJobOut:
+    """为尚未标注知识点的题补标（后台执行，进度见 stages 中 knowledge 阶段的状态）。"""
+    job = get_job(s, job_id)
+    if job.status != "done":
+        raise HTTPException(400, "解析尚未完成")
+    if not get_settings().llm_enabled:
+        raise HTTPException(400, "未配置大模型，无法标注知识点")
+    stage = next((x for x in job.stages if x["stage"] == "knowledge"), None)
+    if stage and stage["status"] == "running":
+        raise HTTPException(409, "正在标注知识点")
+    if all(q.knowledge_points for q in list_questions(s, job_id)):
+        raise HTTPException(400, "所有题目都已标注知识点")
+    job.stages = [dict(x, status="running", note=None) if x["stage"] == "knowledge" else dict(x) for x in job.stages]
+    s.commit()
+    worker.enqueue_knowledge(job_id)
+    return job_out(s, job)
 
 
 @router.get("/{job_id}/usage", response_model=JobUsage)
@@ -159,6 +192,8 @@ def commit(job_id: str, req: CommitRequest, s: Session = Depends(get_session)) -
         b.type, b.score, b.stem, b.options = q.type, q.score, q.stem, q.options
         b.answer, b.analysis, b.knowledge_points, b.coef = q.answer, q.analysis, q.knowledge_points, q.coef
         b.answer_source = q.answer_source
+        b.embedding, b.embedding_model = q.embedding, q.embedding_model
+        b.source_file_name, b.source_no, b.source_page = job.file_name, q.no, q.page
         b.images, b.meta = q.images, job.meta
         s.add(b)
         q.status = "saved"

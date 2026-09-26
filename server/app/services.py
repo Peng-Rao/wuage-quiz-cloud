@@ -5,10 +5,14 @@ import uuid
 
 from fastapi import HTTPException
 from sqlalchemy import func, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, object_session
 
 from .db import DraftQuestion, ParseJob
-from .schemas import REVIEW_CONFIDENCE, DraftQuestionOut, ParseJobOut, RecentUpload
+from .pipeline.files import validate_kinds
+from .schemas import (
+    PARSE_STAGES, REVIEW_CONFIDENCE, DraftQuestionOut, JobListItem, ParseJobOut, ParseOptions, QuestionSource,
+    RecentUpload,
+)
 from .storage import get_store
 
 # P1 未接入账号体系，所有数据归属演示学校
@@ -55,12 +59,56 @@ def job_out(s: Session, job: ParseJob) -> ParseJobOut:
     total, review, saved = _counts(s, job.id)
     rows = job_rows(s, job.id)
     return ParseJobOut(
-        id=job.id, file_name=job.file_name, file_count=job.file_count, file_size=job.file_size,
+        id=job.id, batch_id=job.batch_id, file_name=job.file_name, file_count=job.file_count, file_size=job.file_size,
         file_type=job.file_type, page_count=job.page_count, options=job.options, parser=job.parser,
         status=job.status, progress=job.progress, stages=job.stages, meta=job.meta,
         question_count=total, review_count=review, saved_count=saved, error=job.error,
         usage=summarize(rows) if rows else None, answer_task=job.answer_task, created_at=job.created_at,
     )
+
+
+def list_item(s: Session, job: ParseJob) -> JobListItem:
+    total, review, saved = _counts(s, job.id)
+    current = next((x["stage"] for x in job.stages if x["status"] == "running"), None)
+    return JobListItem(
+        id=job.id, batch_id=job.batch_id, file_name=job.file_name, file_type=job.file_type, status=job.status,
+        progress=job.progress, current_stage=current, question_count=total, review_count=review, saved_count=saved,
+        error=job.error, created_at=job.created_at,
+    )
+
+
+def new_job(s: Session, file_keys: list[str], file_names: list[str], options: ParseOptions,
+            batch_id: str | None = None) -> ParseJob:
+    """校验上传的文件并创建排队中的解析任务（未提交事务，由调用方提交后入队）。"""
+    if len(file_keys) != len(file_names):
+        raise HTTPException(400, "fileKeys 与 fileNames 数量不一致")
+    try:
+        file_type = validate_kinds(file_names)
+    except ValueError as e:
+        raise HTTPException(400, f"{file_names[0]}：{e}" if batch_id else str(e)) from e
+    store = get_store()
+    sizes = []
+    for key in file_keys:
+        if not key.startswith("uploads/") or not store.exists(key):
+            raise HTTPException(400, "文件尚未上传完成")
+        sizes.append(store.size(key))
+    job = ParseJob(
+        id=uuid.uuid4().hex[:16],
+        school_id=current_school(),
+        batch_id=batch_id,
+        file_name=f"{file_names[0]} 等 {len(file_names)} 个文件" if len(file_names) > 1 else file_names[0],
+        file_count=len(file_names),
+        file_size=sum(sizes),
+        file_type=file_type,
+        file_keys=[{"key": k, "name": n} for k, n in zip(file_keys, file_names)],
+        options=options.model_dump(),
+        status="queued",
+        progress=0,
+        stages=[{"stage": st, "status": "pending", "note": None} for st in PARSE_STAGES],
+        warnings=[],
+    )
+    s.add(job)
+    return job
 
 
 def recent_out(s: Session, job: ParseJob) -> RecentUpload:
@@ -69,9 +117,32 @@ def recent_out(s: Session, job: ParseJob) -> RecentUpload:
                         saved_count=saved, created_at=job.created_at)
 
 
+def question_source(meta: dict | None, file_name: str | None, no: int | None, page: int | None) -> QuestionSource:
+    """由试卷分类信息拼出题目出处；分类修改后随之更新。"""
+    m = meta or {}
+    title = m.get("title") or ""
+    grade_type = f"{m.get('grade') or ''}{m.get('paperType') or m.get('paper_type') or ''}"
+    parts = [m.get("schoolYear") or m.get("school_year") or "", m.get("region") or "", grade_type]
+    label = " · ".join(p for p in parts if p)
+    name = title or (file_name or "").rsplit(".", 1)[0]
+    if name:
+        label = f"{label}《{name}》" if label else f"《{name}》"
+    if no:
+        label += f"第 {no} 题"
+    return QuestionSource(
+        title=title, file_name=file_name or "", school_year=m.get("schoolYear") or m.get("school_year") or "",
+        region=m.get("region") or "", grade=m.get("grade") or "", paper_type=m.get("paperType") or m.get("paper_type") or "",
+        subject=m.get("subject") or "", no=no, page=page, label=label,
+    )
+
+
 def question_out(q: DraftQuestion) -> DraftQuestionOut:
     out = DraftQuestionOut.model_validate(q)
     out.images = image_urls(q)
+    s = object_session(q)
+    job = s.get(ParseJob, q.job_id) if s else None
+    if job:
+        out.source = question_source(job.meta, job.file_name, q.no, q.page)
     return out
 
 

@@ -9,13 +9,12 @@ import logging
 
 from sqlalchemy import select
 
+from .config import get_settings
 from .db import ParseJob, SessionLocal
 from .pipeline.answer import run_answer_task
-from .pipeline.run import run_job_safely
+from .pipeline.run import run_job_safely, run_knowledge_task
 
 log = logging.getLogger(__name__)
-
-CONCURRENCY = 2
 
 
 class Worker:
@@ -30,12 +29,17 @@ class Worker:
     def enqueue_answers(self, job_id: str) -> None:
         self.queue.put_nowait(("answer", job_id))
 
+    def enqueue_knowledge(self, job_id: str) -> None:
+        self.queue.put_nowait(("knowledge", job_id))
+
     async def _loop(self) -> None:
         while True:
             kind, job_id = await self.queue.get()
             try:
                 if kind == "answer":
                     await run_answer_task(job_id)
+                elif kind == "knowledge":
+                    await run_knowledge_task(job_id)
                 else:
                     await run_job_safely(job_id)
             except Exception:
@@ -58,7 +62,7 @@ class Worker:
         for job_id in answering:
             log.info("重新排队未完成的 AI 生成答案任务 %s", job_id)
             self.enqueue_answers(job_id)
-        self.tasks = [asyncio.create_task(self._loop()) for _ in range(CONCURRENCY)]
+        self.tasks = [asyncio.create_task(self._loop()) for _ in range(max(1, get_settings().worker_concurrency))]
 
     async def stop(self) -> None:
         for t in self.tasks:

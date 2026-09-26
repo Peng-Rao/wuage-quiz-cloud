@@ -15,6 +15,7 @@ const PAPER_TYPES = ['期中考试', '期末考试', '月考', '单元测试', '
 const TEXTBOOKS = ['人教A版（2019）', '人教B版（2019）', '北师大版（2019）', '苏教版（2019）', '湘教版（2019）']
 
 const FIELDS: { key: keyof PaperMeta; label: string }[] = [
+  { key: 'title', label: '试卷名称' },
   { key: 'stage', label: '学段' },
   { key: 'subject', label: '学科' },
   { key: 'grade', label: '年级' },
@@ -93,4 +94,6 @@ function commit(key: keyof PaperMeta, value: string) {
 .meta-v { padding: 3px 10px; border: 1px solid var(--c-border); border-radius: var(--r-sm); color: var(--c-ink); background: #fff; font-size: 13px; min-width: 0; }
 .meta-v:hover { border-color: var(--c-primary); }
 .meta-v.editing { border-color: var(--c-primary); outline: none; max-width: 170px; font-family: inherit; }
+/* 试卷名称较长，按钮内截断显示 */
+.meta-v { max-width: 190px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 </style>

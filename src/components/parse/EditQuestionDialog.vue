@@ -9,18 +9,26 @@ const emit = defineEmits<{ save: [patch: DraftQuestionPatch] }>()
 
 const CHOICE: QuestionType[] = ['单选题', '多选题']
 
-const form = reactive({ type: '单选题' as QuestionType, score: 5, stem: '', options: '', answer: '', analysis: '' })
+const form = reactive({ type: '单选题' as QuestionType, score: 5, stem: '', options: '', answer: '', analysis: '', kps: '' })
 
 watch(() => [open.value, props.q] as const, ([v, q]) => {
   if (!v || !q) return
   Object.assign(form, {
     type: q.type, score: q.score, stem: q.stem, options: q.options.join('\n'),
-    answer: q.answer ?? '', analysis: q.analysis ?? '',
+    answer: q.answer ?? '', analysis: q.analysis ?? '', kps: q.knowledgePoints.map(k => k.name).join('、'),
   })
 }, { immediate: true })
 
+/** 按「、」等分隔解析知识点，去重 */
+function parseKps() {
+  const names = [...new Set(form.kps.split(/[、，,；;\n]/).map(s => s.trim()).filter(Boolean))]
+  // 只传普通对象（响应式代理无法被复制），id 由后端按「学科 + 名称」统一生成
+  return names.map(name => ({ id: props.q?.knowledgePoints.find(k => k.name === name)?.id ?? 'kp_' + name, name }))
+}
+
 function save() {
   emit('save', {
+    knowledgePoints: parseKps(),
     type: form.type,
     score: Math.max(0, Number(form.score) || 0),
     stem: form.stem.trim(),
@@ -62,7 +70,11 @@ function save() {
         <span>解析</span>
         <textarea v-model="form.analysis" rows="3" class="serif" />
       </label>
-      <p class="tip">保存后该题视为已人工核对，置信度提示将消失。公式编辑器与知识点修改将在后续版本提供。</p>
+      <label class="field">
+        <span>知识点 <em>多个用「、」分隔</em></span>
+        <input v-model="form.kps" placeholder="如：集合的基本运算、一元二次不等式">
+      </label>
+      <p class="tip">保存后该题视为已人工核对，置信度提示将消失。公式编辑器将在后续版本提供。</p>
     </form>
     <template #footer>
       <button type="button" class="btn" @click="open = false">取消</button>

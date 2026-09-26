@@ -39,10 +39,22 @@ _PROVINCE_RE = re.compile(r"([一-龥]{2,3}?)(?:省|市|自治区)")
 _DISTRICT_RE = re.compile(r"(?:省|市)([一-龥]{2,3}?)(?:区|县|市)")
 
 
+_TITLE_RE = re.compile(r"试卷|试题|考试|测试|测验|练习|月考|期中|期末|联考|模拟|检测|真题|押题")
+
+
+def rule_title(text: str) -> str:
+    """卷首标题：前几行中第一条像试卷名称的行（排除说明、页码等）。"""
+    for line in [ln.strip() for ln in text.splitlines()][:8]:
+        if 6 <= len(line) <= 60 and _TITLE_RE.search(line) and not re.search(r"^试卷第|共\s*\d+\s*页|注意事项|本试卷", line):
+            return line
+    return ""
+
+
 def rule_classify(text: str) -> PaperMeta:
+    title = rule_title(text)
     # 标题常把科目写成「数 学」，先去掉汉字之间的空白
     text = re.sub(r"(?<=[\u4e00-\u9fff])\s+(?=[\u4e00-\u9fff])", "", text)
-    meta = PaperMeta()
+    meta = PaperMeta(title=title)
     for pat, stage, grade in _GRADE_ALIASES:
         if re.search(pat, text):
             meta.stage, meta.grade = stage, grade
@@ -71,10 +83,11 @@ def rule_classify(text: str) -> PaperMeta:
 
 
 LLM_SYSTEM = f"""你是中国中小学试卷分类助手。根据试卷开头的文字判断试卷属性，只输出 JSON：
-{{"stage":"","subject":"","grade":"","paperType":"","region":"","schoolYear":"","textbook":""}}
+{{"title":"","stage":"","subject":"","grade":"","paperType":"","region":"","schoolYear":"","textbook":""}}
 - stage 只能是：{"、".join(STAGES)}
 - subject 必须是该学段的学科：{"; ".join(f"{k}：{'、'.join(v)}" for k, v in STAGES.items())}
 - grade 如：高一、初二、五年级；paperType 只能是：{"、".join(PAPER_TYPES)}
+- title 为试卷名称（卷首标题原文，去掉「绝密★启用前」等前缀）
 - region 如「北京 · 海淀」；schoolYear 如「2026—2027 上」；textbook 如「人教A版（2019）」
 - 无法判断的字段留空字符串，不要猜测。"""
 

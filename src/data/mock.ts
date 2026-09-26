@@ -93,7 +93,7 @@ export const SCORE: Record<QType, number> = { 单选题: 5, 多选题: 6, 填空
 export const TYPE_ORDER: QType[] = ['单选题', '多选题', '填空题', '解答题']
 export const CN_NUM = ['一', '二', '三', '四']
 
-/** 难度系数 = 预估得分率（0–1），越低越难 */
-export const coefToDiff = (c: number): Difficulty => (c >= 0.7 ? '容易' : c >= 0.4 ? '适中' : '较难')
+/** 难度系数 0–1，越高越难，1 为最难（约等于 1 − 预估得分率） */
+export const coefToDiff = (c: number): Difficulty => (c <= 0.3 ? '容易' : c <= 0.6 ? '适中' : '较难')
 /** 「调整难度」循环时使用的代表系数 */
-export const DIFF_COEFS = [0.82, 0.58, 0.32]
+export const DIFF_COEFS = [0.18, 0.42, 0.68]
