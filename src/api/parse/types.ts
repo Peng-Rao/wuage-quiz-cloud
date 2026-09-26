@@ -155,6 +155,8 @@ export interface ParseJob {
   usage: UsageSummary | null
   /** 最近一次 AI 生成答案任务；未发起过时为 null */
   answerTask: AnswerTask | null
+  /** 已设为评测样本时为样本 id */
+  evalSampleId?: string | null
   createdAt: string
 }
 
@@ -234,6 +236,103 @@ export interface SimilarQuery {
   type?: string
 }
 
+// ---------- 知识树 ----------
+
+export interface KnowledgeTree {
+  id: string
+  name: string
+  subject: string
+  stage: string
+  textbook: string
+  /** 内置示例 */
+  builtin: boolean
+  nodeCount: number
+  createdAt: string
+}
+
+export interface KnowledgeTreeNode {
+  id: string
+  name: string
+  aliases: string[]
+  children: KnowledgeTreeNode[]
+}
+
+export interface KnowledgeTreeDetail extends KnowledgeTree {
+  nodes: KnowledgeTreeNode[]
+}
+
+export interface KnowledgeTreeImport {
+  format: 'json' | 'csv'
+  content: string
+  name?: string
+  subject?: string
+  stage?: string
+  textbook?: string
+}
+
+export interface KnowledgeNodeHit {
+  id: string
+  name: string
+  path: string
+  score: number
+}
+
+// ---------- 评测 ----------
+
+export interface EvalSample {
+  id: string
+  jobId: string
+  fileName: string
+  questionCount: number
+  createdAt: string
+}
+
+/** 各项指标 0–1；样本中没有可统计的题时为 null */
+export interface EvalMetrics {
+  splitPrecision: number | null
+  splitRecall: number | null
+  typeAccuracy: number | null
+  optionAccuracy: number | null
+  answerAccuracy: number | null
+  knowledgeTop3: number | null
+  knowledgeRecall: number | null
+  difficultyMae: number | null
+  metaAccuracy: number | null
+}
+
+export interface DifficultyCalibration {
+  a: number
+  b: number
+  n?: number
+  maeBefore?: number
+  maeAfter?: number
+  source?: string
+}
+
+export interface EvalSampleResult {
+  sampleId: string
+  fileName: string
+  jobId: string
+  parser?: string | null
+  error?: string
+  metrics?: EvalMetrics
+  unmatchedGold?: number[]
+  extraPred?: number[]
+  questions?: { no: number; predNo: number; similarity: number; issues: string[] }[]
+}
+
+export interface EvalRun {
+  id: string
+  status: 'queued' | 'running' | 'done' | 'failed'
+  total: number
+  done: number
+  config: { parserChain?: string[]; llmModel?: string | null; mineruModel?: string | null; embeddingModel?: string | null }
+  metrics: (EvalMetrics & { calibration: DifficultyCalibration | null; currentCalibration: DifficultyCalibration | null }) | null
+  details: EvalSampleResult[]
+  error: string | null
+  createdAt: string
+}
+
 // ---------- 试卷分类 ----------
 
 export interface PaperMeta {
@@ -286,6 +385,10 @@ export interface SourceRegion {
 export interface KnowledgePointRef {
   id: string
   name: string
+  /** 知识树中的完整路径；不在知识树中时为 null */
+  path?: string | null
+  /** 是否为知识树中的节点 */
+  inTree?: boolean
 }
 
 export interface DraftQuestion {
@@ -310,6 +413,8 @@ export interface DraftQuestion {
   knowledgePoints: KnowledgePointRef[]
   /** 难度系数 0–1，越高越难，1 为最难（约等于 1 − 预估得分率） */
   coef: number
+  /** baseline 按题位估算 / ai 大模型评估 / manual 老师调整 */
+  difficultySource?: 'baseline' | 'ai' | 'manual' | null
   /** 识别置信度 0–1 */
   confidence: number
   /** 组成本题的 IR Block，用于合并 / 拆分与原图回溯 */
@@ -374,6 +479,25 @@ export interface ParseApi {
   getUsageOverview(days: number): Promise<UsageOverview>
   /** 为缺少答案的题排队生成 AI 答案；进度通过 getJob 的 answerTask 获取 */
   generateAnswers(jobId: string, options?: GenerateAnswersOptions): Promise<AnswerTask>
+  // ---- 知识树 ----
+  listTrees(): Promise<KnowledgeTree[]>
+  getTree(treeId: string): Promise<KnowledgeTreeDetail>
+  importTree(req: KnowledgeTreeImport): Promise<KnowledgeTree>
+  deleteTree(treeId: string): Promise<void>
+  /** 知识点联想：按试卷自动选知识树，或指定知识树 */
+  searchKnowledge(q: string, scope: { jobId?: string; treeId?: string }): Promise<KnowledgeNodeHit[]>
+  // ---- 评测 ----
+  /** 把核对后的结果设为评测样本（已是样本时覆盖） */
+  markEvalSample(jobId: string): Promise<EvalSample>
+  listEvalSamples(): Promise<EvalSample[]>
+  deleteEvalSample(sampleId: string): Promise<void>
+  createEvalRun(sampleIds?: string[]): Promise<EvalRun>
+  listEvalRuns(): Promise<EvalRun[]>
+  getEvalRun(runId: string): Promise<EvalRun>
+  /** 采用评测拟合出的难度校准 */
+  applyCalibration(runId: string): Promise<DifficultyCalibration>
+  getCalibration(): Promise<DifficultyCalibration | null>
+  clearCalibration(): Promise<void>
   /** 为尚未标注知识点的题补标（后台执行，进度见 stages 中 knowledge 阶段） */
   tagKnowledge(jobId: string): Promise<ParseJob>
   /** 批量上传：每一项是一份试卷的文件（1 个 PDF / Word，或多张图片），各自后台排队解析 */

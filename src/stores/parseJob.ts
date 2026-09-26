@@ -179,6 +179,16 @@ export const useParseJobStore = defineStore('parseJob', () => {
     refreshJobs()
   }
 
+  /** 设为评测样本（已是样本时用当前核对结果覆盖） */
+  async function markEvalSample() {
+    if (!job.value) return
+    await withBusy('eval', async () => {
+      const sample = await parseApi.markEvalSample(job.value!.id)
+      job.value = { ...job.value!, evalSampleId: sample.id }
+      notice.value = `已保存为评测样本（${sample.questionCount} 题），可在「解析评测」中运行`
+    })
+  }
+
   const getSimilar = (id: string): Promise<SimilarQuestion[] | undefined> =>
     withBusy('similar:' + id, () => parseApi.getSimilar(id, { limit: 8, scope: 'all' }))
 
@@ -373,7 +383,7 @@ export const useParseJobStore = defineStore('parseJob', () => {
     phase, options, uploadPct, overallPct, job, questions, selected, recent, error, busy, savedCount,
     usage, usageOverview, OVERVIEW_DAYS, loadUsage,
     jobList, jobsTotal, jobsActive, batchUploading, batchPct, notice,
-    refreshJobs, watchJobs, openJob, backToList, retryJob, cancelJob, getSimilar,
+    refreshJobs, watchJobs, openJob, backToList, retryJob, cancelJob, getSimilar, markEvalSample,
     missingAnswerCount, answerTask, answering, isAnswering, generateAnswers,
     missingKnowledgeCount, knowledgeRunning, tagKnowledge,
     reviewCount, selectedCount, allSelected, isLow,

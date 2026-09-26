@@ -74,13 +74,17 @@ watch(() => props.q.answerSource, (src, prev) => {
         </div>
         <div class="kps">
           <span class="kps-label">知识点</span>
-          <span v-for="k in q.knowledgePoints" :key="k.id">{{ k.name }}</span>
+          <span
+            v-for="k in q.knowledgePoints" :key="k.id" :class="{ free: k.inTree === false }"
+            :title="k.path || (k.inTree === false ? '不在知识树中' : '')"
+          >{{ k.name.replace(/^\d+(\.\d+)*\s*/, '') }}</span>
           <em v-if="!q.knowledgePoints.length">未标注</em>
         </div>
       </div>
       <div class="pq-diff" :class="D_CLASS[diff]">
         <span class="muted-2 small">难度评估</span>
         <div class="coef"><b>{{ q.coef.toFixed(2) }}</b><span>{{ diff }}</span></div>
+        <span v-if="q.difficultySource" class="d-src">{{ { ai: 'AI 评估', manual: '老师调整', baseline: '按题位估算' }[q.difficultySource] }}</span>
         <div class="bars">
           <span v-for="i in 5" :key="i" :class="{ filled: i <= filled }" />
         </div>
@@ -137,6 +141,8 @@ watch(() => props.q.answerSource, (src, prev) => {
 .kps { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .kps .kps-label { background: none; padding: 0; color: var(--c-text-4); }
 .kps em { font-style: normal; font-size: 12px; color: var(--c-text-4); }
+.kps span.free { background: #fff; border: 1px dashed var(--c-border); }
+.d-src { font-size: 11px; color: var(--c-text-4); }
 .kps span { font-size: 12px; color: var(--c-text-2); background: var(--c-paper); border-radius: 4px; padding: 2px 8px; }
 
 .pq-diff { flex: 0 0 140px; display: flex; flex-direction: column; gap: 6px; border-left: 1px solid var(--c-divider); padding-left: 16px; }

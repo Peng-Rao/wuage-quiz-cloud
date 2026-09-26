@@ -6,9 +6,11 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from .api import batches, files, jobs, questions, similar, usage
+from .api import batches, eval, files, jobs, knowledge, questions, similar, usage
 from .config import get_settings
-from .db import init_db
+from .db import SessionLocal, init_db
+from .knowledge_tree import seed_builtin
+from .services import current_school
 from .worker import worker
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -17,6 +19,9 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     init_db()
+    with SessionLocal() as s:
+        # 学科尚无知识树时载入内置示例（P1 未接入账号体系，归属演示学校）
+        seed_builtin(s, current_school())
     worker.start()
     yield
     await worker.stop()
@@ -57,3 +62,5 @@ app.include_router(questions.router)
 app.include_router(usage.router)
 app.include_router(batches.router)
 app.include_router(similar.router)
+app.include_router(knowledge.router)
+app.include_router(eval.router)

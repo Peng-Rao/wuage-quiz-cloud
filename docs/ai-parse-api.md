@@ -39,6 +39,16 @@ POST /api/parse-jobs/{id}/commit    → 入校本题库
 | GET | `/api/parse-batches/{id}` | — | `ParseBatch`（含各状态计数与任务列表） |
 | GET | `/api/draft-questions/{qid}/similar?limit=5&scope=all` | — | `SimilarQuestion[]` |
 | POST | `/api/parse-jobs/{id}/tag-knowledge` | — | `ParseJob`（202，补标缺少知识点的题） |
+| GET | `/api/knowledge-trees` | — | `KnowledgeTree[]` |
+| POST | `/api/knowledge-trees/import` | `{ format: 'json' \| 'csv', content, name?, subject?, stage?, textbook? }` | `KnowledgeTree` |
+| GET / DELETE | `/api/knowledge-trees/{id}` | — | `KnowledgeTreeDetail`（含嵌套节点）/ 204 |
+| GET | `/api/knowledge/search?q=&jobId=&treeId=` | — | `KnowledgeNodeHit[]`（知识点联想） |
+| POST | `/api/parse-jobs/{id}/eval-sample` | — | `EvalSample`（核对结果设为评测样本，重复调用覆盖） |
+| GET / DELETE | `/api/eval-samples`、`/api/eval-samples/{id}` | — | `EvalSample[]` / 204 |
+| POST | `/api/eval-runs` | `{ sampleIds? }` | `EvalRun`（202，后台运行） |
+| GET | `/api/eval-runs`、`/api/eval-runs/{id}` | — | `EvalRun` |
+| POST | `/api/eval-runs/{id}/apply-calibration` | — | 采用拟合出的难度校准 |
+| GET / DELETE | `/api/difficulty-calibration` | — | 当前校准 / 取消校准 |
 | POST | `/api/similar/search` | `{ text, type?, limit?, scope? }` | `SimilarQuestion[]` |
 | PUT | `/api/parse-jobs/{id}/meta` | `PaperMeta` | `PaperMeta` |
 | GET | `/api/parse-jobs/{id}/questions` | — | `DraftQuestion[]`（按 `no` 升序） |
@@ -91,6 +101,30 @@ POST /api/parse-jobs/{id}/commit    → 入校本题库
 - `split`：按「（1）/(1)/⑴」小问标记拆分，公共题干复制到每个小问，分值均分（余数给最后一问）；无标记时返回 400。
 - 合并 / 拆分会产生新的题目 id，前端以返回的完整列表为准。
 - `commit` 只把选中题目标记为 `saved`，可多次调用。
+
+### 知识树（P2）
+
+- 导入格式：JSON（`{"nodes": [{"name", "aliases", "children"}]}`，可带 name / subject / stage / textbook）或 CSV（每行一条路径，
+  列为各级名称，可选「别名」列，多个用 `|` 分隔；首行为表头时自动跳过）。CSV 必须提供学科与学段。
+- 内置示例：高中数学（人教A版 2019）、初中化学（人教版九年级），按教材目录整理，仅供联调；学科尚无知识树时自动载入。
+- 解析时按学科、学段选树：正式导入的优先于内置示例，教材版本一致的优先，其次最新导入的。
+- 标注：末级知识点 ≤ 300 个时把完整清单交给大模型按编号选择；更大的树先生成名称、再检索候选、最后选择。
+  清单中没有的知识点保留名称并标记 `inTree=false`。`KnowledgePointRef` 增加 `path`、`inTree`。
+- 老师编辑知识点时，名称（忽略「1.3」等编号）或别名与知识树节点一致则归入该节点。
+
+### 难度模型（P2）
+
+- 最终系数 = 校准(0.7 × 大模型评估 + 0.3 × 按题位的基线)，截断到 0.02–0.98。大模型评估与知识点标注同一次调用给出。
+- `DraftQuestion.difficultySource`：`baseline` / `ai` / `manual`（PATCH 修改 `coef` 后为 `manual`）。
+- 校准：评测中老师调整过难度的题（≥ 5 道）拟合 `y = a·x + b`，采用后对之后解析的试卷生效。
+
+### 解析评测（P2）
+
+- 老师在核对页「设为评测样本」：保存当前的分类、题型、选项、答案（含来源）、知识点、难度作为标准答案。
+- 运行评测：对每个样本的原文件重新完整解析（评测任务 `kind=eval`，不出现在任务列表、不参与查重、用量照常计入），
+  按题干相似度配对后计算：拆题查准率 / 查全率、题型、选项数、答案（只统计原卷或老师填写的）准确率、
+  知识点前 3 命中率与召回率、难度平均误差（只统计老师调整过的）、试卷分类准确率。
+- `EvalRun.config` 记录当次的解析引擎、模型与校准，便于对比不同配置。
 
 ### 题目出处与知识点
 

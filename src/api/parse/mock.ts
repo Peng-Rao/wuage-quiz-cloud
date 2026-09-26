@@ -5,8 +5,15 @@ import {
   type DraftQuestionPatch,
   type JobListItem,
   type ParseApi,
+  type PaperMeta,
   type ParseBatch,
   type SimilarQuestion,
+  type EvalRun,
+  type EvalSample,
+  type KnowledgeTree,
+  type KnowledgeTreeDetail,
+  type KnowledgeTreeNode,
+  type DifficultyCalibration,
   type UsageCall,
   type UsageOverview,
   type ParseJob,
@@ -21,6 +28,9 @@ import {
   mockPageImage, mockSource, summarizeMockUsage,
 } from './mockData'
 import { QUESTIONS } from '@/data/mock'
+// 与后端共用内置示例知识树
+import mathTreeJson from '../../../server/app/data/knowledge/高中数学-人教A版.json'
+import chemTreeJson from '../../../server/app/data/knowledge/初中化学-人教版.json'
 
 /**
  * 内存版解析服务：模拟上传、分阶段进度推送和草稿题编辑。
@@ -284,7 +294,209 @@ function rank(text: string, pool: ReturnType<typeof candidates>, limit: number):
     .slice(0, limit)
 }
 
+// ---------- 知识树 ----------
+
+type RawNode = { name: string; aliases?: string[]; children?: RawNode[] }
+const trees = new Map<string, KnowledgeTreeDetail>()
+let nodeSeq = 0
+
+function toNodes(raw: RawNode[]): KnowledgeTreeNode[] {
+  return raw.map(n => ({ id: 'n' + ++nodeSeq, name: n.name, aliases: n.aliases ?? [], children: toNodes(n.children ?? []) }))
+}
+function countNodes(nodes: KnowledgeTreeNode[]): number {
+  return nodes.reduce((a, n) => a + 1 + countNodes(n.children), 0)
+}
+function addTree(meta: { name: string; subject: string; stage: string; textbook?: string }, raw: RawNode[], builtin: boolean) {
+  const nodes = toNodes(raw)
+  const t: KnowledgeTreeDetail = {
+    id: 't' + Math.random().toString(36).slice(2, 10), name: meta.name, subject: meta.subject, stage: meta.stage,
+    textbook: meta.textbook ?? '', builtin, nodeCount: countNodes(nodes), createdAt: new Date().toISOString(), nodes,
+  }
+  trees.set(t.id, t)
+  return t
+}
+for (const j of [mathTreeJson, chemTreeJson] as { name: string; subject: string; stage: string; textbook: string; nodes: RawNode[] }[]) {
+  addTree(j, j.nodes, true)
+}
+function flatten(nodes: KnowledgeTreeNode[], prefix = ''): { node: KnowledgeTreeNode; path: string }[] {
+  return nodes.flatMap(n => {
+    const path = prefix ? `${prefix} / ${n.name}` : n.name
+    return [{ node: n, path }, ...flatten(n.children, path)]
+  })
+}
+function pickTree(meta: PaperMeta | null) {
+  const list = [...trees.values()].filter(t => t.subject === meta?.subject && t.stage === meta?.stage)
+  return list.sort((a, b) => Number(a.builtin) - Number(b.builtin) || b.createdAt.localeCompare(a.createdAt))[0]
+}
+/** 与后端 parse_csv 一致：每行一条路径，表头中的「别名」列为最后一级的别名 */
+function csvToRaw(content: string): RawNode[] {
+  const rows = content.trim().split(/\r?\n/).map(l => l.split(',').map(c => c.trim()))
+  const header = rows[0]?.filter(Boolean).every(c => /级|层|名称|知识点|章|节|别名/.test(c)) ? rows.shift()! : []
+  const aliasCol = header.findIndex(h => h.includes('别名'))
+  const root: RawNode[] = []
+  for (const r of rows) {
+    const aliases = aliasCol >= 0 ? (r[aliasCol] ?? '').split(/[|、；;]/).map(a => a.trim()).filter(Boolean) : []
+    const path = r.filter((c, i) => c && i !== aliasCol)
+    let level = root
+    path.forEach((name, depth) => {
+      let node = level.find(x => x.name === name)
+      if (!node) level.push((node = { name, children: [] }))
+      if (depth === path.length - 1 && aliases.length) node.aliases = [...new Set([...(node.aliases ?? []), ...aliases])]
+      level = node.children!
+    })
+  }
+  if (!root.length) throw new Error('CSV 中没有知识点')
+  return root
+}
+
+// ---------- 评测（演示：指标为示例值） ----------
+
+const samples = new Map<string, EvalSample>()
+const runs = new Map<string, EvalRun>()
+let calibration: DifficultyCalibration | null = null
+
 export const mockParseApi: ParseApi = {
+  async listTrees() {
+    await sleep(80)
+    return [...trees.values()].map(({ nodes: _n, ...t }) => clone(t) as KnowledgeTree)
+  },
+
+  async getTree(id) {
+    await sleep(80)
+    const t = trees.get(id)
+    if (!t) throw new Error('知识树不存在')
+    return clone(t)
+  },
+
+  async importTree(req) {
+    await sleep(150)
+    let meta: { name?: string; subject?: string; stage?: string; textbook?: string } = {}
+    let raw: RawNode[]
+    if (req.format === 'json') {
+      let data: { nodes?: RawNode[] } & typeof meta
+      try {
+        data = JSON.parse(req.content)
+      } catch {
+        throw new Error('JSON 格式错误')
+      }
+      if (!data.nodes?.length) throw new Error('JSON 中缺少 nodes（知识点列表）')
+      raw = data.nodes
+      meta = data
+    } else {
+      raw = csvToRaw(req.content)
+    }
+    const m = { name: req.name || meta.name || '', subject: req.subject || meta.subject || '', stage: req.stage || meta.stage || '', textbook: req.textbook || meta.textbook }
+    if (!m.subject || !m.stage) throw new Error('请指定学科与学段')
+    const { nodes: _n, ...t } = addTree({ ...m, name: m.name || `${m.stage}${m.subject}知识体系` }, raw, false)
+    return clone(t)
+  },
+
+  async deleteTree(id) {
+    await sleep(80)
+    trees.delete(id)
+  },
+
+  async searchKnowledge(q, { jobId, treeId }) {
+    await sleep(60)
+    const tree = treeId ? trees.get(treeId) : pickTree(jobId ? jobs.get(jobId)?.meta ?? null : null)
+    if (!tree) return []
+    return flatten(tree.nodes)
+      .map(({ node, path }) => {
+        const names = [node.name.replace(/^[\d.]+\s*/, ''), ...node.aliases]
+        const score = Math.max(...names.map(n => (n === q ? 1 : n.includes(q) || q.includes(n) ? 0.9 : lexical(q, n))))
+        return { id: node.id, name: node.name, path, score: +score.toFixed(3) }
+      })
+      .filter(h => h.score >= 0.3)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 10)
+  },
+
+  async markEvalSample(jobId) {
+    await sleep(120)
+    const job = requireJob(jobId)
+    if (job.status !== 'done') throw new Error('只能把已完成解析的试卷设为评测样本')
+    const existing = [...samples.values()].find(x => x.jobId === jobId)
+    const sample: EvalSample = existing ?? {
+      id: 'e' + Math.random().toString(36).slice(2, 10), jobId, fileName: job.fileName, questionCount: 0, createdAt: new Date().toISOString(),
+    }
+    sample.questionCount = questions.get(jobId)?.length ?? 0
+    samples.set(sample.id, sample)
+    job.evalSampleId = sample.id
+    return clone(sample)
+  },
+
+  async listEvalSamples() {
+    await sleep(80)
+    return clone([...samples.values()].reverse())
+  },
+
+  async deleteEvalSample(id) {
+    await sleep(80)
+    const x = samples.get(id)
+    samples.delete(id)
+    if (x) requireJob(x.jobId).evalSampleId = null
+  },
+
+  async createEvalRun(sampleIds) {
+    await sleep(120)
+    const ids = sampleIds?.length ? sampleIds : [...samples.keys()]
+    if (!ids.length) throw new Error('还没有评测样本：请先在核对页把核对好的试卷设为评测样本')
+    const run: EvalRun = {
+      id: 'r' + Math.random().toString(36).slice(2, 10), status: 'running', total: ids.length, done: 0,
+      config: { parserChain: ['mineru_cloud', 'lite'], llmModel: '（演示）', mineruModel: null, embeddingModel: null },
+      metrics: null, details: [], error: null, createdAt: new Date().toISOString(),
+    }
+    runs.set(run.id, run)
+    ids.forEach((sid, i) => setTimeout(() => {
+      const x = samples.get(sid)
+      run.details.push({
+        sampleId: sid, fileName: x?.fileName ?? '', jobId: x?.jobId ?? '', parser: 'mineru_cloud',
+        metrics: { splitPrecision: 1, splitRecall: 0.89, typeAccuracy: 0.94, optionAccuracy: 1, answerAccuracy: 0.9,
+          knowledgeTop3: 0.83, knowledgeRecall: 0.71, difficultyMae: 0.11, metaAccuracy: 1 },
+        unmatchedGold: [7], extraPred: [], questions: [
+          { no: 3, predNo: 3, similarity: 0.97, issues: ['知识点未命中：充分条件与必要条件'] },
+          { no: 6, predNo: 6, similarity: 1, issues: ['题型：填空题 → 解答题'] },
+        ],
+      })
+      run.done++
+      if (run.done === run.total) {
+        run.status = 'done'
+        run.metrics = { splitPrecision: 1, splitRecall: 0.89, typeAccuracy: 0.94, optionAccuracy: 1, answerAccuracy: 0.9,
+          knowledgeTop3: 0.83, knowledgeRecall: 0.71, difficultyMae: 0.11, metaAccuracy: 1,
+          calibration: { a: 0.86, b: 0.07, n: 12, maeBefore: 0.11, maeAfter: 0.07 }, currentCalibration: calibration }
+      }
+    }, 900 * (i + 1)))
+    return clone(run)
+  },
+
+  async listEvalRuns() {
+    await sleep(80)
+    return clone([...runs.values()].reverse())
+  },
+
+  async getEvalRun(id) {
+    await sleep(60)
+    const r = runs.get(id)
+    if (!r) throw new Error('评测不存在')
+    return clone(r)
+  },
+
+  async applyCalibration(id) {
+    await sleep(80)
+    const cal = runs.get(id)?.metrics?.calibration
+    if (!cal) throw new Error('本次评测没有足够的难度样本')
+    calibration = { a: cal.a, b: cal.b, source: `评测 ${id}` }
+    return clone(calibration)
+  },
+
+  async getCalibration() {
+    return clone(calibration)
+  },
+
+  async clearCalibration() {
+    calibration = null
+  },
+
   async createJob(files: File[], options: ParseOptions, onUploadProgress) {
     validate(files)
     await fakeUpload(onUploadProgress)

@@ -40,16 +40,17 @@ def list_jobs(
     """recent=1：最近完成的 5 份（兼容旧接口）；否则返回分页的任务列表，最新的在前。"""
     school = current_school()
     if recent:
-        jobs = s.scalars(select(ParseJob).where(ParseJob.school_id == school, ParseJob.status == "done")
-                         .order_by(ParseJob.created_at.desc()).limit(5))
+        jobs = s.scalars(select(ParseJob).where(ParseJob.school_id == school, ParseJob.status == "done",
+                                                ParseJob.kind.is_(None)).order_by(ParseJob.created_at.desc()).limit(5))
         return [recent_out(s, j) for j in jobs]
-    q = select(ParseJob).where(ParseJob.school_id == school)
+    # 评测任务不出现在任务列表中
+    q = select(ParseJob).where(ParseJob.school_id == school, ParseJob.kind.is_(None))
     if status:
         q = q.where(ParseJob.status.in_([x.strip() for x in status.split(",") if x.strip()]))
     if batch_id:
         q = q.where(ParseJob.batch_id == batch_id)
     total = s.scalar(select(func.count()).select_from(q.subquery())) or 0
-    active = s.scalar(select(func.count()).where(ParseJob.school_id == school,
+    active = s.scalar(select(func.count()).where(ParseJob.school_id == school, ParseJob.kind.is_(None),
                                                  ParseJob.status.in_(["queued", "running"]))) or 0
     jobs = s.scalars(q.order_by(ParseJob.created_at.desc()).limit(limit).offset(offset))
     return JobListPage(items=[list_item(s, j) for j in jobs], total=total, active=active)

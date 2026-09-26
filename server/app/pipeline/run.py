@@ -95,6 +95,7 @@ async def run_job(job_id: str) -> None:
             return  # 排队期间被取消，或重启恢复时已完成
         files_info = list(job.file_keys)
         options = dict(job.options)
+        kind = job.kind
         file_type = job.file_type
     ctx.update(status="running", error=None, progress=0)
     warnings: list[str] = []
@@ -164,29 +165,40 @@ async def run_job(job_id: str) -> None:
                 id="q" + uuid.uuid4().hex[:20], job_id=job_id, no=i, type=q.type, score=q.score,
                 page=regions[0]["page"] if regions else 1, stem=q.stem, options=q.options, answer=q.answer,
                 answer_source="paper" if q.answer else None,
-                analysis=q.analysis, knowledge_points=[], coef=coef, confidence=q.confidence,
+                analysis=q.analysis, knowledge_points=[], coef=coef, difficulty_source="baseline", confidence=q.confidence,
                 block_ids=q.unit_ids, regions=regions, images=images, duplicate_of=None, status="draft",
             ))
         s.commit()
     ctx.stage("segment", "done", f"{len(seg.questions)} 道题" + ("" if seg.used_llm else "（规则）"))
 
-    # ---- knowledge：知识点标注 ----
+    # ---- knowledge：知识点标注（同一次调用给出难度评估） ----
+    ai_difficulty: dict[str, float] | None = None
     if not options.get("knowledge", True):
         ctx.stage("knowledge", "skipped")
     elif not settings.llm_enabled:
         ctx.stage("knowledge", "skipped", "未配置大模型")
     else:
         ctx.stage("knowledge", "running")
-        n, kinds = await tag_job(job_id)
-        ctx.stage("knowledge", "done", f"{kinds} 个知识点" if n else "未能标注")
-        if n < len(seg.questions):
-            warnings.append(f"{len(seg.questions) - n} 道题未能标注知识点，可在核对页重新标注")
+        r = await tag_job(job_id)
+        ai_difficulty = r.difficulty
+        note = f"{r.kinds} 个知识点" if r.tagged else "未能标注"
+        if r.tree_name:
+            note += f" · {r.tree_name}" + (f"（{r.unmatched} 个不在知识树中）" if r.unmatched else "")
+        ctx.stage("knowledge", "done", note)
+        if r.tagged < len(seg.questions):
+            warnings.append(f"{len(seg.questions) - r.tagged} 道题未能标注知识点，可在核对页重新标注")
 
-    # ---- difficulty：难度评估（P1 为基线估计） ----
-    ctx.stage("difficulty", "done", "基线估计（越高越难）")
+    # ---- difficulty：难度评估（大模型 + 基线，可校准） ----
+    ctx.stage("difficulty", "running")
+    if ai_difficulty is None and settings.llm_enabled:
+        with SessionLocal() as s:
+            meta_now = dict(s.get(ParseJob, job_id).meta or {})  # type: ignore[union-attr]
+        ai_difficulty = await difficulty.estimate_ai(job_id, meta_now)
+    n_ai = difficulty.apply(job_id, ai_difficulty or {})
+    ctx.stage("difficulty", "done", f"AI 评估 {n_ai} 题" if n_ai else "基线估计")
 
-    # ---- dedupe：与校本题库查重 ----
-    if options.get("dedupe", True):
+    # ---- dedupe：与校本题库查重（评测任务不查重） ----
+    if options.get("dedupe", True) and kind != "eval":
         ctx.stage("dedupe", "running")
         with SessionLocal() as s:
             dup = await dedupe_job(s, job_id)
@@ -227,8 +239,11 @@ async def run_knowledge_task(job_id: str) -> None:
     current_job.set(job_id)
     ctx = JobContext(job_id)
     try:
-        n, kinds = await tag_job(job_id, only_missing=True)
-        ctx.stage("knowledge", "done", f"补标 {n} 题 · {kinds} 个知识点" if n else "未能标注")
+        r = await tag_job(job_id, only_missing=True)
+        note = f"补标 {r.tagged} 题 · {r.kinds} 个知识点" if r.tagged else "未能标注"
+        if r.tree_name:
+            note += f" · {r.tree_name}"
+        ctx.stage("knowledge", "done", note)
     except Exception:
         log.exception("知识点标注任务 %s 异常", job_id)
         ctx.stage("knowledge", "failed", "标注失败，请重试")

@@ -35,6 +35,8 @@ class ParseJob(Base):
     id: Mapped[str] = mapped_column(String(32), primary_key=True)
     school_id: Mapped[str] = mapped_column(String(64), index=True)
     batch_id: Mapped[str | None] = mapped_column(String(32), index=True, nullable=True)
+    # eval：评测时重新解析产生的任务，不出现在任务列表、不参与查重
+    kind: Mapped[str | None] = mapped_column(String(8), nullable=True)
     file_name: Mapped[str] = mapped_column(String(512))
     file_count: Mapped[int] = mapped_column(Integer)
     file_size: Mapped[int] = mapped_column(Integer)
@@ -91,6 +93,8 @@ class DraftQuestion(Base):
     answer_note: Mapped[str | None] = mapped_column(Text, nullable=True)
     knowledge_points: Mapped[list[Any]] = mapped_column(JSON, default=list)
     coef: Mapped[float] = mapped_column(Float)
+    # 难度来源：baseline 按题位估算 / ai 大模型评估 / manual 老师调整
+    difficulty_source: Mapped[str | None] = mapped_column(String(8), nullable=True)
     confidence: Mapped[float] = mapped_column(Float)
     block_ids: Mapped[list[Any]] = mapped_column(JSON, default=list)
     regions: Mapped[list[Any]] = mapped_column(JSON, default=list)
@@ -170,6 +174,70 @@ if _settings.db_url.startswith("sqlite"):
         cur.close()
 
 SessionLocal = sessionmaker(engine, expire_on_commit=False)
+
+
+class KnowledgeTree(Base):
+    """知识树：某学科、学段、教材的知识点体系。"""
+
+    __tablename__ = "knowledge_tree"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    school_id: Mapped[str] = mapped_column(String(64), index=True)
+    name: Mapped[str] = mapped_column(String(128))
+    subject: Mapped[str] = mapped_column(String(16), index=True)
+    stage: Mapped[str] = mapped_column(String(8))
+    textbook: Mapped[str] = mapped_column(String(64), default="")
+    # 内置示例：导入同学科的正式知识树后不再使用
+    builtin: Mapped[bool] = mapped_column(default=False)
+    node_count: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class KnowledgeNode(Base):
+    __tablename__ = "knowledge_node"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    tree_id: Mapped[str] = mapped_column(ForeignKey("knowledge_tree.id", ondelete="CASCADE"), index=True)
+    parent_id: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+    name: Mapped[str] = mapped_column(String(128))
+    # 完整路径，如「第一章 集合与常用逻辑用语 / 1.3 集合的基本运算 / 交集」
+    path: Mapped[str] = mapped_column(Text)
+    level: Mapped[int] = mapped_column(Integer)
+    seq: Mapped[int] = mapped_column(Integer)
+    is_leaf: Mapped[bool] = mapped_column(default=True)
+    aliases: Mapped[list[Any]] = mapped_column(JSON, default=list)
+    embedding: Mapped[list[Any] | None] = mapped_column(JSON, nullable=True)
+    embedding_model: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
+
+class EvalSample(Base):
+    """评测样本：老师核对后的结果作为标准答案（设为样本时的快照）。"""
+
+    __tablename__ = "eval_sample"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    school_id: Mapped[str] = mapped_column(String(64), index=True)
+    job_id: Mapped[str] = mapped_column(String(32), unique=True)
+    file_name: Mapped[str] = mapped_column(String(512))
+    file_keys: Mapped[list[Any]] = mapped_column(JSON)
+    gold: Mapped[dict[str, Any]] = mapped_column(JSON)  # {meta, questions: [...]}
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class EvalRun(Base):
+    __tablename__ = "eval_run"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    school_id: Mapped[str] = mapped_column(String(64), index=True)
+    status: Mapped[str] = mapped_column(String(8))  # queued / running / done / failed
+    sample_ids: Mapped[list[Any]] = mapped_column(JSON)
+    done: Mapped[int] = mapped_column(Integer, default=0)
+    # 当次配置快照（解析引擎、模型、知识树等），便于对比不同配置
+    config: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    metrics: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    details: Mapped[list[Any]] = mapped_column(JSON, default=list)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
 class AppMeta(Base):

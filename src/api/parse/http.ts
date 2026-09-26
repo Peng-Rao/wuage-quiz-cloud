@@ -1,4 +1,5 @@
 import type {
+  DifficultyCalibration, EvalRun, EvalSample, KnowledgeNodeHit, KnowledgeTree, KnowledgeTreeDetail,
   AnswerTask, DraftQuestion, JobListPage, JobUsage, ParseApi, ParseBatch, ParseJob, PaperMeta, RecentUpload,
   SimilarQuestion, SourceImage, UsageOverview,
 } from './types'
@@ -18,6 +19,7 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
     const err = await res.json().catch(() => null)
     throw new Error(err?.message ?? `请求失败（HTTP ${res.status}）`)
   }
+  if (res.status === 204) return undefined as T
   return res.json() as Promise<T>
 }
 
@@ -76,6 +78,27 @@ export const httpParseApi: ParseApi = {
 
   cancelJob: id => request<ParseJob>('POST', `/api/parse-jobs/${id}/cancel`),
   tagKnowledge: id => request<ParseJob>('POST', `/api/parse-jobs/${id}/tag-knowledge`),
+
+  listTrees: () => request<KnowledgeTree[]>('GET', '/api/knowledge-trees'),
+  getTree: id => request<KnowledgeTreeDetail>('GET', `/api/knowledge-trees/${id}`),
+  importTree: req => request<KnowledgeTree>('POST', '/api/knowledge-trees/import', req),
+  deleteTree: id => request<void>('DELETE', `/api/knowledge-trees/${id}`),
+  searchKnowledge(q, scope) {
+    const p = new URLSearchParams({ q })
+    if (scope.jobId) p.set('jobId', scope.jobId)
+    if (scope.treeId) p.set('treeId', scope.treeId)
+    return request<KnowledgeNodeHit[]>('GET', `/api/knowledge/search?${p}`)
+  },
+
+  markEvalSample: jobId => request<EvalSample>('POST', `/api/parse-jobs/${jobId}/eval-sample`),
+  listEvalSamples: () => request<EvalSample[]>('GET', '/api/eval-samples'),
+  deleteEvalSample: id => request<void>('DELETE', `/api/eval-samples/${id}`),
+  createEvalRun: sampleIds => request<EvalRun>('POST', '/api/eval-runs', { sampleIds }),
+  listEvalRuns: () => request<EvalRun[]>('GET', '/api/eval-runs'),
+  getEvalRun: id => request<EvalRun>('GET', `/api/eval-runs/${id}`),
+  applyCalibration: id => request<DifficultyCalibration>('POST', `/api/eval-runs/${id}/apply-calibration`),
+  getCalibration: () => request<DifficultyCalibration | null>('GET', '/api/difficulty-calibration'),
+  clearCalibration: () => request<void>('DELETE', '/api/difficulty-calibration'),
   retryJob: id => request<ParseJob>('POST', `/api/parse-jobs/${id}/retry`),
 
   getSimilar(questionId, query = {}) {

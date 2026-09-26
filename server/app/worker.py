@@ -32,6 +32,9 @@ class Worker:
     def enqueue_knowledge(self, job_id: str) -> None:
         self.queue.put_nowait(("knowledge", job_id))
 
+    def enqueue_eval(self, run_id: str) -> None:
+        self.queue.put_nowait(("eval", run_id))
+
     async def _loop(self) -> None:
         while True:
             kind, job_id = await self.queue.get()
@@ -40,6 +43,9 @@ class Worker:
                     await run_answer_task(job_id)
                 elif kind == "knowledge":
                     await run_knowledge_task(job_id)
+                elif kind == "eval":
+                    from .evaluation import run_eval
+                    await run_eval(job_id)
                 else:
                     await run_job_safely(job_id)
             except Exception:
