@@ -3,6 +3,7 @@ import { computed, reactive, ref } from 'vue'
 import {
   REVIEW_CONFIDENCE,
   parseApi,
+  type CommitResult,
   type DraftQuestion,
   type DraftQuestionPatch,
   type GenerateAnswersOptions,
@@ -356,14 +357,23 @@ export const useParseJobStore = defineStore('parseJob', () => {
     selected.value = allSelected.value ? new Set() : new Set(questions.value.map((q) => q.id))
   }
 
-  async function commit() {
-    if (!job.value || !selectedCount.value) return
-    const ids = questions.value.filter((q) => selected.value.has(q.id)).map((q) => q.id)
+  /** 最近一次保存的结果：跳过的重复题、已在试卷库中的同一份试卷 */
+  const commitResult = ref<CommitResult | null>(null)
+
+  /** 保存到校本题库。默认跳过与题库重复的题，整份试卷已入库时不保存；force 时全部保存（only 指定题目） */
+  async function commit(force = false, only?: string[]) {
+    if (!job.value) return
+    const ids = only ?? questions.value.filter((q) => selected.value.has(q.id)).map((q) => q.id)
+    if (!ids.length) return
     await withBusy('commit', async () => {
-      const res = await parseApi.commit(job.value!.id, ids)
-      savedCount.value = res.savedCount
-      questions.value = questions.value.map((q) => (ids.includes(q.id) ? { ...q, status: 'saved' } : q))
-      loadRecent()
+      const res = await parseApi.commit(job.value!.id, ids, force)
+      const saved = new Set(res.savedIds)
+      questions.value = questions.value.map((q) => (saved.has(q.id) ? { ...q, status: 'saved' } : q))
+      // 强制保存跳过的题后，不再提示这些题
+      const prevSkipped = force ? (commitResult.value?.skipped ?? []).filter((x) => !saved.has(x.questionId)) : []
+      commitResult.value = { ...res, skipped: [...prevSkipped, ...res.skipped] }
+      if (res.savedCount) savedCount.value = questions.value.filter((q) => q.status === 'saved').length
+      if (res.savedCount) loadRecent()
     })
   }
 
@@ -376,11 +386,12 @@ export const useParseJobStore = defineStore('parseJob', () => {
     selected.value = new Set()
     error.value = ''
     savedCount.value = 0
+    commitResult.value = null
     usage.value = null
   }
 
   return {
-    phase, options, uploadPct, overallPct, job, questions, selected, recent, error, busy, savedCount,
+    phase, options, uploadPct, overallPct, job, questions, selected, recent, error, busy, savedCount, commitResult,
     usage, usageOverview, OVERVIEW_DAYS, loadUsage,
     jobList, jobsTotal, jobsActive, batchUploading, batchPct, notice,
     refreshJobs, watchJobs, openJob, backToList, retryJob, cancelJob, getSimilar, markEvalSample,

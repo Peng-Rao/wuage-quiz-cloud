@@ -11,7 +11,7 @@ const ENTRIES = [
   { mark: '章', title: '章节选题', desc: '按教材版本与章节同步选题', to: '/pick' },
   { mark: '知', title: '知识点选题', desc: '按知识体系精准定位考点', to: { path: '/pick', query: { tree: '知识点' } } },
   { mark: '智', title: '智能组卷', desc: '设定题量与难度，自动生成试卷', to: '/paper' },
-  { mark: '卷', title: '试卷库', desc: '期中、期末、月考与高考真题', to: '/' },
+  { mark: '卷', title: '试卷库', desc: '按年级、学科浏览已入库的整套试卷', to: '/papers' },
 ]
 
 const paperTab = ref('期中')
@@ -59,7 +59,7 @@ function search(q = keyword.value) {
                 :class="{ 'is-soft': k === paperTab }" @click="paperTab = k"
               >{{ k }}</button>
             </div>
-            <a href="#" class="more" @click.prevent>更多 ›</a>
+            <RouterLink to="/papers" class="more">更多 ›</RouterLink>
           </div>
           <div>
             <div v-for="p in PAPERS[paperTab]" :key="p.title" class="paper-row">

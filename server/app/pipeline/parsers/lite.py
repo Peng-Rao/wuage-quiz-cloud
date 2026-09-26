@@ -1,11 +1,13 @@
 """轻量本地解析：直接读取 PDF 文字层，不做模型推理。
 
-适合电子版 PDF 的开发调试与兜底；不识别公式和表格，扫描件（无文字层）不可用。
+适合电子版 PDF：上下标按字号与基线识别（如 O₂、x²），文字中的 x^2、a_n、√(x+1) 转为上下标或 LaTeX；
+分式、矩阵等二维公式与表格仍按文字输出，扫描件（无文字层）不可用。
 """
 
 import asyncio
 import re
 from collections import Counter
+from statistics import median
 
 import pymupdf
 
@@ -17,6 +19,65 @@ MIN_CHARS_PER_PAGE = 30
 
 # 页码行：「试卷第2页（共7页）」「第 3 页 共 8 页」「- 2 -」
 PAGE_NO_RE = re.compile(r"^\s*(?:(?:试卷|答案|数学|第)?\S{0,4}第\s*\d+\s*页.{0,8}|[-—]\s*\d+\s*[-—]|\d{1,3})\s*$")
+
+
+# ---------------- 上下标与公式 ----------------
+
+_SUP = dict(zip("0123456789+-−=()ni", "⁰¹²³⁴⁵⁶⁷⁸⁹⁺⁻⁻⁼⁽⁾ⁿⁱ"))
+_SUB = dict(zip("0123456789+-−=()aehijklmnoprstuvx", "₀₁₂₃₄₅₆₇₈₉₊₋₋₌₍₎ₐₑₕᵢⱼₖₗₘₙₒₚᵣₛₜᵤᵥₓ"))
+# 可作为上下标的小字号文字：字母、数字、正负号等，最多 6 个字符
+_SCRIPT_TEXT = re.compile(r"^[A-Za-z0-9+\-−=()′']{1,6}$")
+
+
+def attach_script(prefix: str, text: str, sup: bool) -> str:
+    """在 prefix 末尾接上上标 / 下标：能用 Unicode 上下标字符表示的直接转换（O₂、x²、SO₄²⁻），
+    否则把底数并入 LaTeX（$a^{n+1}$），由前端 KaTeX 渲染。"""
+    table = _SUP if sup else _SUB
+    if all(c in table for c in text):
+        return prefix + "".join(table[c] for c in text)
+    mark = "^" if sup else "_"
+    base = prefix[-1] if prefix and re.match(r"[A-Za-z0-9)\]]", prefix[-1]) else ""
+    return prefix[: len(prefix) - len(base)] + f"${base}{mark}{{{text.replace('−', '-')}}}$"
+
+
+_LINEAR_SUP = re.compile(r"(?<=[A-Za-z0-9)\]}])\^(?:\{([^{}$]+)\}|\(([^()$]+)\)|(-?\d+)|([A-Za-z]))")
+_LINEAR_SUB = re.compile(r"(?<=[A-Za-z])_(?:\{([^{}$]+)\}|(\d+)|([a-z]))(?![A-Za-z0-9_])")
+_LINEAR_SQRT = re.compile(r"√\(([A-Za-z0-9 +\-*/.,]+)\)")
+
+
+def linear_math(text: str) -> str:
+    """把文字中的线性公式记法转为上下标：x^2 → x²，a_n → aₙ，2^(n+1) → $2^{n+1}$，√(x - 1) → $\\sqrt{x - 1}$。"""
+    if "$" in text:
+        return text
+    text = _LINEAR_SQRT.sub(lambda m: f"$\\sqrt{{{m.group(1).strip()}}}$", text)
+    for rx, sup in ((_LINEAR_SUP, True), (_LINEAR_SUB, False)):
+        out, last = "", 0
+        for m in rx.finditer(text):
+            body = next(g for g in m.groups() if g is not None).replace(" ", "")
+            out = attach_script(out + text[last:m.start()], body, sup)
+            last = m.end()
+        text = out + text[last:]
+    return text
+
+
+def line_text(spans: list[dict]) -> str:
+    """拼接一行文字，字号明显较小、紧贴前一字符的字母数字识别为上标（基线上移）或下标。"""
+    body = [s for s in spans if s["text"].strip()]
+    if not body:
+        return ""
+    size = max(s["size"] for s in body)
+    base_y = median(s["origin"][1] for s in body if s["size"] >= size * 0.9)
+    out, prev = "", None
+    for s in spans:
+        t = s["text"]
+        st = t.strip()
+        if (prev is not None and st and s["size"] < size * 0.8 and _SCRIPT_TEXT.match(st)
+                and out and not out[-1].isspace() and s["bbox"][0] - prev["bbox"][2] < size * 0.3):
+            out = attach_script(out, st, sup=s["origin"][1] < base_y - size * 0.15)
+        else:
+            out += t
+        prev = s
+    return linear_math(out.strip())
 
 
 def drop_page_furniture(blocks: list[Block], page_count: int) -> list[Block]:
@@ -49,7 +110,7 @@ def _parse_pdf(data: bytes) -> ParsedDocument:
                 continue
             # 按行输出：题号通常位于行首，行粒度便于切分
             for line in b.get("lines", []):
-                text = "".join(s["text"] for s in line["spans"]).strip()
+                text = line_text(line["spans"])
                 if not text:
                     continue
                 total_chars += len(text)

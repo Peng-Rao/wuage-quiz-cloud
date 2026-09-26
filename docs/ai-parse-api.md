@@ -56,10 +56,15 @@ POST /api/parse-jobs/{id}/commit    → 入校本题库
 | POST | `/api/draft-questions/{qid}/merge-previous` | — | `DraftQuestion[]`（重排后的完整列表） |
 | POST | `/api/draft-questions/{qid}/split` | — | `DraftQuestion[]`（重排后的完整列表） |
 | GET | `/api/draft-questions/{qid}/source` | — | `SourceImage[]` |
-| POST | `/api/parse-jobs/{id}/commit` | `{ questionIds: string[] }` | `{ savedCount }` |
+| POST | `/api/parse-jobs/{id}/commit` | `{ questionIds: string[], force?: boolean }` | `CommitResult`（`savedCount / savedIds / skipped / duplicatePaper`） |
 | POST | `/api/parse-jobs/{id}/generate-answers` | `{ questionIds?: string[], overwrite?: boolean }` | `AnswerTask`（202） |
 | GET | `/api/parse-jobs/{id}/usage` | — | `JobUsage`（汇总 + 每次调用明细） |
 | GET | `/api/usage/summary?days=30` | — | `UsageOverview`（近 N 天用量与平均成本） |
+| GET | `/api/bank/questions?stage=&subject=&nodeId=&type=&diff=&paperType=&year=&q=&paperId=&sort=&limit=&offset=` | — | `{ items: BankQuestion[], total }`（校本题库选题） |
+| GET | `/api/bank/knowledge-counts?treeId=` | — | `{ [nodeId]: number }`（各知识点含下级的入库题数） |
+| GET | `/api/papers?stage=&grade=&subject=&paperType=&q=&limit=&offset=` | — | `PaperPage`（试卷库，含各维度 facets） |
+| GET | `/api/papers/{id}` | — | `PaperDetail`（按原卷题号排列的题目） |
+| DELETE | `/api/papers/{id}` | — | 204（移出试卷库：删除已入库的题，草稿题恢复为未保存） |
 
 ### 本地存储（P1）
 
@@ -172,6 +177,27 @@ POST /api/parse-jobs/{id}/commit    → 入校本题库
 - 费用不落库，查询时按服务端配置的单价计算（`LLM_PRICES` 按模型名，元 / 百万 tokens；`MINERU_PRICE_PER_PAGE` 元 / 页）。
   未配置单价时 `cost=null`；部分缺失时 `priced=false`，`unpricedModels` 列出缺少单价的模型。
 - `ParseJob.usage` 为本任务的 `UsageSummary`，随 SSE 推送；`UsageOverview` 给出每份试卷、每页、每题的平均成本，用于估算后续费用。
+
+### 校本题库选题与试卷库
+
+前端类型见 `src/api/bank/types.ts`，与 `VITE_PARSE_API` 共用 mock / http 开关。
+
+- `nodeId`：知识点节点，含所有下级。题目的知识点按节点 id 或路径匹配——内置知识树更新后节点 id 会重建，路径不变，已入库的题仍能归入节点。
+- `diff`：`容易`（系数 ≤ 0.3）/ `适中`（≤ 0.6）/ `较难`；`paperType`：试卷类型关键词，逗号分隔，含任一即可（如 `期中,期末`）；
+  `year`：`2026` 表示学年或试卷名称中含该年份，`<2024` 表示更早；`sort`：`default`（按试卷、题号）/ `latest` / `easy` / `hard`。
+- 试卷库中的一份试卷 = 同一解析任务入库的题，`PaperSummary.id` 为任务 id；`sourceQuestionCount > questionCount` 表示只入库了部分题。
+  `facets` 给出学段、年级、学科、类型各自在其余筛选条件下的试卷数，没有分类的记为「未分类」。
+- 修改试卷分类（`PUT /meta`）或再次入库时，同步更新已入库题目的分类快照，选题按最新分类筛选。
+- 试题篮在前端保存题目快照、题序与分值（localStorage），不依赖后端。
+
+### 重复入库检查
+
+`commit` 默认（`force=false`）先检查重复，本卷自己已入库的题不算重复：
+
+- 整份试卷已在试卷库中时**不保存任何题**，返回 `duplicatePaper`：`same_file` 文件内容相同（`ParseJob.file_hash`，旧任务入库时补算）、
+  `same_title` 同学段学科的同名试卷（名称至少 8 个字）、`most_questions` 本次选中的题有一半以上（且至少 3 题）与同一份已入库试卷重复。
+- 否则逐题与校本题库比对（相似度 ≥ 0.85），重复的题跳过并列在 `skipped` 中（含已有题目的来源），其余正常保存。
+- 老师确认后以 `force=true` 重新提交（整卷，或只提交 `skipped` 中的题）即全部保存。
 
 ### 尚未覆盖
 

@@ -6,7 +6,7 @@ import {
   QUESTION_TYPES, type DraftQuestion, type DraftQuestionPatch, type ParseOptions, type SimilarQuestion, type SourceImage,
 } from '@/api/parse'
 import { DIFF_COEFS, coefToDiff, type Difficulty } from '@/data/mock'
-import { useBasketStore } from '@/stores/basket'
+import { fromDraft, useBasketStore } from '@/stores/basket'
 import { useParseJobStore } from '@/stores/parseJob'
 import ToggleSwitch from '@/components/ToggleSwitch.vue'
 import DifficultyBar from '@/components/DifficultyBar.vue'
@@ -19,9 +19,10 @@ import UsageCard from '@/components/parse/UsageCard.vue'
 import CostOverviewCard from '@/components/parse/CostOverviewCard.vue'
 import JobListPanel from '@/components/parse/JobListPanel.vue'
 import SimilarDialog from '@/components/parse/SimilarDialog.vue'
+import ModalDialog from '@/components/ModalDialog.vue'
 
 const store = useParseJobStore()
-const { phase, job, questions, selected, error, busy, options, usage, usageOverview, jobList, notice } = storeToRefs(store)
+const { phase, job, questions, selected, error, busy, options, usage, usageOverview, jobList, notice, commitResult } = storeToRefs(store)
 const basket = useBasketStore()
 const route = useRoute()
 const router = useRouter()
@@ -166,13 +167,29 @@ async function openSource(q: DraftQuestion) {
 // 底部操作
 const added = ref(false)
 function addToBasket() {
-  basket.addMany(questions.value.filter((q) => selected.value.has(q.id)).map((q) => q.id))
+  basket.addMany(questions.value.filter((q) => selected.value.has(q.id)).map(fromDraft))
   added.value = true
   setTimeout(() => (added.value = false), 1600)
 }
 const note = computed(() =>
   store.savedCount ? `已保存 ${store.savedCount} 题到校本题库` : added.value ? '已加入试题篮' : '',
 )
+
+// 重复入库：跳过的重复题、整份试卷已在试卷库中
+const skipped = computed(() => commitResult.value?.skipped ?? [])
+const skippedTip = computed(() => skipped.value.map((x) => `第 ${x.no} 题 ≈ ${x.source}（相似度 ${Math.round(x.score * 100)}%）`).join('\n'))
+const dupPaper = computed(() => commitResult.value?.duplicatePaper ?? null)
+const dupOpen = ref(false)
+watch(dupPaper, (p) => { dupOpen.value = !!p })
+const DUP_REASON = {
+  same_file: '与试卷库中的这份试卷是同一个文件',
+  same_title: '试卷库中已有同学段、同学科的同名试卷',
+  most_questions: '本卷大部分题目已随这份试卷入库',
+} as const
+async function forceCommit() {
+  dupOpen.value = false
+  await store.commit(true)
+}
 </script>
 
 <template>
@@ -307,6 +324,10 @@ const note = computed(() =>
           <span class="sel">已选 <b>{{ store.selectedCount }}</b> / {{ questions.length }} 题</span>
           <button class="ab-link" @click="store.toggleAll()">{{ store.allSelected ? '取消全选' : '全选' }}</button>
           <span class="ab-note">{{ note }}</span>
+          <span v-if="skipped.length" class="ab-note warn" :title="skippedTip">
+            {{ skipped.length }} 道题与校本题库已有题目重复，已跳过
+            <button class="ab-link" :disabled="busy.has('commit')" @click="store.commit(true, skipped.map((x) => x.questionId))">仍然保存</button>
+          </span>
           <div class="ab-actions">
             <button class="ab-btn ghost" @click="leaveJob">返回任务列表</button>
             <button
@@ -326,6 +347,17 @@ const note = computed(() =>
     <EditQuestionDialog v-model="editOpen" :job-id="job?.id ?? ''" :q="editing" :saving="!!editing && busy.has(editing.id)" @save="saveEdit" />
     <SourceImageDialog v-model="sourceOpen" :title="sourceTitle" :images="sourceImages" />
     <SimilarDialog v-model="similarOpen" :title="similarTitle" :items="similarItems" :error="similarError" />
+    <ModalDialog v-model="dupOpen" title="这份试卷已在试卷库中" :width="460">
+      <div v-if="dupPaper" class="dup-body">
+        <p>{{ DUP_REASON[dupPaper.reason] }}：</p>
+        <RouterLink :to="`/papers/${dupPaper.id}`" target="_blank" class="dup-title">《{{ dupPaper.title }}》</RouterLink>
+        <p class="muted">为避免试卷库和题库中出现重复内容，本次没有保存。确认是不同的试卷时可以仍然保存。</p>
+      </div>
+      <template #footer>
+        <button class="btn" @click="dupOpen = false">不保存</button>
+        <button class="btn btn-primary" :disabled="busy.has('commit')" @click="forceCommit">仍然保存</button>
+      </template>
+    </ModalDialog>
   </main>
 </template>
 
@@ -411,6 +443,11 @@ const note = computed(() =>
 .sel b { color: var(--c-highlight); }
 .ab-link { border: none; background: transparent; color: #D8DCE0; font-size: 13px; }
 .ab-note { font-size: 13px; color: var(--c-highlight); }
+.ab-note.warn { color: #F4D08C; display: inline-flex; align-items: center; gap: 6px; }
+.dup-body { display: flex; flex-direction: column; gap: 8px; font-size: 14px; line-height: 1.7; color: var(--c-text-2); }
+.dup-body p { margin: 0; }
+.dup-title { font-weight: 600; }
+.dup-body .muted { font-size: 13px; }
 .ab-actions { margin-left: auto; display: flex; gap: 8px; flex-wrap: wrap; }
 .ab-btn { border-radius: var(--r-md); height: 36px; padding: 0 14px; font-size: 13px; }
 .ab-btn:disabled { opacity: .5; cursor: not-allowed; }

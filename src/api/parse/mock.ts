@@ -684,11 +684,14 @@ export const mockParseApi: ParseApi = {
     }))
   },
 
-  async commit(jobId, questionIds) {
+  async commit(jobId, questionIds, force = false) {
     await sleep(300)
     const job = requireJob(jobId)
-    const ids = new Set(questionIds)
     const list = questions.get(jobId) ?? []
+    // 演示：查重标记的题视为与题库重复，默认跳过
+    const skipped = force ? [] : list.filter(q => questionIds.includes(q.id) && q.duplicateOf && q.status !== 'saved')
+      .map(q => ({ questionId: q.id, no: q.no, duplicateOf: q.duplicateOf!, score: 0.92, source: '校本题库中的已有题目' }))
+    const ids = new Set(questionIds.filter(id => !skipped.some(x => x.questionId === id)))
     list.forEach(q => ids.has(q.id) && (q.status = 'saved'))
     job.savedCount = list.filter(q => q.status === 'saved').length
     const r = recent.find(r => r.jobId === jobId)
@@ -697,7 +700,7 @@ export const mockParseApi: ParseApi = {
       r.questionCount = job.questionCount
       r.reviewCount = job.reviewCount
     }
-    return { savedCount: ids.size }
+    return { savedCount: ids.size, savedIds: [...ids], skipped, duplicatePaper: null }
   },
 
   async listRecent() {

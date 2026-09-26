@@ -442,6 +442,35 @@ export interface SourceImage {
   regions: SourceRegion[]
 }
 
+/** 因与校本题库已有题目重复而未保存的题 */
+export interface CommitSkip {
+  questionId: string
+  no: number
+  /** 已有题目 id */
+  duplicateOf: string
+  score: number
+  /** 已有题目的来源 */
+  source: string
+}
+
+/** 试卷库中已有的同一份试卷 */
+export interface DuplicatePaper {
+  id: string
+  title: string
+  /** same_file 相同文件 / same_title 同名试卷 / most_questions 多数题目已入库 */
+  reason: 'same_file' | 'same_title' | 'most_questions'
+}
+
+export interface CommitResult {
+  /** 本次保存的题 */
+  savedCount: number
+  savedIds: string[]
+  /** 重复而跳过的题 */
+  skipped: CommitSkip[]
+  /** 不为空时本次未保存任何题：整份试卷已在试卷库中，确认后用 force 重新提交 */
+  duplicatePaper: DuplicatePaper | null
+}
+
 export interface RecentUpload {
   jobId: string
   fileName: string
@@ -471,7 +500,8 @@ export interface ParseApi {
   splitSubQuestions(questionId: string): Promise<DraftQuestion[]>
   getSource(questionId: string): Promise<SourceImage[]>
   /** 保存选中题目到校本题库 */
-  commit(jobId: string, questionIds: string[]): Promise<{ savedCount: number }>
+  /** 保存选中题目到校本题库；默认跳过重复题，整卷重复时不保存；force 时全部保存 */
+  commit(jobId: string, questionIds: string[], force?: boolean): Promise<CommitResult>
   listRecent(): Promise<RecentUpload[]>
   /** 任务的 AI 调用明细 */
   getUsage(jobId: string): Promise<JobUsage>

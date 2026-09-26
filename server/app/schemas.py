@@ -330,10 +330,36 @@ class CreateJobRequest(Model):
 
 class CommitRequest(Model):
     question_ids: list[str] = Field(min_length=1)
+    # 跳过重复检查，全部保存
+    force: bool = False
+
+
+class CommitSkip(Model):
+    """因与校本题库已有题目重复而未保存的题。"""
+
+    question_id: str
+    no: int
+    duplicate_of: str
+    score: float
+    # 已有题目的来源
+    source: str
+
+
+class DuplicatePaper(Model):
+    """试卷库中已有的同一份试卷。reason：same_file 相同文件 / same_title 同名试卷 / most_questions 多数题目已入库。"""
+
+    id: str
+    title: str
+    reason: Literal["same_file", "same_title", "most_questions"]
 
 
 class CommitResult(Model):
+    # 本次保存的题数与 id
     saved_count: int
+    saved_ids: list[str] = []
+    skipped: list[CommitSkip] = []
+    # 不为空时本次未保存任何题：整份试卷已在试卷库中，确认后用 force 重新提交
+    duplicate_paper: DuplicatePaper | None = None
 
 
 # ---------------- 知识树 ----------------
@@ -369,6 +395,73 @@ class KnowledgeNodeHit(Model):
     name: str
     path: str
     score: float
+
+
+# ---------------- 校本题库与试卷库 ----------------
+
+class BankQuestionOut(Model):
+    id: str
+    type: QuestionType
+    score: float
+    stem: str
+    options: list[str]
+    answer: str | None
+    analysis: str | None
+    answer_source: Literal["paper", "ai", "manual"] | None = None
+    knowledge_points: list[KnowledgePointRef]
+    # 难度系数 0–1，越高越难
+    coef: float
+    images: list[str] = []
+    source: QuestionSource | None = None
+    # 所属试卷（即来源解析任务 id）
+    paper_id: str
+    created_at: UtcDatetime
+
+
+class BankQuestionPage(Model):
+    items: list[BankQuestionOut]
+    total: int
+
+
+class FacetCount(Model):
+    name: str
+    count: int
+
+
+class PaperSummary(Model):
+    """试卷库中的一份试卷：由同一份原卷入库的题组成，id 为来源解析任务 id。"""
+
+    id: str
+    title: str
+    meta: PaperMeta
+    file_name: str
+    # 已入库题数；原卷拆出的题数（部分入库时大于前者）
+    question_count: int
+    source_question_count: int
+    total_score: float
+    type_counts: dict[str, int]
+    # 按分值加权的平均难度系数
+    avg_coef: float | None
+    # 最近一次入库时间
+    updated_at: UtcDatetime
+
+
+class PaperFacets(Model):
+    stages: list[FacetCount]
+    grades: list[FacetCount]
+    subjects: list[FacetCount]
+    paper_types: list[FacetCount]
+
+
+class PaperPage(Model):
+    items: list[PaperSummary]
+    total: int
+    # 各维度在其余筛选条件下的试卷数
+    facets: PaperFacets
+
+
+class PaperDetail(PaperSummary):
+    questions: list[BankQuestionOut]
 
 
 # ---------------- 评测 ----------------

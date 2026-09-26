@@ -113,8 +113,9 @@ def test_edit_merge_split_commit(client, parsed):
 
     # 入库：重复提交不产生重复题
     ids = [q["id"] for q in merged[:5]]
-    assert client.post(f"/api/parse-jobs/{job_id}/commit", json={"questionIds": ids}).json() == {"savedCount": 5}
-    assert client.post(f"/api/parse-jobs/{job_id}/commit", json={"questionIds": ids}).json() == {"savedCount": 5}
+    for _ in range(2):
+        r = client.post(f"/api/parse-jobs/{job_id}/commit", json={"questionIds": ids}).json()
+        assert r["savedCount"] == 5 and r["savedIds"] == ids and r["skipped"] == [] and r["duplicatePaper"] is None
     job = client.get(f"/api/parse-jobs/{job_id}").json()
     assert job["savedCount"] == 5 and job["meta"]["region"] == "北京 · 西城"
     recent = client.get("/api/parse-jobs?recent=1").json()

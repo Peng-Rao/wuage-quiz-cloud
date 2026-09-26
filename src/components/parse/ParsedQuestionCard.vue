@@ -58,7 +58,7 @@ watch(() => props.q.answerSource, (src, prev) => {
           <button v-if="q.duplicateOf" class="dup-tag" title="查看题库中的相似题" @click="$emit('similar')">题库已有相似题 ›</button>
           <span v-if="q.status === 'saved'" class="saved-tag">已入库</span>
         </div>
-        <div v-if="q.source" class="src" :title="q.source.fileName">出处：{{ q.source.label }}</div>
+        <div v-if="q.source" class="src" :title="q.source.fileName">来源：{{ q.source.label }}</div>
         <div class="pq-stem serif"><MathText :text="q.stem" /></div>
         <div v-if="q.images.length" class="figs">
           <img v-for="src in q.images" :key="src" :src="src" alt="题目配图" loading="lazy">

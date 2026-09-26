@@ -52,7 +52,7 @@ npm run dev:api
 | 模块 | 说明 |
 |---|---|
 | `app/pipeline/parsers/mineru_cloud.py` | v4 批量上传接口：申请上传地址 → PUT → 轮询 → 下载 zip → `content_list.json` 转 IR |
-| `app/pipeline/parsers/lite.py` | PyMuPDF 读取文字层，按行输出；扫描件、Word 不可用 |
+| `app/pipeline/parsers/lite.py` | PyMuPDF 读取文字层，按行输出；按字号与基线识别上下标（O₂、x²），x^2、a_n、√(…) 转为上下标或 LaTeX；分式等二维公式仍为文字，扫描件、Word 不可用 |
 | `app/pipeline/parsers/router.py` | 引擎链与降级 |
 | `app/pipeline/segment.py` | 大题标题 / 题号 / 选项 / 分值 / 卷末答案的规则切分；大模型分组校验与置信度 |
 | `app/pipeline/classify.py` | 试卷分类 |
@@ -71,6 +71,15 @@ npm run dev:api
 - `app/pipeline/knowledge.py`：按知识树标注知识点（小树整表选择 / 大树检索候选后选择 / 无树自由生成），同一次调用评估难度。
 - `app/pipeline/difficulty.py`：大模型评估与基线加权，可用评测拟合的校准直线修正。
 - `app/evaluation.py`：以核对结果为标准答案重新解析并计算指标；页面在「试卷解析 › 解析评测」。
+
+### 校本题库选题与试卷库
+
+- `app/bank.py`：按学段学科、知识点（含下级，节点 id 或路径匹配）、题型、难度、试卷类型、年份、关键词检索入库题；
+  知识树各节点的题数；按解析任务聚合的试卷库（含年级、学科等 facets）。
+- 知识点、试卷类型、年份、关键词在内存中筛选，单校题量达到数万后需改为「题目—知识点」关联表。
+- 修改试卷分类或再次入库时，同步更新已入库题目的分类快照（`sync_meta`）。
+- 入库前查重（`check_duplicates`）：相同文件、同名试卷或多数题目已入库时整卷不保存；单题与题库重复时跳过，老师确认后可强制保存。
+  `DELETE /api/papers/{id}` 把重复入库的试卷移出试卷库。
 
 ### 相似题与批量解析
 
