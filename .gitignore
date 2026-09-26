@@ -2,3 +2,9 @@ node_modules
 dist
 .DS_Store
 *.tsbuildinfo
+
+# 与题库代码无关的本地产出（文档生成等），不纳入仓库
+outputs/
+create_xm_doc.py
+xm-fontconfig.conf
+厦门市小初高教材PDF检索与下载入口.docx
