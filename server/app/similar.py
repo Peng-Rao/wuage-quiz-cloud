@@ -155,7 +155,7 @@ def _candidates(s: Session, school_id: str, *, qtype: str | None, exclude_job: s
         # 其他试卷中尚未入库的草稿题：用于发现同一份试卷被重复上传
         saved = {b.source_draft_id for _, b in rows}
         drafts = (select(DraftQuestion).join(ParseJob, ParseJob.id == DraftQuestion.job_id)
-                  .where(ParseJob.school_id == school_id, ParseJob.status == "done"))
+                  .where(ParseJob.school_id == school_id, ParseJob.status == "done", ParseJob.kind.is_(None)))
         if exclude_job:
             drafts = drafts.where(DraftQuestion.job_id != exclude_job)
         if qtype:

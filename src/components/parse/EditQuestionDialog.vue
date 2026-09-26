@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { reactive, watch } from 'vue'
-import { QUESTION_TYPES, type DraftQuestion, type DraftQuestionPatch, type QuestionType } from '@/api/parse'
+import { reactive, ref, watch } from 'vue'
+import { QUESTION_TYPES, parseApi, type DraftQuestion, type DraftQuestionPatch, type KnowledgeNodeHit, type QuestionType } from '@/api/parse'
 import ModalDialog from '@/components/ModalDialog.vue'
 
-const props = defineProps<{ q: DraftQuestion | null; saving: boolean }>()
+const props = defineProps<{ q: DraftQuestion | null; saving: boolean; jobId: string }>()
 const open = defineModel<boolean>({ required: true })
 const emit = defineEmits<{ save: [patch: DraftQuestionPatch] }>()
 
@@ -19,9 +19,31 @@ watch(() => [open.value, props.q] as const, ([v, q]) => {
   })
 }, { immediate: true })
 
+// 知识点联想：按正在输入的最后一项检索本卷知识树
+const hits = ref<KnowledgeNodeHit[]>([])
+let searchTimer: ReturnType<typeof setTimeout> | null = null
+const SPLIT = /[、，,；;\n]/
+function onKpInput() {
+  if (searchTimer) clearTimeout(searchTimer)
+  const last = form.kps.split(SPLIT).pop()?.trim() ?? ''
+  if (!last || !props.jobId) {
+    hits.value = []
+    return
+  }
+  searchTimer = setTimeout(async () => {
+    hits.value = await parseApi.searchKnowledge(last, { jobId: props.jobId }).catch(() => [])
+  }, 250)
+}
+function pickHit(h: KnowledgeNodeHit) {
+  const parts = form.kps.split(SPLIT).map(s => s.trim()).filter(Boolean)
+  parts.pop()
+  form.kps = [...parts, h.name].join('、') + '、'
+  hits.value = []
+}
+
 /** 按「、」等分隔解析知识点，去重 */
 function parseKps() {
-  const names = [...new Set(form.kps.split(/[、，,；;\n]/).map(s => s.trim()).filter(Boolean))]
+  const names = [...new Set(form.kps.split(SPLIT).map(s => s.trim()).filter(Boolean))]
   // 只传普通对象（响应式代理无法被复制），id 由后端按「学科 + 名称」统一生成
   return names.map(name => ({ id: props.q?.knowledgePoints.find(k => k.name === name)?.id ?? 'kp_' + name, name }))
 }
@@ -72,7 +94,10 @@ function save() {
       </label>
       <label class="field">
         <span>知识点 <em>多个用「、」分隔</em></span>
-        <input v-model="form.kps" placeholder="如：集合的基本运算、一元二次不等式">
+        <input v-model="form.kps" placeholder="如：集合的基本运算、一元二次不等式" @input="onKpInput">
+        <ul v-if="hits.length" class="hits">
+          <li v-for="h in hits" :key="h.id"><button type="button" @click="pickHit(h)"><b>{{ h.name }}</b><span>{{ h.path }}</span></button></li>
+        </ul>
       </label>
       <p class="tip">保存后该题视为已人工核对，置信度提示将消失。公式编辑器将在后续版本提供。</p>
     </form>
@@ -97,6 +122,11 @@ function save() {
 }
 .field textarea.serif, .field input.serif { font-family: var(--font-serif); line-height: 1.75; }
 .field input:focus, .field select:focus, .field textarea:focus { outline: none; border-color: var(--c-primary); }
+.hits { list-style: none; margin: 0; padding: 4px; border: 1px solid var(--c-border); border-radius: var(--r-sm); max-height: 180px; overflow-y: auto; }
+.hits button { width: 100%; text-align: left; border: none; background: none; padding: 5px 6px; display: flex; flex-direction: column; gap: 1px; border-radius: 4px; }
+.hits button:hover { background: var(--c-primary-soft); }
+.hits b { font-weight: 500; color: var(--c-ink); font-size: 13px; }
+.hits span { font-size: 11px; color: var(--c-text-4); }
 .tip { margin: 0; font-size: 12px; color: var(--c-text-4); }
 .save { height: 38px; font-size: 14px; padding: 0 20px; }
 .save:disabled { opacity: .6; cursor: not-allowed; }

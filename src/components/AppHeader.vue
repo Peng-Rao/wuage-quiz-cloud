@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { storeToRefs } from 'pinia'
+import { useRoute } from 'vue-router'
 import BrandLogo from './BrandLogo.vue'
 import { STAGES } from '@/data/mock'
 import { useAppStore } from '@/stores/app'
@@ -9,6 +10,9 @@ import { useBasketStore } from '@/stores/basket'
 const app = useAppStore()
 const { stage, subject } = storeToRefs(app)
 const basket = useBasketStore()
+const route = useRoute()
+// 子页面（如 /upload/knowledge）也高亮所属菜单；首页只在根路径高亮
+const isActive = (to: string) => (to === '/' ? route.path === '/' : route.path === to || route.path.startsWith(to + '/'))
 
 const NAV = [
   { to: '/', label: '首页' },
@@ -65,7 +69,7 @@ onBeforeUnmount(() => {
       </div>
 
       <nav class="nav">
-        <RouterLink v-for="n in NAV" :key="n.to" :to="n.to" class="nav-item" exact-active-class="is-active">
+        <RouterLink v-for="n in NAV" :key="n.to" :to="n.to" class="nav-item" :class="{ 'is-active': isActive(n.to) }">
           {{ n.label }}
         </RouterLink>
       </nav>

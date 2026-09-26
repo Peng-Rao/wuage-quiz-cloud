@@ -182,6 +182,10 @@ const note = computed(() =>
         <h1>试卷解析</h1>
         <span>上传整份试卷，自动识别学科与试卷类型，拆分为单题，并评估每题难度。</span>
       </div>
+      <nav class="tools">
+        <RouterLink to="/upload/knowledge">知识树管理</RouterLink>
+        <RouterLink to="/upload/eval">解析评测</RouterLink>
+      </nav>
       <div class="steps">
         <span
           v-for="(s, i) in STEPS" :key="s" class="step"
@@ -279,6 +283,10 @@ const note = computed(() =>
             <button v-for="t in PTABS" :key="t" class="chip" :class="{ 'is-soft': ptab === t, dark: ptab === t }" @click="ptab = t">{{ t }}</button>
           </div>
         </div>
+        <div v-if="notice && phase === 'done'" class="card ok-bar">
+          <span>{{ notice }}</span>
+          <button class="btn-link" @click="notice = ''">知道了</button>
+        </div>
         <div v-if="error" class="card err-bar" role="alert">
           <span>{{ error }}</span>
           <button class="btn-link" @click="error = ''">知道了</button>
@@ -301,6 +309,11 @@ const note = computed(() =>
           <span class="ab-note">{{ note }}</span>
           <div class="ab-actions">
             <button class="ab-btn ghost" @click="leaveJob">返回任务列表</button>
+            <button
+              class="ab-btn ghost" :disabled="busy.has('eval')"
+              title="把当前核对结果保存为标准答案，用于评测解析效果"
+              @click="store.markEvalSample()"
+            >{{ job?.evalSampleId ? '更新评测样本' : '设为评测样本' }}</button>
             <button class="ab-btn light" :disabled="!store.selectedCount" @click="addToBasket">加入试题篮</button>
             <button class="ab-btn primary" :disabled="!store.selectedCount || busy.has('commit')" @click="store.commit()">
               {{ busy.has('commit') ? '保存中…' : '保存到校本题库' }}
@@ -310,7 +323,7 @@ const note = computed(() =>
       </section>
     </div>
 
-    <EditQuestionDialog v-model="editOpen" :q="editing" :saving="!!editing && busy.has(editing.id)" @save="saveEdit" />
+    <EditQuestionDialog v-model="editOpen" :job-id="job?.id ?? ''" :q="editing" :saving="!!editing && busy.has(editing.id)" @save="saveEdit" />
     <SourceImageDialog v-model="sourceOpen" :title="sourceTitle" :images="sourceImages" />
     <SimilarDialog v-model="similarOpen" :title="similarTitle" :items="similarItems" :error="similarError" />
   </main>
@@ -322,7 +335,10 @@ const note = computed(() =>
 .intro { display: flex; flex-direction: column; gap: 6px; }
 .intro h1 { margin: 0; font-size: 24px; font-weight: 700; }
 .intro span { font-size: 14px; color: var(--c-text-3); }
-.steps { margin-left: auto; display: flex; gap: 6px; font-size: 13px; }
+.tools { margin-left: auto; display: flex; gap: 14px; font-size: 13px; }
+.tools a { color: var(--c-text-2); }
+.tools a:hover { color: var(--c-primary); }
+.steps { display: flex; gap: 6px; font-size: 13px; }
 .step { padding: 5px 12px; border-radius: 14px; background: var(--c-divider); color: var(--c-text-3); }
 .step.past { background: var(--c-primary-soft); color: var(--c-primary-dark); }
 .step.cur { background: var(--c-primary); color: #fff; }
@@ -383,6 +399,7 @@ const note = computed(() =>
   padding: 10px 18px; display: flex; align-items: center; justify-content: space-between; gap: 12px;
   font-size: 13px; color: #A0301F; background: #FBEAE6; border-color: #EFC2B8;
 }
+.ok-bar { padding: 10px 18px; display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 13px; color: #3F7340; background: #E9F1E7; border-color: #C8DCC4; }
 .empty { padding: 32px; text-align: center; font-size: 14px; color: var(--c-text-4); }
 
 .actionbar {

@@ -7,7 +7,7 @@ from fastapi import HTTPException
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, object_session
 
-from .db import DraftQuestion, ParseJob
+from .db import DraftQuestion, EvalSample, ParseJob
 from .pipeline.files import validate_kinds
 from .schemas import (
     PARSE_STAGES, REVIEW_CONFIDENCE, DraftQuestionOut, JobListItem, ParseJobOut, ParseOptions, QuestionSource,
@@ -63,7 +63,8 @@ def job_out(s: Session, job: ParseJob) -> ParseJobOut:
         file_type=job.file_type, page_count=job.page_count, options=job.options, parser=job.parser,
         status=job.status, progress=job.progress, stages=job.stages, meta=job.meta,
         question_count=total, review_count=review, saved_count=saved, error=job.error,
-        usage=summarize(rows) if rows else None, answer_task=job.answer_task, created_at=job.created_at,
+        usage=summarize(rows) if rows else None, answer_task=job.answer_task,
+        eval_sample_id=s.scalar(select(EvalSample.id).where(EvalSample.job_id == job.id)), created_at=job.created_at,
     )
 
 

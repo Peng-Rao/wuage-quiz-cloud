@@ -7,6 +7,8 @@ export const router = createRouter({
     { path: '/pick', name: 'pick', component: () => import('./views/PickView.vue'), meta: { title: '选题组卷' } },
     { path: '/paper', name: 'paper', component: () => import('./views/PaperView.vue'), meta: { title: '试卷编辑' } },
     { path: '/upload', name: 'upload', component: () => import('./views/UploadView.vue'), meta: { title: '试卷解析' } },
+    { path: '/upload/knowledge', name: 'knowledge', component: () => import('./views/KnowledgeView.vue'), meta: { title: '知识树管理' } },
+    { path: '/upload/eval', name: 'eval', component: () => import('./views/EvalView.vue'), meta: { title: '解析评测' } },
     { path: '/:pathMatch(.*)*', redirect: '/' },
   ],
   scrollBehavior: () => ({ top: 0 }),

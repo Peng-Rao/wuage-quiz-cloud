@@ -153,6 +153,8 @@ class ParseJobOut(Model):
     error: str | None = None
     usage: UsageSummary | None = None
     answer_task: AnswerTask | None = None
+    # 已设为评测样本时为样本 id
+    eval_sample_id: str | None = None
     created_at: UtcDatetime
 
 
@@ -250,6 +252,9 @@ class SourceRegion(Model):
 class KnowledgePointRef(Model):
     id: str
     name: str
+    # 知识树中的完整路径；不在知识树中的知识点为 null
+    path: str | None = None
+    in_tree: bool = False
 
 
 class DraftQuestionOut(Model):
@@ -268,6 +273,8 @@ class DraftQuestionOut(Model):
     knowledge_points: list[KnowledgePointRef]
     # 难度系数 0–1，越高越难，1 为最难
     coef: float
+    # baseline 按题位估算 / ai 大模型评估 / manual 老师调整
+    difficulty_source: Literal["baseline", "ai", "manual"] | None = None
     confidence: float
     block_ids: list[str]
     regions: list[SourceRegion]
@@ -327,6 +334,68 @@ class CommitRequest(Model):
 
 class CommitResult(Model):
     saved_count: int
+
+
+# ---------------- 知识树 ----------------
+
+class KnowledgeTreeOut(Model):
+    id: str
+    name: str
+    subject: str
+    stage: str
+    textbook: str
+    builtin: bool
+    node_count: int
+    created_at: UtcDatetime
+
+
+class KnowledgeTreeDetail(KnowledgeTreeOut):
+    # 嵌套节点：{id, name, aliases, children}
+    nodes: list[dict]
+
+
+class KnowledgeTreeImport(Model):
+    format: Literal["json", "csv"]
+    content: str = Field(min_length=1, max_length=5_000_000)
+    # 覆盖 JSON 中的同名字段；CSV 必须提供学科与学段
+    name: str | None = None
+    subject: str | None = None
+    stage: str | None = None
+    textbook: str | None = None
+
+
+class KnowledgeNodeHit(Model):
+    id: str
+    name: str
+    path: str
+    score: float
+
+
+# ---------------- 评测 ----------------
+
+class EvalSampleOut(Model):
+    id: str
+    job_id: str
+    file_name: str
+    question_count: int
+    created_at: UtcDatetime
+
+
+class EvalRunCreate(Model):
+    # 留空表示全部样本
+    sample_ids: list[str] | None = None
+
+
+class EvalRunOut(Model):
+    id: str
+    status: Literal["queued", "running", "done", "failed"]
+    total: int
+    done: int
+    config: dict
+    metrics: dict | None
+    details: list[dict]
+    error: str | None
+    created_at: UtcDatetime
 
 
 # 前向引用（SimilarQuestion 定义在 QuestionSource、KnowledgePointRef 之前）

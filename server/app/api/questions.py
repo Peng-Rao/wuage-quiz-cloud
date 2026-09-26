@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from ..db import ParseJob, get_session
-from ..pipeline.knowledge import kp_id
+from ..knowledge_tree import resolve_kps
 from ..schemas import DraftQuestionOut, DraftQuestionPatch, SourceImage
 from ..services import (
     get_question, merge_with_previous, question_out, renumber, split_sub_questions,
@@ -23,13 +23,13 @@ def update_question(qid: str, patch: DraftQuestionPatch, s: Session = Depends(ge
     changed = {k for k, v in fields.items() if getattr(q, k) != v}
     if "knowledge_points" in fields:
         # 知识点 id 统一按「学科 + 名称」生成，手动输入与 AI 标注的同名知识点一致
-        subject = ((s.get(ParseJob, q.job_id).meta or {}).get("subject")) or ""
-        names = list(dict.fromkeys(k["name"].strip() for k in fields["knowledge_points"] if k["name"].strip()))
-        fields["knowledge_points"] = [{"id": kp_id(subject, n), "name": n} for n in names]
+        fields["knowledge_points"] = resolve_kps(s, q.job_id, fields["knowledge_points"])
     for k, v in fields.items():
         setattr(q, k, v)
     if _REVIEW_FIELDS & changed:
         q.confidence = 1.0
+    if "coef" in changed:
+        q.difficulty_source = "manual"
     if {"answer", "analysis"} & changed:
         # 老师改过的答案不再视为 AI 生成
         q.answer_source = "manual" if q.answer else None
