@@ -43,7 +43,7 @@ def parsed(client):
     assert r.status_code == 200, r.text
     job = r.json()
     assert job["status"] == "queued" and [s["stage"] for s in job["stages"]] == \
-        ["ocr", "classify", "segment", "knowledge", "difficulty"]
+        ["ocr", "classify", "segment", "knowledge", "difficulty", "dedupe"]
     return wait_done(client, job["id"])
 
 
@@ -82,7 +82,7 @@ def test_edit_merge_split_commit(client, parsed):
     job_id = parsed["id"]
     qs = client.get(f"/api/parse-jobs/{job_id}/questions").json()
 
-    r = client.patch(f"/api/draft-questions/{qs[3]['id']}", json={"answer": "B", "coef": 0.5})
+    r = client.patch(f"/api/draft-questions/{qs[3]['id']}", json={"answer": "D", "coef": 0.5})
     assert r.status_code == 200 and r.json()["confidence"] == 1.0 and r.json()["coef"] == 0.5
     assert client.patch(f"/api/draft-questions/{qs[3]['id']}", json={"type": "判断题"}).status_code == 422
 

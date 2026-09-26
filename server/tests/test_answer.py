@@ -121,3 +121,18 @@ def test_generate_answers_flow(client, parsed, llm_on):  # noqa: F811
 def test_generate_answers_requires_llm(client, parsed):  # noqa: F811
     r = client.post(f"/api/parse-jobs/{parsed['id']}/generate-answers", json={"overwrite": True})
     assert r.status_code == 400 and "未配置大模型" in r.json()["message"]
+
+
+def test_coef_semantics_migrated_once(tmp_path):
+    from app.db import Base, migrate_coef_semantics
+    eng = create_engine(f"sqlite:///{tmp_path / 'coef.db'}")
+    Base.metadata.create_all(eng)
+    from sqlalchemy.orm import Session
+    with Session(eng) as s:
+        s.add(DraftQuestion(id="q1", job_id="j1", no=1, type="单选题", score=5, page=1, stem="题干", options=[],
+                            knowledge_points=[], coef=0.86, confidence=0.9, block_ids=[], regions=[], images=[]))
+        s.commit()
+    assert migrate_coef_semantics(eng) == 1
+    assert migrate_coef_semantics(eng) == 0  # 只执行一次
+    with eng.connect() as c:
+        assert c.execute(text("SELECT coef FROM draft_question")).scalar() == pytest.approx(0.14)

@@ -9,11 +9,13 @@ from sqlalchemy import delete
 
 from ..config import get_settings
 from ..db import DraftQuestion, ParseBlock, ParseJob, SessionLocal
+from ..similar import dedupe_job
 from ..storage import get_store
 from ..usage import current_job
 from . import difficulty
 from .classify import classify
 from .files import normalize, pdf_page_count, render_pages
+from .knowledge import tag_job
 from .ir import Block
 from .parsers.router import AllParsersFailed, parse_with_fallback
 from .segment import segment, units_from_blocks
@@ -21,7 +23,8 @@ from .segment import segment, units_from_blocks
 log = logging.getLogger(__name__)
 
 # 各阶段在总进度中的区间
-SPAN = {"ocr": (0, 50), "classify": (50, 58), "segment": (58, 88), "knowledge": (88, 90), "difficulty": (90, 100)}
+SPAN = {"ocr": (0, 50), "classify": (50, 58), "segment": (58, 86), "knowledge": (86, 88), "difficulty": (88, 90),
+        "dedupe": (90, 100)}
 
 
 class UserFacingError(Exception):
@@ -88,8 +91,8 @@ async def run_job(job_id: str) -> None:
     ctx = JobContext(job_id)
     with SessionLocal() as s:
         job = s.get(ParseJob, job_id)
-        if job is None:
-            return
+        if job is None or job.status in ("cancelled", "done"):
+            return  # 排队期间被取消，或重启恢复时已完成
         files_info = list(job.file_keys)
         options = dict(job.options)
         file_type = job.file_type
@@ -167,13 +170,29 @@ async def run_job(job_id: str) -> None:
         s.commit()
     ctx.stage("segment", "done", f"{len(seg.questions)} 道题" + ("" if seg.used_llm else "（规则）"))
 
-    # ---- knowledge：知识点标注（P2） ----
-    ctx.stage("knowledge", "skipped", "即将开放" if options.get("knowledge", True) else None)
+    # ---- knowledge：知识点标注 ----
+    if not options.get("knowledge", True):
+        ctx.stage("knowledge", "skipped")
+    elif not settings.llm_enabled:
+        ctx.stage("knowledge", "skipped", "未配置大模型")
+    else:
+        ctx.stage("knowledge", "running")
+        n, kinds = await tag_job(job_id)
+        ctx.stage("knowledge", "done", f"{kinds} 个知识点" if n else "未能标注")
+        if n < len(seg.questions):
+            warnings.append(f"{len(seg.questions) - n} 道题未能标注知识点，可在核对页重新标注")
 
     # ---- difficulty：难度评估（P1 为基线估计） ----
-    ctx.stage("difficulty", "done", "基线估计")
-    if options.get("dedupe"):
-        warnings.append("题库查重将在后续版本提供")
+    ctx.stage("difficulty", "done", "基线估计（越高越难）")
+
+    # ---- dedupe：与校本题库查重 ----
+    if options.get("dedupe", True):
+        ctx.stage("dedupe", "running")
+        with SessionLocal() as s:
+            dup = await dedupe_job(s, job_id)
+        ctx.stage("dedupe", "done", f"{dup} 道疑似重复" if dup else "未发现重复")
+    else:
+        ctx.stage("dedupe", "skipped")
     ctx.update(status="done", progress=100, warnings=warnings)
 
 
@@ -201,3 +220,15 @@ def _fail(ctx: JobContext, message: str) -> None:
         job.error = message
         job.stages = [dict(x, status="failed") if x["status"] == "running" else dict(x) for x in job.stages]
         s.commit()
+
+
+async def run_knowledge_task(job_id: str) -> None:
+    """为已解析的试卷补标知识点（如解析时未启用大模型）。进度体现在 knowledge 阶段的状态上。"""
+    current_job.set(job_id)
+    ctx = JobContext(job_id)
+    try:
+        n, kinds = await tag_job(job_id, only_missing=True)
+        ctx.stage("knowledge", "done", f"补标 {n} 题 · {kinds} 个知识点" if n else "未能标注")
+    except Exception:
+        log.exception("知识点标注任务 %s 异常", job_id)
+        ctx.stage("knowledge", "failed", "标注失败，请重试")

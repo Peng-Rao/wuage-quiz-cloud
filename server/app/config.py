@@ -36,6 +36,16 @@ class Settings(BaseSettings):
     llm_timeout: float = 300.0
     # 附加到请求体的厂商参数（JSON），如通义千问关闭思考：{"enable_thinking": false}
     llm_extra_body: dict[str, Any] = {}
+    # 相似题语义检索（可选）：OpenAI 兼容 /embeddings；地址与 Key 留空时沿用 LLM_BASE_URL / LLM_API_KEY
+    # 如通义千问：EMBEDDING_MODEL=text-embedding-v4
+    embedding_model: str = ""
+    embedding_base_url: str = ""
+    embedding_api_key: str = ""
+    embedding_batch: int = 10
+
+    # 同时解析的试卷数（批量上传时其余排队）
+    worker_concurrency: int = 2
+
     # AI 生成答案时同时进行的请求数
     answer_concurrency: int = 3
     #  单次拆题请求最多发送的版面单元数，超过则只用规则结果

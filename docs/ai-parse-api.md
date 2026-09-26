@@ -9,7 +9,7 @@
 - 失败时返回非 2xx，响应体 `{ "message": "给用户看的中文错误" }`。
 - `bbox` 为相对页面宽高归一化的 `[x0, y0, x1, y1]`（0–1），与 MinerU `content_list.json` 换算后一致。
 - `confidence` 为 0–1，低于 `0.8` 的题进入「待核对」。
-- `coef` 为难度系数（预估得分率 0–1）：≥ 0.7 容易，≥ 0.4 适中，其余较难。
+- `coef` 为难度系数 0–1，越高越难，1 为最难（约等于 1 − 预估得分率）：≤ 0.3 容易，≤ 0.6 适中，其余较难。
 
 ## 流程
 
@@ -32,6 +32,14 @@ POST /api/parse-jobs/{id}/commit    → 入校本题库
 | GET | `/api/parse-jobs/{id}` | — | `ParseJob` |
 | GET | `/api/parse-jobs/{id}/events` | SSE | `data: ParseJob` |
 | GET | `/api/parse-jobs?recent=1` | — | `RecentUpload[]`（最近 5 条） |
+| GET | `/api/parse-jobs?status=queued,running&batchId=&limit=20&offset=0` | — | `JobListPage`（任务列表，最新在前） |
+| POST | `/api/parse-jobs/{id}/cancel` | — | `ParseJob`（仅排队中的任务） |
+| POST | `/api/parse-jobs/{id}/retry` | — | `ParseJob`（失败或已取消的任务重新排队） |
+| POST | `/api/parse-batches` | `{ items: [{ fileKeys, fileNames }], options }` | `ParseBatch` |
+| GET | `/api/parse-batches/{id}` | — | `ParseBatch`（含各状态计数与任务列表） |
+| GET | `/api/draft-questions/{qid}/similar?limit=5&scope=all` | — | `SimilarQuestion[]` |
+| POST | `/api/parse-jobs/{id}/tag-knowledge` | — | `ParseJob`（202，补标缺少知识点的题） |
+| POST | `/api/similar/search` | `{ text, type?, limit?, scope? }` | `SimilarQuestion[]` |
 | PUT | `/api/parse-jobs/{id}/meta` | `PaperMeta` | `PaperMeta` |
 | GET | `/api/parse-jobs/{id}/questions` | — | `DraftQuestion[]`（按 `no` 升序） |
 | PATCH | `/api/draft-questions/{qid}` | `DraftQuestionPatch` | `DraftQuestion` |
@@ -62,8 +70,9 @@ POST /api/parse-jobs/{id}/commit    → 入校本题库
 | `ocr` | 版面识别与文字提取（MinerU / 本地引擎） | `识别 4 页` |
 | `classify` | 学段 / 学科 / 类型分类，完成后写入 `meta` | `高中 · 数学 · 期中` |
 | `segment` | 题目切分、题型判断、答案关联 | `9 道题` |
-| `knowledge` | 知识点标注（从知识树候选中选择）；P1 固定为 `skipped` | `11 个知识点` |
-| `difficulty` | 难度评估；P1 为基线估计 | `预估得分率` / `基线估计` |
+| `knowledge` | 知识点标注（大模型，每题 1–3 个）；未启用大模型或关闭选项时为 `skipped` | `11 个知识点` |
+| `difficulty` | 难度评估；P1 为基线估计 | `基线估计（越高越难）` |
+| `dedupe` | 与校本题库查重；`options.dedupe=false` 时为 `skipped` | `2 道疑似重复` / `未发现重复` |
 
 `segment` 未启用大模型时 note 带「（规则）」后缀，如 `9 道题（规则）`。
 
@@ -82,6 +91,32 @@ POST /api/parse-jobs/{id}/commit    → 入校本题库
 - `split`：按「（1）/(1)/⑴」小问标记拆分，公共题干复制到每个小问，分值均分（余数给最后一问）；无标记时返回 400。
 - 合并 / 拆分会产生新的题目 id，前端以返回的完整列表为准。
 - `commit` 只把选中题目标记为 `saved`，可多次调用。
+
+### 题目出处与知识点
+
+- `DraftQuestion.source`：出处，由试卷分类（学年、地区、年级、试卷类型、试卷名称）与题号实时拼出，`label` 如
+  「2026—2027 上 · 北京 · 海淀 · 高一期中考试《…》第 3 题」；修改分类后随之更新。入库时保存文件名、题号、页码与分类。
+- `PaperMeta.title`：试卷名称，取自卷首标题（规则 + 大模型）。
+- 知识点：大模型按学科与教材为每题标注 1–3 个，名称规范化后按「学科 + 名称」生成 id（同名知识点 id 一致）。
+  目前没有正式知识树，名称由大模型生成；接入知识树后改为从候选中选择。PATCH `knowledgePoints` 时后端同样统一 id。
+- PATCH 只处理实际变化的字段：答案或解析未变时不会改变 `answerSource`。
+- `SimilarQuestion.origin` / `knowledgePoints`：相似题的出处与知识点。
+
+### 批量后台解析
+
+- 一次上传多份试卷：每一项（1 个 PDF / Word，或同一份试卷的多张图片）各自创建解析任务，`ParseJob.batchId` 为所属批次。
+  任一项校验失败则整批不创建。
+- 任务在服务端排队，同时解析的份数由 `WORKER_CONCURRENCY` 控制（默认 2）；关闭页面不影响解析，服务重启后未完成的任务自动恢复。
+- 排队中的任务可取消（`status=cancelled`）；失败或已取消的任务可重试（草稿题清空重建）。
+- 前端：多份 PDF / Word 自动走批量；「解析任务」列表在有进行中任务时每 2 秒刷新；页面地址 `?job=` 指向当前试卷。
+
+### 相似题
+
+- 字面相似度：归一化（去空白、标点、填空线、LaTeX 命令，全角转半角）后的二元 / 三元字组合余弦，默认启用，无外部依赖。
+- 语义相似度（可选）：配置 `EMBEDDING_MODEL` 后调用 OpenAI 兼容 `/embeddings`，与字面分加权；解析时为每题计算向量，入库时一并保存。
+- `score` ≥ 0.85 视为「疑似重复」（`duplicate=true`），查重阶段据此设置 `DraftQuestion.duplicateOf`（指向校本题库题目）。阈值为经验值，接入真实题库后需校准。
+- 只与同题型比较；`scope=all` 时还包含其他试卷中尚未入库的草稿题（用于发现重复上传），不包含本卷。
+- 向量调用计入 AI 用量（`purpose=embed` / `similar`）。当前为全量比对，适合万题以内；题量更大时换成 pgvector 等向量索引。
 
 ### AI 生成答案
 
@@ -105,4 +140,4 @@ POST /api/parse-jobs/{id}/commit    → 入校本题库
 ### 尚未覆盖
 
 - 知识点修改（需要知识树接口）、公式编辑器、查重命中后的「合并到已有题」操作。
-- 刷新页面后恢复进行中的任务（需要把 jobId 放进路由，mock 为内存存储，刷新即丢失）。
+- mock 为内存存储，刷新页面后任务丢失（连接后端时刷新可恢复）。

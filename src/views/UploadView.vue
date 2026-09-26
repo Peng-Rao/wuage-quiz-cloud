@@ -1,7 +1,10 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
-import { QUESTION_TYPES, type DraftQuestion, type DraftQuestionPatch, type ParseOptions, type SourceImage } from '@/api/parse'
+import {
+  QUESTION_TYPES, type DraftQuestion, type DraftQuestionPatch, type ParseOptions, type SimilarQuestion, type SourceImage,
+} from '@/api/parse'
 import { DIFF_COEFS, coefToDiff, type Difficulty } from '@/data/mock'
 import { useBasketStore } from '@/stores/basket'
 import { useParseJobStore } from '@/stores/parseJob'
@@ -14,12 +17,48 @@ import EditQuestionDialog from '@/components/parse/EditQuestionDialog.vue'
 import SourceImageDialog from '@/components/parse/SourceImageDialog.vue'
 import UsageCard from '@/components/parse/UsageCard.vue'
 import CostOverviewCard from '@/components/parse/CostOverviewCard.vue'
+import JobListPanel from '@/components/parse/JobListPanel.vue'
+import SimilarDialog from '@/components/parse/SimilarDialog.vue'
 
 const store = useParseJobStore()
-const { phase, job, questions, selected, recent, error, busy, options, usage, usageOverview } = storeToRefs(store)
+const { phase, job, questions, selected, error, busy, options, usage, usageOverview, jobList, notice } = storeToRefs(store)
 const basket = useBasketStore()
+const route = useRoute()
+const router = useRouter()
 
-onMounted(() => store.loadRecent())
+// 地址栏 ?job= 是当前试卷的唯一来源：打开 / 返回都只改地址栏，由路由驱动 store，刷新后仍停留在同一份试卷
+const routeJob = () => (typeof route.query.job === 'string' ? route.query.job : '')
+
+function syncFromRoute() {
+  const id = routeJob()
+  if (id) {
+    if (id !== job.value?.id) store.openJob(id)
+  } else if (job.value && phase.value !== 'uploading') {
+    store.backToList()
+  }
+}
+
+onMounted(() => {
+  store.loadRecent()
+  store.watchJobs(true)
+  syncFromRoute()
+})
+onBeforeUnmount(() => store.watchJobs(false))
+watch(() => route.query.job, syncFromRoute)
+// 单份上传创建出任务后补写地址栏；任务被清空时不反向改地址栏，避免与打开其他任务互相干扰
+watch(() => job.value?.id, (id) => {
+  if (id && routeJob() !== id) router.replace({ query: { ...route.query, job: id } })
+})
+
+function openJob(id: string) {
+  if (routeJob() === id) store.openJob(id)
+  else router.push({ query: { ...route.query, job: id } })
+}
+
+function leaveJob() {
+  if (routeJob()) router.push({ query: { ...route.query, job: undefined } })
+  else store.backToList()
+}
 
 const UP_OPT_LABELS: [keyof ParseOptions, string][] = [
   ['ocr', '图片 / 扫描件文字识别'], ['answer', '识别并关联答案解析'], ['dedupe', '与题库查重，合并重复题'], ['knowledge', '自动标注知识点'],
@@ -54,12 +93,20 @@ function onDrop(e: DragEvent) {
   onFiles(e.dataTransfer?.files)
 }
 
-const RECENT_DATE = new Intl.DateTimeFormat('zh-CN', { month: 'long', day: 'numeric' })
-const recentMeta = (r: (typeof recent.value)[number]) => [
-  `${r.questionCount} 题`,
-  r.savedCount ? '已入库' : r.reviewCount ? `待核对 ${r.reviewCount} 题` : '未入库',
-  RECENT_DATE.format(new Date(r.createdAt)),
-].join(' · ')
+// 相似题
+const similarOpen = ref(false)
+const similarTitle = ref('')
+const similarItems = ref<SimilarQuestion[] | null>(null)
+const similarError = ref('')
+async function openSimilar(q: DraftQuestion) {
+  similarTitle.value = `第 ${q.no} 题 · 相似题`
+  similarItems.value = null
+  similarError.value = ''
+  similarOpen.value = true
+  const got = await store.getSimilar(q.id)
+  if (got) similarItems.value = got
+  else similarError.value = error.value || '查找相似题失败'
+}
 
 // ---- 核对 ----
 const ptab = ref('全部')
@@ -152,9 +199,15 @@ const note = computed(() =>
       >
         <div class="drop-icon">＋</div>
         <span class="drop-title">拖拽试卷到此处，或点击选择文件</span>
-        <span class="drop-desc">支持 Word（.docx）、PDF、图片（JPG / PNG，可多张拍照）<br>单个文件不超过 {{ MAX_MB }} MB</span>
-        <button type="button" class="btn btn-primary pick-btn">选择文件</button>
+        <span class="drop-desc">
+          支持 Word（.docx）、PDF、图片（JPG / PNG，可多张拍照）<br>
+          可一次选择多份 PDF / Word，在后台依次解析 · 单个文件不超过 {{ MAX_MB }} MB
+        </span>
+        <button type="button" class="btn btn-primary pick-btn" :disabled="store.batchUploading">
+          {{ store.batchUploading ? `上传中 ${store.batchPct}%` : '选择文件' }}
+        </button>
         <span v-if="error" class="drop-err">{{ error }}</span>
+        <span v-else-if="notice" class="drop-ok">{{ notice }}</span>
       </div>
       <input
         ref="fileInput" type="file" :accept="ACCEPT" multiple hidden
@@ -165,14 +218,10 @@ const note = computed(() =>
           <span class="card-title">解析选项</span>
           <ToggleSwitch v-for="[k, l] in UP_OPT_LABELS" :key="k" v-model="options[k]" :label="l" />
         </div>
-        <div class="card panel">
-          <span class="card-title">最近上传</span>
-          <div v-for="r in recent" :key="r.jobId" class="recent">
-            <span class="recent-name">{{ r.fileName }}</span>
-            <span class="recent-meta">{{ recentMeta(r) }}</span>
-          </div>
-          <span v-if="!recent.length" class="recent-meta">暂无记录</span>
-        </div>
+        <JobListPanel
+          :jobs="jobList" :total="store.jobsTotal" :active="store.jobsActive" :busy="busy"
+          @open="openJob" @retry="store.retryJob" @cancel="store.cancelJob"
+        />
         <CostOverviewCard :overview="usageOverview" />
       </div>
     </div>
@@ -182,7 +231,7 @@ const note = computed(() =>
       v-else-if="phase !== 'done'"
       :phase="phase" :job="job" :pct="store.overallPct" :upload-pct="store.uploadPct"
       :file-label="picked.label" :file-size="picked.size" :error="error"
-      @retry="store.reset()"
+      @retry="job && store.retryJob(job.id)" @back="leaveJob" @background="leaveJob"
     />
 
     <!-- 3 核对 -->
@@ -196,7 +245,7 @@ const note = computed(() =>
             <span class="avg-label">整卷难度系数 · {{ coefToDiff(avgCoef) }}</span>
           </div>
           <DifficultyBar :easy="cnt('容易')" :mid="cnt('适中')" :hard="cnt('较难')" :height="10" show-counts />
-          <span class="hint">难度系数为预估得分率（0–1），越低越难。依据知识点层级、解题步数与同类题历史作答数据估算。</span>
+          <span class="hint">难度系数 0–1，越高越难，1 为最难（约等于 1 − 预估得分率）。依据知识点层级、解题步数与同类题历史作答数据估算。</span>
         </div>
         <UsageCard :usage="usage" :question-count="questions.length" />
         <div v-if="kpCover.length" class="card panel kp-panel">
@@ -220,6 +269,12 @@ const note = computed(() =>
             title="为缺少答案的题生成答案与解析，结果会标记为「AI 生成」，请老师核对"
             @click="store.generateAnswers()"
           >AI 生成答案（{{ store.missingAnswerCount }} 题）</button>
+          <span v-if="store.knowledgeRunning" class="ai-progress">AI 标注知识点中…</span>
+          <button
+            v-else-if="store.missingKnowledgeCount" class="ai-gen" :disabled="busy.has('knowledge')"
+            title="为尚未标注知识点的题标注 1–3 个知识点"
+            @click="store.tagKnowledge()"
+          >AI 标注知识点（{{ store.missingKnowledgeCount }} 题）</button>
           <div class="ptabs">
             <button v-for="t in PTABS" :key="t" class="chip" :class="{ 'is-soft': ptab === t, dark: ptab === t }" @click="ptab = t">{{ t }}</button>
           </div>
@@ -236,7 +291,7 @@ const note = computed(() =>
           @toggle="store.toggleSelect(q.id)"
           @cycle-type="cycleType(q)" @cycle-diff="cycleDiff(q)"
           @edit="openEdit(q)" @merge="store.mergeWithPrevious(q.id)" @split="store.splitSubQuestions(q.id)"
-          @source="openSource(q)" @ai-answer="store.generateAnswers({ questionIds: [q.id] })"
+          @source="openSource(q)" @similar="openSimilar(q)" @ai-answer="store.generateAnswers({ questionIds: [q.id] })"
         />
         <div v-if="!shown.length" class="card empty">当前筛选下没有题目</div>
 
@@ -245,7 +300,7 @@ const note = computed(() =>
           <button class="ab-link" @click="store.toggleAll()">{{ store.allSelected ? '取消全选' : '全选' }}</button>
           <span class="ab-note">{{ note }}</span>
           <div class="ab-actions">
-            <button class="ab-btn ghost" @click="store.reset()">重新上传</button>
+            <button class="ab-btn ghost" @click="leaveJob">返回任务列表</button>
             <button class="ab-btn light" :disabled="!store.selectedCount" @click="addToBasket">加入试题篮</button>
             <button class="ab-btn primary" :disabled="!store.selectedCount || busy.has('commit')" @click="store.commit()">
               {{ busy.has('commit') ? '保存中…' : '保存到校本题库' }}
@@ -257,6 +312,7 @@ const note = computed(() =>
 
     <EditQuestionDialog v-model="editOpen" :q="editing" :saving="!!editing && busy.has(editing.id)" @save="saveEdit" />
     <SourceImageDialog v-model="sourceOpen" :title="sourceTitle" :images="sourceImages" />
+    <SimilarDialog v-model="similarOpen" :title="similarTitle" :items="similarItems" :error="similarError" />
   </main>
 </template>
 
@@ -290,10 +346,9 @@ const note = computed(() =>
 .drop-desc { font-size: 13px; color: var(--c-text-3); line-height: 1.7; }
 .pick-btn { margin-top: 6px; height: 40px; padding: 0 24px; font-size: 14px; }
 .drop-err { font-size: 13px; color: #A0301F; }
+.drop-ok { font-size: 13px; color: #3F7340; }
+.pick-btn:disabled { opacity: .7; cursor: progress; }
 .up-side { flex: 1 0 300px; display: flex; flex-direction: column; gap: 14px; }
-.recent { display: flex; flex-direction: column; gap: 3px; }
-.recent-name { font-size: 13.5px; }
-.recent-meta { font-size: 12px; color: var(--c-text-4); }
 
 /* 核对 · 左侧 */
 .review-side { flex: 1 0 280px; max-width: 320px; display: flex; flex-direction: column; gap: 14px; }

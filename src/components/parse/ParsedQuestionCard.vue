@@ -15,6 +15,7 @@ const props = defineProps<{
 }>()
 defineEmits<{
   aiAnswer: []
+  similar: []
   toggle: []
   cycleType: []
   cycleDiff: []
@@ -28,7 +29,7 @@ const D_CLASS: Record<Difficulty, string> = { 容易: 'easy', 适中: 'mid', 较
 const LETTERS = 'ABCDEFGH'
 
 const diff = computed(() => coefToDiff(props.q.coef))
-const filled = computed(() => Math.max(1, Math.round((1 - props.q.coef) * 5)))
+const filled = computed(() => Math.max(1, Math.round(props.q.coef * 5)))
 const hasAnswer = computed(() => !!props.q.answer)
 const showAnswer = ref(false)
 
@@ -54,9 +55,10 @@ watch(() => props.q.answerSource, (src, prev) => {
           <button class="type-btn" title="点击切换题型" :disabled="busy" @click="$emit('cycleType')">{{ q.type }} ▾</button>
           <span class="muted-2">{{ q.score }} 分 · 原卷第 {{ q.page }} 页</span>
           <span v-if="low" class="low-tag">待核对 · 置信度 {{ Math.round(q.confidence * 100) }}%</span>
-          <span v-if="q.duplicateOf" class="dup-tag" :title="`题库题目 ${q.duplicateOf}`">题库已有相似题</span>
+          <button v-if="q.duplicateOf" class="dup-tag" title="查看题库中的相似题" @click="$emit('similar')">题库已有相似题 ›</button>
           <span v-if="q.status === 'saved'" class="saved-tag">已入库</span>
         </div>
+        <div v-if="q.source" class="src" :title="q.source.fileName">出处：{{ q.source.label }}</div>
         <div class="pq-stem serif"><MathText :text="q.stem" /></div>
         <div v-if="q.images.length" class="figs">
           <img v-for="src in q.images" :key="src" :src="src" alt="题目配图" loading="lazy">
@@ -70,8 +72,10 @@ watch(() => props.q.answerSource, (src, prev) => {
           <p v-if="q.analysis"><b>【解析】</b><MathText :text="q.analysis" /></p>
           <p v-if="q.answerNote" class="ai-note">⚠ {{ q.answerNote }}</p>
         </div>
-        <div v-if="q.knowledgePoints.length" class="kps">
+        <div class="kps">
+          <span class="kps-label">知识点</span>
           <span v-for="k in q.knowledgePoints" :key="k.id">{{ k.name }}</span>
+          <em v-if="!q.knowledgePoints.length">未标注</em>
         </div>
       </div>
       <div class="pq-diff" :class="D_CLASS[diff]">
@@ -88,6 +92,7 @@ watch(() => props.q.answerSource, (src, prev) => {
       <button class="btn-link" :disabled="busy || isFirst" @click="$emit('merge')">与上题合并</button>
       <button class="btn-link" :disabled="busy" @click="$emit('split')">拆分小问</button>
       <button class="btn-link" :disabled="busy" @click="$emit('source')">查看原图</button>
+      <button class="btn-link" :disabled="busy" @click="$emit('similar')">相似题</button>
       <button v-if="hasAnswer" class="btn-link ans-note" :class="{ 'is-ai': q.answerSource === 'ai' }" @click="showAnswer = !showAnswer">
         <template v-if="q.answerNote">⚠ </template>{{ answerLabel }} · {{ showAnswer ? '收起' : '查看' }}
       </button>
@@ -117,7 +122,8 @@ watch(() => props.q.answerSource, (src, prev) => {
 .pq-no { font-weight: 700; color: var(--c-ink); font-size: 13px; }
 .type-btn { border: 1px dashed var(--c-primary-line); color: var(--c-primary-dark); background: var(--c-primary-soft); border-radius: 4px; padding: 1px 6px; font-size: 12px; }
 .low-tag { color: #A0301F; background: #FBEAE6; border-radius: 4px; padding: 1px 6px; }
-.dup-tag { color: #6B4E0F; background: #F8EFD9; border-radius: 4px; padding: 1px 6px; cursor: help; }
+.dup-tag { color: #6B4E0F; background: #F8EFD9; border: none; border-radius: 4px; padding: 1px 6px; font-size: 12px; }
+.dup-tag:hover { background: #F2E2BD; }
 .saved-tag { color: #3F7340; background: #E9F1E7; border-radius: 4px; padding: 1px 6px; }
 .pq-stem { font-size: 15px; line-height: 1.85; color: var(--c-ink); text-wrap: pretty; white-space: pre-line; }
 .figs { display: flex; flex-wrap: wrap; gap: 8px; }
@@ -127,7 +133,10 @@ watch(() => props.q.answerSource, (src, prev) => {
 .ans { background: var(--c-surface-2); border: 1px solid var(--c-divider); border-radius: var(--r-md); padding: 10px 12px; font-size: 13.5px; line-height: 1.75; }
 .ans p { margin: 0; }
 .ans b { color: var(--c-primary-dark); font-weight: 600; }
-.kps { display: flex; flex-wrap: wrap; gap: 6px; }
+.src { font-size: 12px; color: var(--c-text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kps { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.kps .kps-label { background: none; padding: 0; color: var(--c-text-4); }
+.kps em { font-style: normal; font-size: 12px; color: var(--c-text-4); }
 .kps span { font-size: 12px; color: var(--c-text-2); background: var(--c-paper); border-radius: 4px; padding: 2px 8px; }
 
 .pq-diff { flex: 0 0 140px; display: flex; flex-direction: column; gap: 6px; border-left: 1px solid var(--c-divider); padding-left: 16px; }

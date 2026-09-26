@@ -8,10 +8,10 @@ from pydantic.alias_generators import to_camel
 
 QuestionType = Literal["单选题", "多选题", "填空题", "解答题"]
 QUESTION_TYPES: tuple[QuestionType, ...] = ("单选题", "多选题", "填空题", "解答题")
-ParseStage = Literal["ocr", "classify", "segment", "knowledge", "difficulty"]
-PARSE_STAGES: tuple[ParseStage, ...] = ("ocr", "classify", "segment", "knowledge", "difficulty")
+ParseStage = Literal["ocr", "classify", "segment", "knowledge", "difficulty", "dedupe"]
+PARSE_STAGES: tuple[ParseStage, ...] = ("ocr", "classify", "segment", "knowledge", "difficulty", "dedupe")
 StageStatus = Literal["pending", "running", "done", "skipped", "failed"]
-JobStatus = Literal["uploading", "queued", "running", "done", "failed"]
+JobStatus = Literal["uploading", "queued", "running", "done", "failed", "cancelled"]
 
 REVIEW_CONFIDENCE = 0.8
 
@@ -39,6 +39,7 @@ class StageState(Model):
 
 
 class PaperMeta(Model):
+    title: str = ""  # 试卷名称，取自卷首标题
     stage: str = ""
     subject: str = ""
     grade: str = ""
@@ -134,6 +135,7 @@ class GenerateAnswersRequest(Model):
 
 class ParseJobOut(Model):
     id: str
+    batch_id: str | None = None
     file_name: str
     file_count: int
     file_size: int
@@ -152,6 +154,92 @@ class ParseJobOut(Model):
     usage: UsageSummary | None = None
     answer_task: AnswerTask | None = None
     created_at: UtcDatetime
+
+
+class JobListItem(Model):
+    """任务列表的精简信息。"""
+
+    id: str
+    batch_id: str | None
+    file_name: str
+    file_type: Literal["pdf", "docx", "image"]
+    status: JobStatus
+    progress: int
+    # 进行中的阶段，用于列表中显示「拆题中…」
+    current_stage: ParseStage | None
+    question_count: int
+    review_count: int
+    saved_count: int
+    error: str | None
+    created_at: UtcDatetime
+
+
+class JobListPage(Model):
+    items: list[JobListItem]
+    total: int
+    # 排队中 + 解析中的任务数，前端据此决定是否继续轮询
+    active: int
+
+
+class BatchItem(Model):
+    file_keys: list[str] = Field(min_length=1, max_length=50)
+    file_names: list[str] = Field(min_length=1, max_length=50)
+
+
+class CreateBatchRequest(Model):
+    items: list[BatchItem] = Field(min_length=1, max_length=100)
+    options: "ParseOptions" = ParseOptions()
+
+
+class BatchOut(Model):
+    id: str
+    total: int
+    counts: dict[str, int]
+    jobs: list[JobListItem]
+    created_at: UtcDatetime
+
+
+class SimilarQuestion(Model):
+    id: str
+    # bank 校本题库 / draft 其他试卷中尚未入库的题
+    source: Literal["bank", "draft"]
+    type: str
+    stem: str
+    options: list[str]
+    answer: str | None
+    # 综合相似度 0–1；lexical 字面分；semantic 语义余弦（未启用向量时为 null）
+    score: float
+    lexical: float
+    semantic: float | None
+    duplicate: bool
+    job_id: str | None
+    file_name: str | None
+    # 出处（与 DraftQuestion.source 同结构）
+    origin: "QuestionSource | None" = None
+    knowledge_points: list["KnowledgePointRef"] = []
+
+
+class SimilarSearchRequest(Model):
+    text: str = Field(min_length=2, max_length=4000)
+    type: str | None = None
+    limit: int = Field(default=10, ge=1, le=50)
+    # bank 仅校本题库；all 含其他试卷中尚未入库的题
+    scope: Literal["bank", "all"] = "bank"
+
+
+class QuestionSource(Model):
+    """题目出处。label 为拼好的展示文本，如「2026—2027 上 · 北京 · 海淀 · 高一 · 期中考试《…》第 3 题」。"""
+
+    title: str
+    file_name: str
+    school_year: str
+    region: str
+    grade: str
+    paper_type: str
+    subject: str
+    no: int | None
+    page: int | None
+    label: str
 
 
 class SourceRegion(Model):
@@ -178,12 +266,14 @@ class DraftQuestionOut(Model):
     answer_source: Literal["paper", "ai", "manual"] | None = None
     answer_note: str | None = None
     knowledge_points: list[KnowledgePointRef]
+    # 难度系数 0–1，越高越难，1 为最难
     coef: float
     confidence: float
     block_ids: list[str]
     regions: list[SourceRegion]
     # 题目内配图的访问地址（几何图、函数图像等）
     images: list[str] = []
+    source: QuestionSource | None = None
     duplicate_of: str | None
     status: Literal["draft", "saved"]
 
@@ -237,3 +327,7 @@ class CommitRequest(Model):
 
 class CommitResult(Model):
     saved_count: int
+
+
+# 前向引用（SimilarQuestion 定义在 QuestionSource、KnowledgePointRef 之前）
+SimilarQuestion.model_rebuild()

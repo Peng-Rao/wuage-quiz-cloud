@@ -18,11 +18,23 @@ class Base(DeclarativeBase):
     type_annotation_map = {dict[str, Any]: JSON, list[Any]: JSON}
 
 
+class ParseBatch(Base):
+    """一次批量上传：包含多份试卷，每份各自一个解析任务。"""
+
+    __tablename__ = "parse_batch"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    school_id: Mapped[str] = mapped_column(String(64), index=True)
+    total: Mapped[int] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
 class ParseJob(Base):
     __tablename__ = "parse_job"
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True)
     school_id: Mapped[str] = mapped_column(String(64), index=True)
+    batch_id: Mapped[str | None] = mapped_column(String(32), index=True, nullable=True)
     file_name: Mapped[str] = mapped_column(String(512))
     file_count: Mapped[int] = mapped_column(Integer)
     file_size: Mapped[int] = mapped_column(Integer)
@@ -85,6 +97,9 @@ class DraftQuestion(Base):
     images: Mapped[list[Any]] = mapped_column(JSON, default=list)  # 题目内图片的存储 key
     duplicate_of: Mapped[str | None] = mapped_column(String(48), nullable=True)
     status: Mapped[str] = mapped_column(String(8), default="draft")
+    # 相似题检索用的文本向量（启用 EMBEDDING_MODEL 时）
+    embedding: Mapped[list[Any] | None] = mapped_column(JSON, nullable=True)
+    embedding_model: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
 
 class AiUsage(Base):
@@ -130,6 +145,12 @@ class BankQuestion(Base):
     coef: Mapped[float] = mapped_column(Float)
     images: Mapped[list[Any]] = mapped_column(JSON, default=list)
     meta: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    embedding: Mapped[list[Any] | None] = mapped_column(JSON, nullable=True)
+    embedding_model: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # 出处：原卷文件名、题号、页码（试卷名称、学年、地区等在 meta 中）
+    source_file_name: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    source_no: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    source_page: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
@@ -149,6 +170,29 @@ if _settings.db_url.startswith("sqlite"):
         cur.close()
 
 SessionLocal = sessionmaker(engine, expire_on_commit=False)
+
+
+class AppMeta(Base):
+    """应用级键值，用于记录一次性数据迁移是否已执行。"""
+
+    __tablename__ = "app_meta"
+
+    key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    value: Mapped[str] = mapped_column(String(256))
+
+
+def migrate_coef_semantics(eng=None) -> int:  # noqa: ANN001
+    """难度系数由「预估得分率（越低越难）」改为「越高越难」：旧数据一次性换算为 1 − 旧值。返回换算的行数。"""
+    eng = eng or engine
+    with eng.begin() as conn:
+        done = conn.execute(text("SELECT value FROM app_meta WHERE key = 'coef_semantics'")).scalar()
+        if done == "difficulty":
+            return 0
+        n = 0
+        for table in ("draft_question", "bank_question"):
+            n += conn.execute(text(f"UPDATE {table} SET coef = ROUND(1 - coef, 2)")).rowcount or 0
+        conn.execute(text("INSERT INTO app_meta (key, value) VALUES ('coef_semantics', 'difficulty')"))
+    return n
 
 
 def add_missing_columns(eng=None) -> list[str]:  # noqa: ANN001
@@ -172,6 +216,7 @@ def add_missing_columns(eng=None) -> list[str]:  # noqa: ANN001
 def init_db() -> None:
     Base.metadata.create_all(engine)
     add_missing_columns()
+    migrate_coef_semantics()
 
 
 def get_session() -> Iterator[Session]:
