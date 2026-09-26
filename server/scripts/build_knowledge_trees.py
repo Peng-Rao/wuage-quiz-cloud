@@ -3,8 +3,12 @@
 用法：
     uv run python scripts/build_knowledge_trees.py <知识点总纲.md> [--out 目录] [--only 高中数学,初中化学] [--no-llm] [--concurrency 4]
 
-默认用大模型（server/.env 中的 LLM_*）把每个主题下的细目整理为规范的知识点名称；
-未配置大模型、加 --no-llm 或某学科整理结果校验失败时，该学科退回规则拆分。
+默认用大模型（server/.env 中的 LLM_*）把每个主题下的细目整理为规范的知识点名称，按主题编号合并；
+未配置大模型、加 --no-llm 或某学科整理失败时退回规则拆分，个别遗漏的主题单独退回规则拆分。
+
+思考型模型在细目较长的学科上可能因输出过长被截断（表现为大部分主题退回规则拆分），
+可对该学科关闭思考重新生成，如通义千问：
+    LLM_EXTRA_BODY='{"enable_thinking": false}' uv run python scripts/build_knowledge_trees.py <总纲.md> --only 高中政治
 
 总纲结构 → 知识树层级：
     ## 第一部分　小学            → 学段
@@ -57,12 +61,12 @@ def concepts(detail: str) -> list[str]:
     return out
 
 
-LLM_SYSTEM = """你是中国中小学{stage}{subject}教研员。下面是知识点总纲中本学科的模块与主题，每个主题后面是原文细目。
+LLM_SYSTEM = """你是中国中小学{stage}{subject}教研员。下面是知识点总纲中本学科的主题，每行以编号开头，后面是主题名和原文细目。
 请把每个主题的细目整理为规范的知识点，只输出 JSON：
-{{"modules": [{{"name": "模块名", "topics": [{{"name": "主题名", "kps": [{{"name": "知识点", "aliases": ["常见别称"]}}]}}]}}]}}
+{{"topics": [{{"id": "t1", "kps": [{{"name": "知识点", "aliases": ["常见别称"]}}]}}]}}
 
 要求：
-1. 模块名、主题名必须与输入完全一致，顺序不变，一个都不能少。
+1. 按编号输出每一个主题，id 与输入完全一致，一个都不能少。
 2. 每个主题 2–10 个知识点，只能来自该主题的原文细目，不要新增原文没有的内容。
 3. 知识点名称独立可读、符合教材说法，不超过 16 个字；把原文中共用后半句的写法补全，
    如「正弦、余弦、正切定义、图像」应整理为「正弦、余弦、正切的定义」「三角函数的图像与性质」这类完整名称。
@@ -70,31 +74,24 @@ LLM_SYSTEM = """你是中国中小学{stage}{subject}教研员。下面是知识
 5. aliases 为 0–2 个常见别称或简称（如「均值不等式」之于「基本不等式」），没有就留空数组。"""
 
 
+def _topic_ids(tree: dict) -> list[tuple[str, int, int]]:
+    """为每个主题编号 t1、t2…，大模型按编号返回，不依赖名称是否一致。"""
+    ids, n = [], 0
+    for mi, m in enumerate(tree["nodes"]):
+        for ti, _ in enumerate(m["children"]):
+            n += 1
+            ids.append((f"t{n}", mi, ti))
+    return ids
+
+
 def _llm_input(tree: dict, raw: dict[str, str]) -> str:
-    lines = []
+    lines, ids = [], iter(_topic_ids(tree))
     for m in tree["nodes"]:
         lines.append(f"【模块】{m['name']}")
         for tp in m["children"]:
-            lines.append(f"  【主题】{tp['name']}：{raw[m['name'] + '/' + tp['name']]}")
+            tid = next(ids)[0]
+            lines.append(f"  {tid}【{tp['name']}】{raw[m['name'] + '/' + tp['name']]}")
     return "\n".join(lines)
-
-
-def _norm(name: str) -> str:
-    return re.sub(r"[\s　，,、；;：:·“”\"'（）()]", "", str(name or ""))
-
-
-def _find(items: list, name: str, index: int) -> dict | None:
-    """按规范化名称匹配（忽略空格与标点，互相包含也算）；大模型返回的非对象项忽略。"""
-    items = [it for it in items if isinstance(it, dict)]
-    n = _norm(name)
-    for it in items:
-        if _norm(it.get("name")) == n:
-            return it
-    for it in items:
-        m = _norm(it.get("name"))
-        if m and (m in n or n in m):
-            return it
-    return None
 
 
 def _kps(t: dict) -> list[dict]:
@@ -110,32 +107,22 @@ def _kps(t: dict) -> list[dict]:
 
 
 def _validate(tree: dict, data: object) -> tuple[list[dict], int]:
-    """以原文的模块、主题为准合并大模型结果；大模型遗漏或无法对应的主题保留规则拆分结果。
-    返回 (节点, 退回规则拆分的主题数)。完全对不上时抛出异常，整科退回规则拆分。"""
-    mods = data.get("modules") if isinstance(data, dict) else None
-    if not isinstance(mods, list) or not mods:
-        raise ValueError("缺少 modules")
-    same_len = len(mods) == len(tree["nodes"])
-    out, fallback, matched = [], 0, 0
-    for mi, src in enumerate(tree["nodes"]):
-        m = _find(mods, src["name"], mi) or (mods[mi] if same_len and isinstance(mods[mi], dict) else None)
-        topics = (m or {}).get("topics") or []
-        topics = topics if isinstance(topics, list) else []
-        same_topics = len(topics) == len(src["children"])
-        children = []
-        for ti, st in enumerate(src["children"]):
-            t = _find(topics, st["name"], ti) or (topics[ti] if same_topics and isinstance(topics[ti], dict) else None)
-            kps = _kps(t) if isinstance(t, dict) else []
-            if kps:
-                matched += 1
-                children.append({"name": st["name"], "children": kps})
-            else:
-                fallback += 1
-                children.append(st)  # 规则拆分结果
-        out.append({"name": src["name"], "children": children})
+    """按主题编号合并大模型结果；遗漏或为空的主题保留规则拆分结果。返回 (节点, 退回规则拆分的主题数)。
+    一个主题都对不上时抛出异常，整科退回规则拆分。"""
+    topics = data.get("topics") if isinstance(data, dict) else None
+    if not isinstance(topics, list):
+        raise ValueError("缺少 topics")
+    by_id = {str(t.get("id")).strip(): t for t in topics if isinstance(t, dict)}
+    out = [{"name": m["name"], "children": list(m["children"])} for m in tree["nodes"]]
+    matched = 0
+    for tid, mi, ti in _topic_ids(tree):
+        kps = _kps({**by_id[tid], "name": tree["nodes"][mi]["children"][ti]["name"]}) if tid in by_id else []
+        if kps:
+            matched += 1
+            out[mi]["children"][ti] = {"name": tree["nodes"][mi]["children"][ti]["name"], "children": kps}
     if not matched:
         raise ValueError("没有可对应的主题")
-    return out, fallback
+    return out, len(_topic_ids(tree)) - matched
 
 
 async def refine_with_llm(trees: list[dict], raw: dict[str, dict[str, str]], concurrency: int = 4, on_done=None) -> None:  # noqa: ANN001
