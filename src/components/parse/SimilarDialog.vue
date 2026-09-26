@@ -24,7 +24,7 @@ const pct = (v: number) => Math.round(v * 100) + '%'
           <span class="tag plain">{{ s.type }}</span>
         </div>
         <div v-if="s.origin?.label || s.fileName" class="from" :title="s.origin?.fileName || s.fileName || ''">
-          出处：{{ s.origin?.label || s.fileName }}
+          来源：{{ s.origin?.label || s.fileName }}
         </div>
         <div class="stem serif"><MathText :text="s.stem" /></div>
         <div v-if="s.options.length" class="opts serif">

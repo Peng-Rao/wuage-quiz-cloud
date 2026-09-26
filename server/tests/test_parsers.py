@@ -172,3 +172,26 @@ def test_lite_drops_page_furniture():
     kept = drop_page_furniture(blocks, 3)
     assert [b.text for b in kept] == ["1．第 1 题的题干", "2．第 2 题的题干", "3．第 3 题的题干"]
     assert [b.seq for b in kept] == [1, 2, 3]
+
+
+def test_lite_scripts_and_linear_math():
+    from app.pipeline.parsers.lite import line_text, linear_math
+
+    def span(t, size, y, x0, x1):
+        return {"text": t, "size": size, "origin": (x0, y), "bbox": (x0, y - size, x1, y)}
+
+    # 化学式：小字号、基线下移 → 下标；离子电荷基线上移 → 上标
+    line = [span("生成", 10.4, 601.8, 0, 20), span("P", 10.4, 601.8, 20, 27), span("2", 6.8, 602.7, 27, 31),
+            span("O", 10.4, 601.8, 31, 38), span("5", 6.8, 602.7, 38, 42), span(" 与 SO", 10.4, 602.7, 42, 70),
+            span("4", 6.8, 602.7, 70, 74), span("2-", 6.8, 597.5, 74, 80)]
+    assert line_text(line) == "生成P₂O₅ 与 SO₄²⁻"
+    # 没有 Unicode 字符的上标并入 LaTeX；与前文有空隙的小字不当作上下标
+    assert line_text([span("x", 10.5, 100, 0, 6), span("k+m", 7, 96, 6, 16)]) == "$x^{k+m}$"
+    assert line_text([span("得分", 10.5, 100, 0, 20), span("12", 7, 100, 40, 48)]) == "得分12"
+
+    assert linear_math("B = { x | x^2 ≤ 1 }") == "B = { x | x² ≤ 1 }"
+    assert linear_math("a_{n+1} = 2^(n+1)，a_n") == "aₙ₊₁ = 2ⁿ⁺¹，aₙ"
+    assert linear_math("f(x) = √(x - 1)，e^x") == "f(x) = $\\sqrt{x - 1}$，$e^{x}$"
+    # 填空横线、已含 LaTeX 的文字不处理
+    assert linear_math("____ 与 A_B") == "____ 与 A_B"
+    assert linear_math("已知 $x^2 = 4$") == "已知 $x^2 = 4$"

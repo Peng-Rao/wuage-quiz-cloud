@@ -93,6 +93,8 @@ def new_job(s: Session, file_keys: list[str], file_names: list[str], options: Pa
         if not key.startswith("uploads/") or not store.exists(key):
             raise HTTPException(400, "文件尚未上传完成")
         sizes.append(store.size(key))
+    from .bank import compute_file_hash  # 避免循环导入
+
     job = ParseJob(
         id=uuid.uuid4().hex[:16],
         school_id=current_school(),
@@ -102,6 +104,7 @@ def new_job(s: Session, file_keys: list[str], file_names: list[str], options: Pa
         file_size=sum(sizes),
         file_type=file_type,
         file_keys=[{"key": k, "name": n} for k, n in zip(file_keys, file_names)],
+        file_hash=compute_file_hash(file_keys),
         options=options.model_dump(),
         status="queued",
         progress=0,

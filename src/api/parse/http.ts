@@ -1,27 +1,11 @@
 import type {
   DifficultyCalibration, EvalRun, EvalSample, KnowledgeNodeHit, KnowledgeTree, KnowledgeTreeDetail,
-  AnswerTask, DraftQuestion, JobListPage, JobUsage, ParseApi, ParseBatch, ParseJob, PaperMeta, RecentUpload,
+  AnswerTask, CommitResult, DraftQuestion, JobListPage, JobUsage, ParseApi, ParseBatch, ParseJob, PaperMeta, RecentUpload,
   SimilarQuestion, SourceImage, UsageOverview,
 } from './types'
+import { BASE, request } from '../request'
 
-/** 按 docs/ai-parse-api.md 对接后端；P0 阶段未启用 */
-
-const BASE = import.meta.env.VITE_API_BASE ?? ''
-
-async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
-  const res = await fetch(BASE + path, {
-    method,
-    headers: body === undefined ? undefined : { 'Content-Type': 'application/json' },
-    body: body === undefined ? undefined : JSON.stringify(body),
-    credentials: 'include',
-  })
-  if (!res.ok) {
-    const err = await res.json().catch(() => null)
-    throw new Error(err?.message ?? `请求失败（HTTP ${res.status}）`)
-  }
-  if (res.status === 204) return undefined as T
-  return res.json() as Promise<T>
-}
+/** 按 docs/ai-parse-api.md 对接后端 */
 
 function putWithProgress(url: string, file: File, onProgress?: (pct: number) => void) {
   return new Promise<void>((resolve, reject) => {
@@ -127,7 +111,8 @@ export const httpParseApi: ParseApi = {
   mergeWithPrevious: id => request<DraftQuestion[]>('POST', `/api/draft-questions/${id}/merge-previous`),
   splitSubQuestions: id => request<DraftQuestion[]>('POST', `/api/draft-questions/${id}/split`),
   getSource: id => request<SourceImage[]>('GET', `/api/draft-questions/${id}/source`),
-  commit: (jobId, questionIds) => request('POST', `/api/parse-jobs/${jobId}/commit`, { questionIds }),
+  commit: (jobId, questionIds, force = false) =>
+    request<CommitResult>('POST', `/api/parse-jobs/${jobId}/commit`, { questionIds, force }),
   listRecent: () => request<RecentUpload[]>('GET', '/api/parse-jobs?recent=1'),
   getUsage: jobId => request<JobUsage>('GET', `/api/parse-jobs/${jobId}/usage`),
   getUsageOverview: days => request<UsageOverview>('GET', `/api/usage/summary?days=${days}`),

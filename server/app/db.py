@@ -42,6 +42,8 @@ class ParseJob(Base):
     file_size: Mapped[int] = mapped_column(Integer)
     file_type: Mapped[str] = mapped_column(String(16))  # pdf / docx / image
     file_keys: Mapped[list[Any]] = mapped_column(JSON)
+    # 文件内容指纹（各文件 SHA-256 按顺序再取 SHA-256），用于识别同一份试卷重复入库；旧任务在入库时补算
+    file_hash: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     page_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
     options: Mapped[dict[str, Any]] = mapped_column(JSON)
     parser: Mapped[str | None] = mapped_column(String(32), nullable=True)

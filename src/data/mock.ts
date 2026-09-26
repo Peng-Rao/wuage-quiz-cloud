@@ -47,14 +47,6 @@ export const CHAPTERS = [
   { name: '第五章 三角函数', sections: ['5.1 任意角和弧度制', '5.2 三角函数的概念', '5.3 诱导公式', '5.4 三角函数的图象与性质', '5.5 三角恒等变换'] },
 ]
 
-export type FilterKey = 'type' | 'diff' | 'cat' | 'year'
-export const FILTERS: { key: FilterKey; label: string; options: string[] }[] = [
-  { key: 'type', label: '题型', options: ['全部', '单选题', '多选题', '填空题', '解答题'] },
-  { key: 'diff', label: '难度', options: ['全部', '容易', '适中', '较难'] },
-  { key: 'cat', label: '题类', options: ['全部', '高考真题', '模拟题', '期中期末', '月考', '常考题', '易错题'] },
-  { key: 'year', label: '年份', options: ['全部', '2026', '2025', '2024', '更早'] },
-]
-
 export const PAPERS: Record<string, PaperItem[]> = {
   期中: [
     { tag: '期中', title: '北京市海淀区 2026—2027 学年高一上学期期中数学试题', region: '北京', date: '09-24' },

@@ -65,7 +65,9 @@ def _parse(client, name: str, dedupe: bool = True) -> dict:  # noqa: ANN001, F81
 def test_dedupe_against_bank_and_similar_queries(client):  # noqa: F811
     first = _parse(client, "相似题-原卷.pdf")
     qs = client.get(f"/api/parse-jobs/{first['id']}/questions").json()
-    assert client.post(f"/api/parse-jobs/{first['id']}/commit", json={"questionIds": [q["id"] for q in qs]}).status_code == 200
+    # 其他测试已将同一份试卷入库，这里强制保存
+    r = client.post(f"/api/parse-jobs/{first['id']}/commit", json={"questionIds": [q["id"] for q in qs], "force": True})
+    assert r.status_code == 200 and r.json()["savedCount"] == 9
 
     # 同一份试卷再上传一次：每道题都应命中校本题库
     second = _parse(client, "相似题-重复上传.pdf")

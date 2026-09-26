@@ -59,7 +59,7 @@ def test_question_source(client, paper):  # noqa: F811
     assert q["source"]["label"] == "2026—2027 上 · 北京 · 西城 · 高一期中考试《出处测试》第 1 题"
 
     # 入库后相似题结果带出处
-    client.post(f"/api/parse-jobs/{paper['id']}/commit", json={"questionIds": [q["id"]]})
+    client.post(f"/api/parse-jobs/{paper['id']}/commit", json={"questionIds": [q["id"]], "force": True})
     r = client.post("/api/similar/search", json={"text": q["stem"], "limit": 20}).json()
     mine = next(x for x in r if x["origin"] and x["origin"]["fileName"] == "出处测试.pdf")
     assert mine["origin"]["no"] == 1 and "第 1 题" in mine["origin"]["label"]
