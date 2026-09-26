@@ -187,8 +187,11 @@ class KnowledgeTree(Base):
     subject: Mapped[str] = mapped_column(String(16), index=True)
     stage: Mapped[str] = mapped_column(String(8))
     textbook: Mapped[str] = mapped_column(String(64), default="")
-    # 内置示例：导入同学科的正式知识树后不再使用
+    # 内置知识树：同学科有正式导入的知识树时优先使用后者
     builtin: Mapped[bool] = mapped_column(default=False)
+    # 内置知识树的来源文件名与内容版本，文件更新后启动时自动替换
+    builtin_key: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    builtin_version: Mapped[str | None] = mapped_column(String(16), nullable=True)
     node_count: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 

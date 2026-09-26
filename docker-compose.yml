@@ -1,0 +1,17 @@
+# docker compose up -d --build 后访问 http://localhost:8000/upload
+services:
+  app:
+    build: .
+    image: fg-quiz-cloud:latest
+    ports:
+      - "8000:8000"
+    # MinerU、大模型等配置（见 server/.env.example）；文件不存在时只以规则 / 轻量解析运行
+    env_file:
+      - path: server/.env
+        required: false
+    volumes:
+      - fg-quiz-data:/data   # 数据库、上传文件、页面图
+    restart: unless-stopped
+
+volumes:
+  fg-quiz-data:

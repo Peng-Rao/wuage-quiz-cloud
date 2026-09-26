@@ -28,9 +28,10 @@ import {
   mockPageImage, mockSource, summarizeMockUsage,
 } from './mockData'
 import { QUESTIONS } from '@/data/mock'
-// 与后端共用内置示例知识树
-import mathTreeJson from '../../../server/app/data/knowledge/高中数学-人教A版.json'
-import chemTreeJson from '../../../server/app/data/knowledge/初中化学-人教版.json'
+// 与后端共用内置知识树（由知识点总纲生成，见 server/scripts/build_knowledge_trees.py）
+const builtinTrees = import.meta.glob<{ name: string; subject: string; stage: string; textbook: string; nodes: RawNode[] }>(
+  '../../../server/app/data/knowledge/*.json', { eager: true, import: 'default' },
+)
 
 /**
  * 内存版解析服务：模拟上传、分阶段进度推送和草稿题编辑。
@@ -315,9 +316,7 @@ function addTree(meta: { name: string; subject: string; stage: string; textbook?
   trees.set(t.id, t)
   return t
 }
-for (const j of [mathTreeJson, chemTreeJson] as { name: string; subject: string; stage: string; textbook: string; nodes: RawNode[] }[]) {
-  addTree(j, j.nodes, true)
-}
+for (const j of Object.values(builtinTrees)) addTree(j, j.nodes, true)
 function flatten(nodes: KnowledgeTreeNode[], prefix = ''): { node: KnowledgeTreeNode; path: string }[] {
   return nodes.flatMap(n => {
     const path = prefix ? `${prefix} / ${n.name}` : n.name

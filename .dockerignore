@@ -1,0 +1,26 @@
+# 依赖与构建产物在镜像内重新生成
+node_modules
+dist
+**/.venv
+**/__pycache__
+**/.pytest_cache
+*.tsbuildinfo
+
+# 本地数据与密钥不进镜像（运行时通过卷与环境变量提供）
+server/data
+server/.env
+.env
+!.env.api
+
+# 与镜像无关的文件
+.git
+.claude
+.DS_Store
+docs
+outputs
+福格云上题库前端设计方案
+server/tests
+server/scripts
+create_xm_doc.py
+xm-fontconfig.conf
+*.docx

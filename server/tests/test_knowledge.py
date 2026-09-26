@@ -1,5 +1,6 @@
 import json
 import time
+from pathlib import Path
 
 import httpx
 import pytest
@@ -22,8 +23,19 @@ def test_title_and_kp_helpers():
     assert kp_id("数学", "函数") == kp_id("数学", "函数") != kp_id("物理", "函数")
 
 
+CHAPTER_TREE = Path(__file__).parent / "tree_math_chapters.json"
+
+
+@pytest.fixture(scope="module")
+def chapter_tree(client):  # noqa: F811
+    """测试用的高中数学章节知识树（正式导入的优先于内置树），使结果不依赖内置知识树的内容。"""
+    r = client.post("/api/knowledge-trees/import", json={"format": "json", "content": CHAPTER_TREE.read_text(encoding="utf-8")})
+    assert r.status_code == 200, r.text
+    return r.json()
+
+
 @pytest.fixture
-def paper(client):  # noqa: F811
+def paper(client, chapter_tree):  # noqa: F811
     key = upload(client, "出处测试.pdf", make_exam_pdf())
     job = client.post("/api/parse-jobs", json={"fileKeys": [key], "fileNames": ["出处测试.pdf"],
                                                "options": {"dedupe": False}}).json()
@@ -87,6 +99,10 @@ def _wait_knowledge(client, job_id):  # noqa: ANN001
     raise AssertionError("知识点标注超时")
 
 
+def chapter_tree_name() -> str:
+    return json.loads(CHAPTER_TREE.read_text(encoding="utf-8"))["name"]
+
+
 def test_tag_with_tree_full_list(client, paper, monkeypatch):  # noqa: F811
     calls = []
 
@@ -99,7 +115,7 @@ def test_tag_with_tree_full_list(client, paper, monkeypatch):  # noqa: F811
     _llm_on(monkeypatch, handler)
     assert client.post(f"/api/parse-jobs/{paper['id']}/tag-knowledge").status_code == 202
     st = _wait_knowledge(client, paper["id"])
-    assert st["status"] == "done" and "高中数学知识体系" in st["note"]
+    assert st["status"] == "done" and chapter_tree_name() in st["note"]
     kps = client.get(f"/api/parse-jobs/{paper['id']}/questions").json()[0]["knowledgePoints"]
     # 不存在的编号被丢弃；清单外的名称保留为树外知识点
     assert [(k["name"], k["inTree"]) for k in kps] == [("交集", True), ("一元二次不等式的解法", True), ("树外的新知识点", False)]

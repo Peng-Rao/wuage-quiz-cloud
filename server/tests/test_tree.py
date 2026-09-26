@@ -1,5 +1,7 @@
 import json
 
+from sqlalchemy import select
+
 from app.db import SessionLocal
 from app.knowledge_tree import match_score, parse_csv, pick_tree
 
@@ -64,4 +66,37 @@ def test_tree_api_import_search_pick_delete(client):  # noqa: F811
     assert client.delete(f"/api/knowledge-trees/{mine['id']}").status_code == 204
     assert client.get(f"/api/knowledge-trees/{mine['id']}").status_code == 404
     with SessionLocal() as s:
-        assert pick_tree(s, "demo", {"subject": "数学", "stage": "高中"}).builtin
+        assert pick_tree(s, "demo", {"subject": "数学", "stage": "高中"}).id != mine["id"]
+
+
+def test_builtin_trees_cover_all_subjects(client):  # noqa: F811
+    """内置知识树覆盖总纲中的全部 23 个学段学科，学科名与试卷分类一致。"""
+    from app.pipeline.classify import STAGES
+    builtin = [t for t in client.get("/api/knowledge-trees").json() if t["builtin"]]
+    assert len(builtin) == 23
+    for t in builtin:
+        assert t["subject"] in STAGES[t["stage"]], (t["stage"], t["subject"])
+        assert t["nodeCount"] > 20
+
+
+def test_seed_builtin_updates_changed_and_removes_stale(tmp_path, monkeypatch):
+    import json as _json
+
+    from app import knowledge_tree as kt
+    from app.db import KnowledgeTree
+
+    school = "seed-test"
+    src = {"name": "测试树", "subject": "数学", "stage": "高中", "nodes": [{"name": "函数"}]}
+    (tmp_path / "高中数学.json").write_text(_json.dumps(src, ensure_ascii=False), encoding="utf-8")
+    monkeypatch.setattr(kt, "BUILTIN_DIR", tmp_path)
+    with SessionLocal() as s:
+        # 早期版本的内置树（没有 builtin_key）会被清理
+        kt.import_tree(s, school, {"name": "旧示例", "subject": "化学", "stage": "初中"}, [{"name": "空气"}], builtin=True)
+        s.commit()
+        assert kt.seed_builtin(s, school) == (1, 1)
+        assert kt.seed_builtin(s, school) == (0, 0)  # 内容未变不重复导入
+        src["nodes"].append({"name": "数列"})
+        (tmp_path / "高中数学.json").write_text(_json.dumps(src, ensure_ascii=False), encoding="utf-8")
+        assert kt.seed_builtin(s, school) == (1, 0)
+        trees = list(s.scalars(select(KnowledgeTree).where(KnowledgeTree.school_id == school)))
+        assert [(t.name, t.node_count) for t in trees] == [("测试树", 2)]

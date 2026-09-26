@@ -7,6 +7,7 @@
 """
 
 import csv
+import hashlib
 import io
 import json
 import logging
@@ -77,11 +78,13 @@ def parse_csv(content: str) -> list[dict[str, Any]]:
 
 # ---------------- 写入 ----------------
 
-def import_tree(s: Session, school_id: str, meta: dict[str, str], nodes: list[dict[str, Any]], *, builtin: bool = False) -> KnowledgeTree:
+def import_tree(s: Session, school_id: str, meta: dict[str, str], nodes: list[dict[str, Any]], *, builtin: bool = False,
+                builtin_key: str | None = None, builtin_version: str | None = None) -> KnowledgeTree:
     if not meta.get("subject") or not meta.get("stage"):
         raise TreeImportError("请指定学科与学段")
     tree = KnowledgeTree(id="t" + uuid.uuid4().hex[:12], school_id=school_id, name=meta.get("name") or f"{meta['stage']}{meta['subject']}知识体系",
-                         subject=meta["subject"], stage=meta["stage"], textbook=meta.get("textbook") or "", builtin=builtin)
+                         subject=meta["subject"], stage=meta["stage"], textbook=meta.get("textbook") or "", builtin=builtin,
+                         builtin_key=builtin_key, builtin_version=builtin_version)
     s.add(tree)
     s.flush()  # 节点有外键指向知识树，先写入知识树
     count = 0
@@ -108,18 +111,32 @@ def import_tree(s: Session, school_id: str, meta: dict[str, str], nodes: list[di
     return tree
 
 
-def seed_builtin(s: Session, school_id: str) -> int:
-    """学科尚无任何知识树时载入内置示例。返回新增的树数量。"""
-    added = 0
-    for f in sorted(BUILTIN_DIR.glob("*.json")):
-        meta, nodes = parse_json(f.read_text(encoding="utf-8"))
-        exists = s.scalar(select(KnowledgeTree.id).where(
-            KnowledgeTree.school_id == school_id, KnowledgeTree.subject == meta["subject"], KnowledgeTree.stage == meta["stage"]))
-        if not exists:
-            import_tree(s, school_id, meta, nodes, builtin=True)
-            added += 1
+def seed_builtin(s: Session, school_id: str) -> tuple[int, int]:
+    """同步内置知识树（app/data/knowledge/*.json）：新增缺少的、替换内容有变化的、删除已不存在的。
+    学校导入的正式知识树不受影响。返回 (新增或更新数, 删除数)。"""
+    files = {f.stem: f for f in sorted(BUILTIN_DIR.glob("*.json"))}
+    existing = list(s.scalars(select(KnowledgeTree).where(KnowledgeTree.school_id == school_id, KnowledgeTree.builtin.is_(True))))
+    by_key = {t.builtin_key: t for t in existing if t.builtin_key}
+    removed = 0
+    for t in existing:
+        # 早期版本没有 builtin_key，或来源文件已删除
+        if not t.builtin_key or t.builtin_key not in files:
+            delete_tree(s, t)
+            removed += 1
+    changed = 0
+    for key, f in files.items():
+        content = f.read_text(encoding="utf-8")
+        version = hashlib.md5(content.encode()).hexdigest()[:12]
+        old = by_key.get(key)
+        if old is not None and old.builtin_version == version:
+            continue
+        if old is not None:
+            delete_tree(s, old)
+        meta, nodes = parse_json(content)
+        import_tree(s, school_id, meta, nodes, builtin=True, builtin_key=key, builtin_version=version)
+        changed += 1
     s.commit()
-    return added
+    return changed, removed
 
 
 def delete_tree(s: Session, tree: KnowledgeTree) -> None:

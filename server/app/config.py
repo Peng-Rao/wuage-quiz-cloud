@@ -15,6 +15,8 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=SERVER_ROOT / ".env", extra="ignore")
 
     data_dir: Path = SERVER_ROOT / "data"
+    # 构建好的前端目录（npm run build:api 的 dist）；设置后由本服务直接托管页面，Docker 镜像中为 /app/web
+    static_dir: Path | None = None
     database_url: str = ""  # 留空时使用 data_dir/app.db（SQLite）
     cors_origins: list[str] = ["http://localhost:5173", "http://localhost:5174"]
     max_file_mb: int = 50

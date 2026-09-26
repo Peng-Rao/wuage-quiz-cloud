@@ -62,7 +62,12 @@ npm run dev:api
 
 ### 知识树、难度模型与评测（P2）
 
-- `app/knowledge_tree.py`：知识树导入（JSON / CSV）、内置示例（`app/data/knowledge/`）、按试卷选树、节点检索。
+- `app/knowledge_tree.py`：知识树导入（JSON / CSV）、内置知识树同步（`app/data/knowledge/`）、按试卷选树、节点检索。
+- `scripts/build_knowledge_trees.py`：由《基础学科知识点总纲》生成 23 个学段学科的内置知识树：
+
+  ```bash
+  uv run python scripts/build_knowledge_trees.py ../outputs/基础学科知识点总纲/知识点总纲.md --concurrency 8
+  ```
 - `app/pipeline/knowledge.py`：按知识树标注知识点（小树整表选择 / 大树检索候选后选择 / 无树自由生成），同一次调用评估难度。
 - `app/pipeline/difficulty.py`：大模型评估与基线加权，可用评测拟合的校准直线修正。
 - `app/evaluation.py`：以核对结果为标准答案重新解析并计算指标；页面在「试卷解析 › 解析评测」。
@@ -101,7 +106,7 @@ uv run pytest
 
 ## 当前限制（后续阶段）
 
-- 内置知识树为按教材目录整理的示例，正式使用需导入学校采用的知识体系；相似题阈值需用真实题库校准。
+- 内置知识树按知识领域组织（非教材章节），学校有正式知识体系时建议导入；相似题阈值需用真实题库校准。
 - 难度模型尚无学生作答数据，校准依赖老师调整过难度的评测样本。
 - 难度系数含义已改为「越高越难」，启动时会把旧数据一次性换算为 1 − 旧值（`app_meta.coef_semantics`）。
 - 本地 MinerU（`mineru_local`）：P3；Word 在未配置 MinerU 时无法解析（需要 LibreOffice 转换，P3）。

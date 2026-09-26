@@ -23,7 +23,7 @@ async function open(id: string) {
 }
 
 async function remove(t: KnowledgeTree) {
-  if (!confirm(`删除「${t.name}」？已标注的题目保留原知识点名称。`)) return
+  if (!confirm(t.builtin ? `删除内置知识树「${t.name}」？服务重启后会重新载入。` : `删除「${t.name}」？已标注的题目保留原知识点名称。`)) return
   await parseApi.deleteTree(t.id).catch((e) => (error.value = e.message))
   if (current.value?.id === t.id) current.value = null
   await load()
@@ -86,7 +86,7 @@ const shownNodes = computed(() => {
       <div>
         <RouterLink to="/upload" class="back">‹ 试卷解析</RouterLink>
         <h1>知识树管理</h1>
-        <span class="sub">解析试卷时按学科、学段选用知识树标注知识点：正式导入的优先于内置示例，教材版本一致的优先。</span>
+        <span class="sub">解析试卷时按学科、学段选用知识树标注知识点：学校导入的优先于内置知识树，教材版本一致的优先。内置知识树由《基础学科知识点总纲》整理，覆盖小学至高中 23 个学科。</span>
       </div>
     </div>
     <p v-if="error" class="card err" role="alert">{{ error }}</p>
@@ -102,7 +102,7 @@ const shownNodes = computed(() => {
                 <span class="name">{{ t.name }}</span>
                 <span class="meta">{{ t.stage }} · {{ t.subject }}<template v-if="t.textbook"> · {{ t.textbook }}</template> · {{ t.nodeCount }} 个</span>
               </button>
-              <span v-if="t.builtin" class="tag">示例</span>
+              <span v-if="t.builtin" class="tag">内置</span>
               <button class="btn-link small del" @click="remove(t)">删除</button>
             </li>
           </ul>
@@ -140,7 +140,7 @@ const shownNodes = computed(() => {
           <div class="tree-head">
             <div>
               <span class="card-title">{{ current.name }}</span>
-              <span class="muted small">{{ current.stage }} · {{ current.subject }} · {{ current.nodeCount }} 个知识点<template v-if="current.builtin"> · 内置示例，仅供联调</template></span>
+              <span class="muted small">{{ current.stage }} · {{ current.subject }} · {{ current.nodeCount }} 个知识点<template v-if="current.builtin"> · 内置（由知识点总纲整理）</template></span>
             </div>
             <input v-model="keyword" class="search" placeholder="搜索知识点或别名">
           </div>
