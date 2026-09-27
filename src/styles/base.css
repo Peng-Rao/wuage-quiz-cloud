@@ -106,4 +106,7 @@ button { cursor: pointer; }
 .legend .mid { color: var(--c-mid); }
 .legend .hard { color: var(--c-hard); }
 
-.sticky-side { position: sticky; top: 80px; }
+/* 吸顶侧栏距视口顶部的距离：页头高度 + 间距；中等宽度下页头菜单换行，页头变高 */
+:root { --sticky-top: 80px; }
+@media (max-width: 1180px) { :root { --sticky-top: 124px; } }
+.sticky-side { position: sticky; top: var(--sticky-top); }

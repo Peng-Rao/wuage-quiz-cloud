@@ -140,11 +140,16 @@ onBeforeUnmount(() => {
   display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 600; flex-shrink: 0;
 }
 
-@media (max-width: 720px) {
-  .bar { height: auto; flex-wrap: wrap; gap: 10px 12px; padding-top: 10px; }
-  .brand :deep(.en), .avatar { display: none; }
+/* 管理员菜单项较多，中等宽度下一行放不下：菜单单独占一行 */
+@media (max-width: 1180px) {
+  .bar { height: auto; flex-wrap: wrap; gap: 10px 16px; padding-top: 10px; }
   .basket-btn { margin-left: auto; }
   .nav { order: 1; flex-basis: 100%; margin: 0 -12px; }
+  .nav-item { height: 44px; }
+}
+@media (max-width: 720px) {
+  .bar { gap: 10px 12px; }
+  .brand :deep(.en), .avatar { display: none; }
   .nav-item { height: 42px; }
 }
 @media (max-width: 420px) {

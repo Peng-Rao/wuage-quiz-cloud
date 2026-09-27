@@ -25,7 +25,9 @@ watch(() => [app.stage, app.subject], async () => {
 const entries = computed(() => [
   { mark: '章', title: '章节选题', desc: '按教材版本与章节同步选题', to: '/chapter' },
   { mark: '知', title: '知识点选题', desc: '按可见题目的知识体系定位考点', to: '/knowledge' },
-  { mark: '卷', title: auth.isStaff ? 'AI 辅助组卷' : '手动组卷', desc: auth.isStaff ? '按题量、难度与考点智能选题' : '自由选题排版，下载教学试卷', to: '/paper' },
+  auth.isStaff
+    ? { mark: '卷', title: 'AI 组卷', desc: '描述学生情况与要求，AI 选题并赋分', to: '/compose' }
+    : { mark: '卷', title: '手动组卷', desc: '自由选题排版，下载教学试卷', to: '/paper' },
   { mark: '题', title: '试卷选题', desc: '浏览权限范围内的已入库试卷', to: '/papers' },
 ])
 function search() { router.push({ path: '/knowledge', query: keyword.value.trim() ? { q: keyword.value.trim() } : {} }) }

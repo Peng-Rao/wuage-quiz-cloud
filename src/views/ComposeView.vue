@@ -200,7 +200,7 @@ function toBasket() {
 .compose { width: 100%; padding-top: 20px; padding-bottom: 48px; display: flex; flex-wrap: wrap; gap: 18px; align-items: flex-start; }
 
 /* 左侧对话 */
-.chat { flex: 1 1 360px; max-width: 420px; padding: 16px; display: flex; flex-direction: column; gap: 12px; height: calc(100vh - 100px); min-height: 480px; }
+.chat { flex: 1 1 360px; max-width: 420px; padding: 16px; display: flex; flex-direction: column; gap: 12px; height: calc(100vh - var(--sticky-top) - 20px); min-height: 480px; }
 .chat-head { display: flex; align-items: baseline; justify-content: space-between; }
 .chat-body { flex: 1; overflow: auto; display: flex; flex-direction: column; gap: 10px; margin: 0 -6px; padding: 0 6px; }
 .intro p { margin: 0 0 12px; font-size: 13px; line-height: 1.7; color: var(--c-text-3); }

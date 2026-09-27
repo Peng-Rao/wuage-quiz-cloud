@@ -404,7 +404,7 @@ async function forceCommit() {
 /* 核对 · 左侧 */
 .review-side { flex: 1 0 280px; max-width: 320px; display: flex; flex-direction: column; gap: 14px; }
 /* 侧栏吸顶；内容超出屏幕高度时单独滚动，避免下方卡片永远看不到 */
-.review-side.sticky-side { max-height: calc(100vh - 96px); overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
+.review-side.sticky-side { max-height: calc(100vh - var(--sticky-top) - 16px); overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
 .avg { display: flex; align-items: baseline; gap: 8px; }
 .avg-num { font-size: 32px; font-weight: 700; color: var(--c-primary); line-height: 1; }
 .avg-label { font-size: 13px; color: var(--c-text-3); }

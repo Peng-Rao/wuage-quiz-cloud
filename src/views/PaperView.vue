@@ -249,7 +249,7 @@ function focusRow(id: string) {
 .paper { width: 100%; padding-top: 20px; padding-bottom: 48px; display: flex; flex-wrap: wrap; gap: 18px; align-items: flex-start; }
 
 /* 左侧结构编辑 */
-.structure { flex: 0 0 320px; min-width: 0; padding: 16px; display: flex; flex-direction: column; gap: 10px; max-height: calc(100vh - 100px); }
+.structure { flex: 0 0 320px; min-width: 0; padding: 16px; display: flex; flex-direction: column; gap: 10px; max-height: calc(100vh - var(--sticky-top) - 20px); }
 .struct-head { display: flex; align-items: baseline; justify-content: space-between; }
 .small { font-size: 12px; }
 .struct-tip { margin: 0; font-size: 12px; color: var(--c-text-4); line-height: 1.6; }
