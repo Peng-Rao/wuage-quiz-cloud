@@ -40,6 +40,15 @@ def _parse_json(text: str) -> Any:
         raise
 
 
+def items_of(data: Any, key: str) -> list[Any] | None:
+    """取模型输出中的列表：要求的格式是 {key: [...]}，但部分模型（如 qwen3.8）会省略外层对象、直接返回数组，两种都接受。"""
+    if isinstance(data, list):
+        return data
+    if isinstance(data, dict) and isinstance(data.get(key), list):
+        return data[key]
+    return None
+
+
 def describe(e: BaseException) -> str:
     """httpx 的连接类异常 str() 常为空，补上异常类型便于排查。"""
     msg = str(e).strip()

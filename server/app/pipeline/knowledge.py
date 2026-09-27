@@ -18,7 +18,7 @@ from sqlalchemy import select
 from ..config import get_settings
 from ..db import DraftQuestion, KnowledgeNode, KnowledgeTree, ParseJob, SessionLocal
 from ..knowledge_tree import leaves, pick_tree, search_nodes
-from .llm import LLMError, chat_json, describe
+from .llm import LLMError, chat_json, describe, items_of
 
 log = logging.getLogger(__name__)
 
@@ -100,7 +100,7 @@ def _free_ref(subject: str, name: str) -> dict[str, Any]:
 
 
 def _items(data: Any) -> list[dict[str, Any]]:
-    return [x for x in (data or {}).get("questions", []) if isinstance(x, dict)] if isinstance(data, dict) else []
+    return [x for x in items_of(data, "questions") or [] if isinstance(x, dict)]
 
 
 class Tagger:

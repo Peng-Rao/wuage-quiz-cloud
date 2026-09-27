@@ -97,6 +97,7 @@ async def run_job(job_id: str) -> None:
         options = dict(job.options)
         kind = job.kind
         file_type = job.file_type
+        file_name = job.file_name
     ctx.update(status="running", error=None, progress=0)
     warnings: list[str] = []
 
@@ -142,7 +143,7 @@ async def run_job(job_id: str) -> None:
     # ---- classify：试卷分类 ----
     ctx.stage("classify", "running")
     head = "\n".join(b.text for b in doc.blocks if b.page == 1 and b.type in ("text", "title"))[:3000]
-    meta, w = await classify(head, settings)
+    meta, w = await classify(head, settings, file_name=file_name)
     warnings += w
     scope = options.get("subject")
     if scope and meta.subject and meta.subject != scope:

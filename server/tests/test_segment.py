@@ -122,9 +122,21 @@ async def test_llm_grouping_used_when_valid(units, monkeypatch):
     assert seg.questions[4].answer == "BCD"
 
 
+async def test_llm_bare_array_accepted(units, monkeypatch):
+    # 部分模型（如 qwen3.8）省略外层对象，直接返回题目数组
+    rule = rule_segment(units, with_answer=True)
+    groups = [{"no": i + 1, "type": q.type, "score": q.score, "units": q.unit_ids, "answer_units": []}
+              for i, q in enumerate(rule.questions)]
+    _mock_llm(monkeypatch, lambda _: _reply(groups))
+    seg = await segment(units, _llm_settings(), with_answer=True)
+    assert seg.used_llm and len(seg.questions) == 9 and not seg.warnings
+
+
 @pytest.mark.parametrize("bad", [
     {"questions": [{"units": ["不存在的单元"]}]},
     {"questions": []},
+    [],
+    ["u1"],
     "不是 JSON",
 ])
 async def test_llm_invalid_falls_back_to_rules(units, monkeypatch, bad):
@@ -135,6 +147,22 @@ async def test_llm_invalid_falls_back_to_rules(units, monkeypatch, bad):
     seg = await segment(units, _llm_settings(), with_answer=True)
     assert not seg.used_llm and len(seg.questions) == 9
     assert any("大模型拆题失败" in w for w in seg.warnings)
+
+
+async def test_llm_minor_errors_repaired(units, monkeypatch):
+    rule = rule_segment(units, with_answer=True)
+    groups = [{"no": i + 1, "type": q.type, "score": q.score, "units": list(q.unit_ids), "answer_units": []}
+              for i, q in enumerate(rule.questions)]
+    groups[2]["units"] += groups[1]["units"][:1]      # 第 3 题重复使用了第 2 题的单元
+    groups[4]["units"].append("不存在的单元")            # 第 5 题含未知单元
+    groups[6], groups[7] = groups[7], groups[6]        # 第 7、8 题顺序颠倒
+    _mock_llm(monkeypatch, lambda _: _reply({"questions": groups}))
+    seg = await segment(units, _llm_settings(), with_answer=True)
+    assert seg.used_llm and len(seg.questions) == 9
+    assert [q.printed_no for q in seg.questions] == [q.printed_no for q in rule.questions]
+    flagged = [i for i, q in enumerate(seg.questions) if "大模型分组有误，已自动修正" in q.flags]
+    assert flagged == [2, 4] and all(seg.questions[i].confidence < 0.8 for i in flagged)
+    assert any("3 处分组问题" in w for w in seg.warnings)
 
 
 async def test_llm_reused_unit_rejected(units, monkeypatch):
@@ -221,3 +249,65 @@ def test_notice_items_are_not_questions():
     seg = rule_segment(us, with_answer=False)
     assert len(seg.questions) == 1 and seg.questions[0].stem.startswith("下列变化")
     assert "注意事项：" in [u.text for u in seg.preamble]
+
+
+def test_numbered_answers_distributed():
+    from app.pipeline.segment import Question, distribute_numbered_answers
+    qs = [Question(n, "单选题", 5, f"第{n}题", [], None, None, [], 0.9) for n in (1, 2, 3, 4)]
+    qs[0].answer = "C\n【2 题答案】\nA\n【3 题答案】\nD"
+    qs[0].analysis = "第 1 题解析"
+    qs[3].answer = "B"
+    distribute_numbered_answers(qs)
+    assert [(q.answer, q.analysis) for q in qs] == [("C", "第 1 题解析"), ("A", None), ("D", None), ("B", None)]
+    # 对应的题已有答案、或题号不存在时，留在原题
+    qs = [Question(1, "单选题", 5, "", [], "C【2 题答案】A【9 题答案】B", None, [], 0.9),
+          Question(2, "单选题", 5, "", [], "D", None, [], 0.9)]
+    distribute_numbered_answers(qs)
+    assert qs[1].answer == "D" and "A" in qs[0].answer and "B" in qs[0].answer
+
+
+def test_answer_from_analysis_and_table_keys():
+    from app.pipeline.segment import Question, Unit, answer_from_analysis, finalize_answers
+    assert answer_from_analysis("【解答】解：……故选：B.【点评】中档题") == "B"
+    assert answer_from_analysis("所以 BC 正确；故选：BC.") == "BC"
+    assert answer_from_analysis("可得离心率为 $\\sqrt{2}$ ，故答案为：$\\sqrt{2}$.【点评】") == "$\\sqrt{2}$"
+    assert answer_from_analysis("没有结论") is None
+    table = Unit("t1", 90, 7, "table", "[表] 题号 1 2 3 4 选项 A C D B 题号 9 10 答案 AC BD")
+    qs = [Question(n, "单选题", 5, "", [], None, None, [], 0.9) for n in (1, 2, 3, 9, 11)]
+    qs[1].answer = "D"  # 已有答案不覆盖
+    qs[4].analysis = "【解答】……故选：A"
+    finalize_answers(qs, [table])
+    assert [q.answer for q in qs] == ["A", "D", "D", "AC", "A"]
+
+
+async def test_classify_uses_file_name(monkeypatch):
+    from app.pipeline.classify import classify
+    # 合订本拆出的分册没有封面：正文只有学科标题，学段、类型、地区来自文件名
+    meta = rule_classify("道德与法治试题\n一、选择题", "2026福建中考_道德与法治试题及参考答案")
+    assert (meta.title, meta.stage, meta.subject, meta.paper_type) == ("道德与法治试题", "初中", "道德与法治", "中考真题")
+    seen = {}
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        seen["user"] = json.loads(req.content)["messages"][1]["content"]
+        # 学段与学科矛盾：保留学科，学段留空后由规则结果补上
+        return _reply({"title": "道德与法治试题", "stage": "高中", "subject": "道德与法治", "region": "福建"})
+
+    _mock_llm(monkeypatch, handler)
+    meta, _ = await classify("道德与法治试题", _llm_settings(), file_name="2026福建中考_道德与法治试题及参考答案.pdf")
+    assert seen["user"].startswith("文件名：2026福建中考_道德与法治试题及参考答案\n")
+    assert (meta.stage, meta.subject, meta.paper_type, meta.region) == ("初中", "道德与法治", "中考真题", "福建")
+
+
+def test_numbered_answer_block_fills_empty_answers():
+    from app.pipeline.segment import Question, Unit, finalize_answers
+    block = Unit("a1", 60, 5, "text", "【1 题答案】\n【答案】C\n【2 题答案】\n【答案】A\n【3 题答案】\n【答案】D")
+    qs = [Question(n, "单选题", 5, "", [], None, None, [], 0.9) for n in (1, 2, 3)]
+    qs[2].answer = "B"  # 已关联的答案不覆盖
+    finalize_answers(qs, [block])
+    assert [q.answer for q in qs] == ["C", "A", "B"]
+
+
+def test_region_skips_instruction_text():
+    text = "2025年普通高等学校招生全国统一考试\n注意事项：考生务必将自己所在的市（县、区）、学校填写在答题卡上。"
+    assert rule_classify(text).region == ""
+    assert rule_classify("2026年福建省厦门市初三二检 化学").region == "福建 · 厦门"

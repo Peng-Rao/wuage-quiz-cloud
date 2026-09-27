@@ -2,6 +2,7 @@
 
 import logging
 import re
+from pathlib import Path
 
 from ..config import Settings
 from ..schemas import PaperMeta
@@ -35,10 +36,12 @@ _TEXTBOOK_RE = re.compile(r"(人教[AB]?版|北师大版|苏教版|湘教版|沪
 _YEAR_RE = re.compile(r"(20\d{2})\s*[—\-–~～至]+\s*(20\d{2})\s*学年")
 # 学期可能紧跟学年，也可能在年级之后：「学年第一学期」「学年高一上学期」
 _TERM_RE = re.compile(r"(上|下|第一|第二)\s*学期")
-_PROVINCE_RE = re.compile(r"([一-龥]{2,3}?)(?:省|市|自治区)")
+# 地名从词首或「2026年」之后开始，避免截出「年福建」
+_PROVINCE_RE = re.compile(r"(?:(?<![一-龥])|(?<=年))(?!年)([一-龥]{2,3}?)(?:省|市|自治区)")
 _DISTRICT_RE = re.compile(r"(?:省|市)([一-龥]{2,3}?)(?:区|县|市)")
 
 
+_NOT_PLACE = r"[的在各本该我全某所城]"
 _TITLE_RE = re.compile(r"试卷|试题|考试|测试|测验|练习|月考|期中|期末|联考|模拟|检测|真题|押题")
 
 
@@ -50,8 +53,10 @@ def rule_title(text: str) -> str:
     return ""
 
 
-def rule_classify(text: str) -> PaperMeta:
+def rule_classify(text: str, hint: str = "") -> PaperMeta:
+    """hint 为上传时的文件名（去掉扩展名）：参与判断学段、学科等，不作为标题。"""
     title = rule_title(text)
+    text = f"{text}\n{hint}" if hint else text
     # 标题常把科目写成「数 学」，先去掉汉字之间的空白
     text = re.sub(r"(?<=[\u4e00-\u9fff])\s+(?=[\u4e00-\u9fff])", "", text)
     meta = PaperMeta(title=title)
@@ -72,7 +77,8 @@ def rule_classify(text: str) -> PaperMeta:
         t = _TERM_RE.search(text, m.end())
         term = {"上": " 上", "第一": " 上", "下": " 下", "第二": " 下"}.get(t.group(1), "") if t else ""
         meta.school_year = f"{m.group(1)}—{m.group(2)}{term}"
-    if m := _PROVINCE_RE.search(text):
+    # 「所在的市（县、区）」等说明文字也会匹配，跳过含虚词的结果
+    if m := next((m for m in _PROVINCE_RE.finditer(text) if not re.search(_NOT_PLACE, m.group(1))), None):
         region = m.group(1)
         if d := _DISTRICT_RE.search(text[m.start():]):
             region += f" · {d.group(1)}"
@@ -89,6 +95,7 @@ LLM_SYSTEM = f"""你是中国中小学试卷分类助手。根据试卷开头的
 - grade 如：高一、初二、五年级；paperType 只能是：{"、".join(PAPER_TYPES)}
 - title 为试卷名称（卷首标题原文，去掉「绝密★启用前」等前缀）
 - region 如「北京 · 海淀」；schoolYear 如「2026—2027 上」；textbook 如「人教A版（2019）」
+- 输入开头可能附有上传时的文件名，可作为学段、学科、类型、地区、年份的参考；title 以试卷正文为准
 - 无法判断的字段留空字符串，不要猜测。"""
 
 
@@ -96,7 +103,8 @@ def _valid(meta: PaperMeta) -> PaperMeta:
     if meta.stage not in STAGES:
         meta.stage = ""
     if meta.subject and meta.stage and meta.subject not in STAGES[meta.stage]:
-        meta.subject = ""
+        # 学科通常直接写在标题里，比推断的学段可靠：保留学科，学段留空待核对
+        meta.stage = ""
     if meta.grade and meta.stage and meta.grade not in GRADES[meta.stage]:
         meta.grade = ""
     if meta.paper_type not in PAPER_TYPES:
@@ -104,13 +112,15 @@ def _valid(meta: PaperMeta) -> PaperMeta:
     return meta
 
 
-async def classify(head_text: str, settings: Settings) -> tuple[PaperMeta, list[str]]:
-    meta = _valid(rule_classify(head_text))
+async def classify(head_text: str, settings: Settings, *, file_name: str = "") -> tuple[PaperMeta, list[str]]:
+    hint = Path(file_name).stem if file_name else ""
+    meta = _valid(rule_classify(head_text, hint))
     warnings: list[str] = []
     if not settings.llm_enabled:
         return meta, warnings
     try:
-        data = await chat_json(LLM_SYSTEM, head_text[:3000], settings, purpose="classify")
+        user = (f"文件名：{hint}\n\n" if hint else "") + head_text[:3000]
+        data = await chat_json(LLM_SYSTEM, user, settings, purpose="classify")
         llm = _valid(PaperMeta.model_validate({k: str(v or "").strip() for k, v in (data or {}).items()}))
     except (LLMError, ValueError) as e:
         log.warning("大模型分类失败：%s", e)

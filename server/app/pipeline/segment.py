@@ -12,7 +12,7 @@ from dataclasses import dataclass, field
 
 from ..config import Settings
 from .ir import Block
-from .llm import LLMError, chat_json
+from .llm import LLMError, chat_json, items_of
 
 log = logging.getLogger(__name__)
 
@@ -155,6 +155,91 @@ def split_answer_text(text: str) -> tuple[str | None, str | None]:
         return letters, rest or None
     text = text.strip()
     return (text or None), None
+
+
+# 一段答案里依次写着多道题的答案，如「【1 题答案】【答案】C【2 题答案】【答案】A…」（MinerU 常把整页答案识别为一段）
+NUMBERED_ANSWER_RE = re.compile(r"[【\[]\s*第?\s*(\d{1,3})\s*题\s*(?:答案|解析|详解)?\s*[】\]]")
+
+
+# 解析中的最终答案：「故选：B」「故答案为：$\\sqrt{2}$.」
+CHOSEN_RE = re.compile(r"故选\s*[:：]?\s*([A-H](?:\s*[,，、]?\s*[A-H]){0,7})(?![A-Za-z])")
+FINAL_ANSWER_RE = re.compile(r"故答案为\s*[:：]\s*(.+?)\s*(?:[.。](?=\s|$|【)|\n|$)")
+# 答案表格（表格单元去掉标签后的文本）：「题号 1 2 3 选项 A C D」，可有多组
+TABLE_KEY_RE = re.compile(r"题号\s+((?:\d{1,3}\s+)+)(?:选项|答案)\s+((?:[A-H]{1,4}(?:\s+|$))+)")
+
+
+def answer_from_analysis(analysis: str) -> str | None:
+    if m := CHOSEN_RE.search(analysis):
+        return re.sub(r"[^A-H]", "", m.group(1))
+    if m := FINAL_ANSWER_RE.search(analysis):
+        return m.group(1).strip() or None
+    return None
+
+
+def table_answer_keys(units: list[Unit]) -> dict[int, str]:
+    keys: dict[int, str] = {}
+    for u in units:
+        if u.type != "table":
+            continue
+        for m in TABLE_KEY_RE.finditer(u.text):
+            nos, answers = m.group(1).split(), m.group(2).split()
+            if len(nos) == len(answers):
+                keys.update((int(n), a) for n, a in zip(nos, answers))
+    return keys
+
+
+def numbered_answer_keys(units: list[Unit]) -> dict[int, tuple[str | None, str | None]]:
+    """单元内依次标着多道题的答案（「【1 题答案】【答案】C【2 题答案】…」）：按题号拆出 (答案, 解析)。"""
+    keys: dict[int, tuple[str | None, str | None]] = {}
+    for u in units:
+        marks = list(NUMBERED_ANSWER_RE.finditer(u.text))
+        if len(marks) < 2:
+            continue
+        for i, m in enumerate(marks):
+            part = u.text[m.end():marks[i + 1].start() if i + 1 < len(marks) else len(u.text)].strip()
+            if part:
+                keys.setdefault(int(m.group(1)), split_answer_text(part))
+    return keys
+
+
+def finalize_answers(questions: list[Question], units: list[Unit]) -> None:
+    """拆题后统一整理答案：合在一段里的多题答案按题号分开；答案表格、带题号的答案段按题号填入；
+    只有解析时从解析中取出最终答案。只填写空着的答案，不覆盖已关联的。"""
+    distribute_numbered_answers(questions)
+    table = table_answer_keys(units)
+    numbered = numbered_answer_keys(units)
+    for q in questions:
+        if q.answer:
+            continue
+        if q.printed_no in table:
+            q.answer = table[q.printed_no]
+        elif q.printed_no in numbered:
+            q.answer, q.analysis = numbered[q.printed_no][0], q.analysis or numbered[q.printed_no][1]
+        if not q.answer and q.analysis:
+            q.answer = answer_from_analysis(q.analysis)
+
+
+def distribute_numbered_answers(questions: list[Question]) -> None:
+    """答案（或解析）中标明其他题号的部分，分给对应题号、且该项还空着的题；答案与解析分别处理。"""
+    by_no = {q.printed_no: q for q in questions if q.printed_no is not None}
+    for q in questions:
+        for name in ("answer", "analysis"):
+            text = getattr(q, name) or ""
+            marks = list(NUMBERED_ANSWER_RE.finditer(text))
+            if not any(int(m.group(1)) != q.printed_no for m in marks):
+                continue
+            own = [text[:marks[0].start()]]
+            for i, m in enumerate(marks):
+                part = text[m.end():marks[i + 1].start() if i + 1 < len(marks) else len(text)]
+                target = by_no.get(int(m.group(1)))
+                if target is None or target is q or getattr(target, name):
+                    own.append(part)  # 找不到对应的题或对方已有：留在原题
+                elif name == "answer":
+                    ans, ana = split_answer_text(part.strip())
+                    target.answer, target.analysis = ans, target.analysis or ana
+                else:
+                    target.analysis = part.strip() or None
+            setattr(q, name, "\n".join(p.strip() for p in own if p.strip()) or None)
 
 
 def parse_answer_section(units: list[Unit]) -> dict[int, tuple[str | None, str | None, list[str]]]:
@@ -303,6 +388,8 @@ def rule_segment(units: list[Unit], *, with_answer: bool) -> Segmentation:
     questions = [_build(d.printed_no, d.lines, d.unit_ids, d.section, d.section_type, d.section_score,
                         answers.get(d.printed_no) if d.printed_no else None, with_answer, gap=d.gap)
                  for d in drafts]
+    if with_answer:
+        finalize_answers(questions, units)
     return Segmentation(questions=questions, preamble=preamble)
 
 
@@ -369,7 +456,9 @@ LLM_SYSTEM = """你是中国中小学试卷的结构化助手。输入是一份�
 规则：
 1. 每道题包含题号、题干、选项、小问（（1）（2）等小问属于同一道题，不要拆开）以及紧跟在题目内的配图。
 2. 试卷标题、考试说明、大题标题（如「一、单选题：本题共 8 小题，每小题 5 分」）不属于任何题。
-3. 卷末的参考答案 / 解析区单元放到对应题目的 answer_units 中，不要放进 units。
+3. 卷末的参考答案 / 解析区单元放到对应题目的 answer_units 中，不要放进 units。答案区常见形式：按题号重新印出题干，
+   后接【分析】【解答】【点评】或「故选」「故答案为」——重印的题干和这些解析都放进该题的 answer_units；
+   答案表格（如「题号 1 2 3 / 选项 A C D」）放进表中第一题的 answer_units。
 4. 每个单元最多属于一道题；题目按原卷顺序输出；units 内保持原顺序。
 5. type 只能是：单选题、多选题、填空题、解答题；score 为该题分值（数字，未知填 0）。
 
@@ -382,31 +471,51 @@ def _llm_payload(units: list[Unit]) -> str:
     return json.dumps(rows, ensure_ascii=False)
 
 
-def _validate_llm(data: object, known: dict[str, Unit]) -> list[dict]:
-    if not isinstance(data, dict) or not isinstance(data.get("questions"), list) or not data["questions"]:
+# 大模型分组中可以自动修正的问题数上限：超过则整体退回规则结果
+MAX_LLM_REPAIRS = 3
+# 大模型分组至少要覆盖规则识别出的题目单元的比例
+MIN_LLM_COVERAGE = 0.6
+
+
+def _validate_llm(data: object, known: dict[str, Unit]) -> tuple[list[dict], int]:
+    """校验大模型分组并就地修正小问题：不存在的单元、重复使用的单元（保留第一次）丢弃，没有单元的题跳过，
+    顺序按原卷重排。返回 (分组, 修正处数)；分组中 repaired 为 True 的题需要老师核对。"""
+    questions = items_of(data, "questions")
+    if not questions:
         raise ValueError("缺少 questions")
     seen: set[str] = set()
-    last_seq = -1
-    out = []
-    for q in data["questions"]:
-        ids = [i for i in q.get("units", []) if isinstance(i, str)]
-        ans_ids = [i for i in q.get("answer_units", []) or [] if isinstance(i, str)]
-        if not ids:
-            raise ValueError("存在没有单元的题目")
-        for i in ids + ans_ids:
-            if i not in known:
-                raise ValueError(f"未知单元 {i}")
-            if i in seen:
-                raise ValueError(f"单元 {i} 被重复使用")
-            seen.add(i)
-        first = min(known[i].seq for i in ids)
-        if first < last_seq:
-            raise ValueError("题目顺序与原卷不一致")
-        last_seq = first
-        ids.sort(key=lambda i: known[i].seq)
-        ans_ids.sort(key=lambda i: known[i].seq)
-        out.append({"type": q.get("type"), "score": q.get("score"), "units": ids, "answer_units": ans_ids})
-    return out
+    out: list[dict] = []
+    repairs = 0
+    for q in questions:
+        if not isinstance(q, dict):
+            repairs += 1
+            continue
+        fixed = False
+        picked: dict[str, list[str]] = {"units": [], "answer_units": []}
+        for key, dst in picked.items():
+            raw = q.get(key) or []
+            for i in raw if isinstance(raw, list) else []:
+                if isinstance(i, str) and i in known and i not in seen:
+                    seen.add(i)
+                    dst.append(i)
+                else:
+                    fixed = True
+        if not picked["units"]:
+            repairs += 1
+            continue
+        repairs += fixed
+        ids = sorted(picked["units"], key=lambda i: known[i].seq)
+        ans_ids = sorted(picked["answer_units"], key=lambda i: known[i].seq)
+        out.append({"type": q.get("type"), "score": q.get("score"), "units": ids, "answer_units": ans_ids,
+                    "repaired": fixed})
+    if not out:
+        raise ValueError("没有可用的题目")
+    ordered = sorted(out, key=lambda g: known[g["units"][0]].seq)
+    if ordered != out:
+        repairs += 1
+    if repairs > MAX_LLM_REPAIRS:
+        raise ValueError(f"分组问题过多（{repairs} 处）")
+    return ordered, repairs
 
 
 def _overlap(a: list[str], b: list[str]) -> float:
@@ -426,7 +535,11 @@ async def segment(units: list[Unit], settings: Settings, *, with_answer: bool) -
     known = {u.id: u for u in units}
     try:
         data = await chat_json(LLM_SYSTEM, _llm_payload(units), settings, purpose="segment")
-        groups = _validate_llm(data, known)
+        groups, repairs = _validate_llm(data, known)
+        rule_ids = {i for q in rule.questions for i in q.unit_ids}
+        got = {i for g in groups for i in g["units"] + g["answer_units"]}
+        if rule_ids and len(rule_ids & got) < MIN_LLM_COVERAGE * len(rule_ids):
+            raise ValueError("分组遗漏了大部分题目内容")
     except (LLMError, ValueError) as e:
         log.warning("大模型拆题结果不可用：%s", e)
         rule.warnings.append(f"大模型拆题失败，已使用规则结果：{e}")
@@ -459,12 +572,18 @@ async def segment(units: list[Unit], settings: Settings, *, with_answer: bool) -
         q = _build(printed_no, lines, g["units"], ref.section if ref else 0, None, None, section_answer, with_answer,
                    llm_type=g["type"] if g["type"] in QTYPES else (ref.type if ref else None),
                    llm_score=score or rule_score)
-        # 与规则结果一致则略微提升置信度，不一致则进入待核对
-        if ref and _overlap(ref.unit_ids, g["units"]) >= 0.8:
+        # 与规则结果一致则略微提升置信度，不一致或经过自动修正则进入待核对
+        if g["repaired"]:
+            q.confidence = round(max(0.3, q.confidence - 0.25), 2)
+            q.flags.append("大模型分组有误，已自动修正")
+        elif ref and _overlap(ref.unit_ids, g["units"]) >= 0.8:
             q.confidence = round(min(0.99, q.confidence + 0.03), 2)
         else:
             q.confidence = round(max(0.3, q.confidence - 0.25), 2)
             q.flags.append("规则与大模型切分不一致")
         questions.append(q)
 
-    return Segmentation(questions=questions, preamble=rule.preamble, used_llm=True, warnings=rule.warnings)
+    if with_answer:
+        finalize_answers(questions, units)
+    warnings = rule.warnings + ([f"大模型拆题有 {repairs} 处分组问题，已自动修正，相关题目已标记待核对"] if repairs else [])
+    return Segmentation(questions=questions, preamble=rule.preamble, used_llm=True, warnings=warnings)

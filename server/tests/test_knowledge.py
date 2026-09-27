@@ -40,6 +40,10 @@ def paper(client, chapter_tree):  # noqa: F811
     job = client.post("/api/parse-jobs", json={"fileKeys": [key], "fileNames": ["出处测试.pdf"],
                                                "options": {"dedupe": False}}).json()
     return wait_done(client, job["id"])
+    # 模型输出：{"questions": [...]} 或省略外层对象的数组都接受
+    from app.pipeline.knowledge import _items
+    assert _items({"questions": [{"no": 1}, "x"]}) == [{"no": 1}] == _items([{"no": 1}])
+    assert _items({"other": []}) == [] == _items("x")
 
 
 def test_question_source(client, paper):  # noqa: F811
