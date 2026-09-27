@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { useAuthStore } from '@/stores/auth'
 import { storeToRefs } from 'pinia'
 import { useRoute } from 'vue-router'
 import BrandLogo from './BrandLogo.vue'
@@ -7,6 +8,12 @@ import { STAGES } from '@/data/mock'
 import { useAppStore } from '@/stores/app'
 import { useBasketStore } from '@/stores/basket'
 
+const auth = useAuthStore()
+const logoutError = ref('')
+async function logout() {
+  try { await auth.logout() } catch { logoutError.value = '退出失败，请重试' }
+}
+const availableStages = computed(() => Object.fromEntries(Object.entries(STAGES).map(([stage, subjects]) => [stage, subjects.filter(s => auth.isAdmin || auth.user?.subjects.includes(s))]).filter(([, subjects]) => (subjects as string[]).length)))
 const app = useAppStore()
 const { stage, subject } = storeToRefs(app)
 const basket = useBasketStore()
@@ -14,15 +21,16 @@ const route = useRoute()
 // 子页面（如 /upload/knowledge）也高亮所属菜单；首页只在根路径高亮
 const isActive = (to: string) => (to === '/' ? route.path === '/' : route.path === to || route.path.startsWith(to + '/'))
 
-const NAV = [
+const NAV = computed(() => [
   { to: '/', label: '首页' },
   { to: '/chapter', label: '章节选题' },
   { to: '/knowledge', label: '知识点选题' },
   { to: '/papers', label: '试卷选题' },
-  { to: '/compose', label: 'AI 组卷' },
+  ...(auth.isStaff ? [{ to: '/compose', label: 'AI 组卷' }] : []),
   { to: '/paper', label: '试卷编辑' },
-  { to: '/upload', label: '试卷解析' },
-]
+  ...(auth.isStaff ? [{ to: '/upload', label: '试卷解析' }] : []),
+  ...(auth.isAdmin ? [{ to: '/users', label: '账号管理' }] : []),
+])
 
 const open = ref(false)
 const picker = ref<HTMLElement>()
@@ -58,13 +66,13 @@ onBeforeUnmount(() => {
           <span class="stage">{{ stage }}</span><span>{{ subject }}</span><span class="caret">▼</span>
         </button>
         <div v-if="open" class="picker-pop">
-          <div v-for="(subs, name) in STAGES" :key="name" class="picker-row">
+          <div v-for="(subs, name) in availableStages" :key="name" class="picker-row">
             <span class="picker-stage">{{ name }}</span>
             <div class="picker-subs">
               <button
                 v-for="s in subs" :key="s" class="chip picker-sub"
                 :class="{ 'is-solid': name === stage && s === subject }"
-                @click="pick(name, s)"
+                @click="pick(String(name), s)"
               >{{ s }}</button>
             </div>
           </div>
@@ -80,12 +88,13 @@ onBeforeUnmount(() => {
       <RouterLink to="/paper" class="basket-btn">
         试题篮<span class="badge">{{ basket.count }}</span>
       </RouterLink>
-      <div class="avatar" title="王老师">王</div>
+      <div class="account"><span>{{ auth.user?.displayName }}<small>{{ auth.roleName }}</small></span><button class="btn-link" @click="logout">退出</button><small v-if="logoutError" role="alert">{{ logoutError }}</small></div>
     </div>
   </header>
 </template>
 
 <style scoped>
+.account { display:flex;align-items:center;gap:10px;font-size:12px;flex-shrink:0; }.account small { display:block;color:var(--c-text-4);margin-top:2px; }.account button { font-size:12px; }
 .header { position: sticky; top: 0; z-index: 20; background: #fff; border-bottom: 1px solid var(--c-border); }
 .bar { height: 60px; display: flex; align-items: center; gap: 20px; }
 

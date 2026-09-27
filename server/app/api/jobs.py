@@ -7,6 +7,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from ..bank import check_duplicates, sync_meta
+from ..auth import current_user, require_subject, scope_session
 from ..db import BankQuestion, ParseJob, SessionLocal, get_session
 from ..schemas import (
     PARSE_STAGES, AnswerTask, CommitRequest, CommitResult, CommitSkip, CreateJobRequest, DraftQuestionOut, GenerateAnswersRequest,
@@ -135,7 +136,9 @@ def read_usage(job_id: str, s: Session = Depends(get_session)) -> JobUsage:
 
 @router.get("/{job_id}/events")
 async def job_events(job_id: str, request: Request) -> StreamingResponse:
+    user = current_user(request)
     with SessionLocal() as s:
+        scope_session(s, user)
         get_job(s, job_id)
 
     async def stream():
@@ -143,6 +146,10 @@ async def job_events(job_id: str, request: Request) -> StreamingResponse:
         idle = 0.0
         while not await request.is_disconnected():
             with SessionLocal() as s:
+                try:
+                    scope_session(s, current_user(request))
+                except HTTPException:
+                    return
                 job = s.get(ParseJob, job_id)
                 if job is None:
                     return
@@ -166,6 +173,7 @@ async def job_events(job_id: str, request: Request) -> StreamingResponse:
 @router.put("/{job_id}/meta", response_model=PaperMeta)
 def update_meta(job_id: str, meta: PaperMeta, s: Session = Depends(get_session)) -> PaperMeta:
     job = get_job(s, job_id)
+    require_subject(s.info["user"], meta.subject)
     job.meta = meta.model_dump()
     sync_meta(s, job)
     s.commit()
@@ -208,6 +216,9 @@ def commit(job_id: str, req: CommitRequest, s: Session = Depends(get_session)) -
                                                source_job_id=job_id, source_draft_id=q.id)
         b.type, b.score, b.stem, b.options = q.type, q.score, q.stem, q.options
         b.answer, b.analysis, b.knowledge_points, b.coef = q.answer, q.analysis, q.knowledge_points, q.coef
+        # Recommitting updates invalidates the previous review/assignment.
+        b.owner_id = b.owner_id or s.info["user"].id
+        b.reviewed_at, b.reviewed_by = None, None
         b.answer_source = q.answer_source
         b.embedding, b.embedding_model = q.embedding, q.embedding_model
         b.source_file_name, b.source_no, b.source_page = job.file_name, q.no, q.page

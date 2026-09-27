@@ -51,6 +51,7 @@ def client():
         s.add_all(rows)
         s.commit()
     with TestClient(app) as c:
+        assert c.post("/api/auth/login", json={"username": "test-admin", "password": "test-password-123"}).status_code == 200
         yield c
     with SessionLocal() as s:
         s.execute(delete(BankQuestion).where(BankQuestion.source_job_id == "composejob"))

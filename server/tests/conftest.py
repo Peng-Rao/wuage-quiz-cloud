@@ -30,3 +30,8 @@ def _db():
     # 用量记录等会直接写库，所有测试共用已建好表的临时数据库
     from app.db import init_db
     init_db()
+    from app.auth import hash_password
+    from app.db import SessionLocal, User
+    with SessionLocal() as s:
+        s.add(User(id="test-admin", username="test-admin", display_name="测试管理员", password_hash=hash_password("test-password-123"), role="admin", subjects=[], active=True))
+        s.commit()

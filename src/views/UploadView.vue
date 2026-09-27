@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useAuthStore } from '@/stores/auth'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
@@ -21,6 +22,7 @@ import JobListPanel from '@/components/parse/JobListPanel.vue'
 import SimilarDialog from '@/components/parse/SimilarDialog.vue'
 import ModalDialog from '@/components/ModalDialog.vue'
 
+const auth = useAuthStore()
 const store = useParseJobStore()
 const { phase, job, questions, selected, error, busy, options, usage, usageOverview, jobList, notice, commitResult } = storeToRefs(store)
 const basket = useBasketStore()
@@ -201,7 +203,7 @@ async function forceCommit() {
       </div>
       <nav class="tools">
         <RouterLink to="/upload/knowledge">知识树管理</RouterLink>
-        <RouterLink to="/upload/eval">解析评测</RouterLink>
+        <RouterLink v-if="auth.isAdmin" to="/upload/eval">解析评测</RouterLink>
       </nav>
       <div class="steps">
         <span
@@ -243,7 +245,7 @@ async function forceCommit() {
           :jobs="jobList" :total="store.jobsTotal" :active="store.jobsActive" :busy="busy"
           @open="openJob" @retry="store.retryJob" @cancel="store.cancelJob"
         />
-        <CostOverviewCard :overview="usageOverview" />
+        <CostOverviewCard v-if="auth.isAdmin" :overview="usageOverview" />
       </div>
     </div>
 
@@ -320,6 +322,7 @@ async function forceCommit() {
         />
         <div v-if="!shown.length" class="card empty">当前筛选下没有题目</div>
 
+        <RouterLink v-if="job && job.savedCount" :to="`/papers/${job.id}`" class="btn">查看已入库题目 · 审核与分配</RouterLink>
         <div class="actionbar">
           <span class="sel">已选 <b>{{ store.selectedCount }}</b> / {{ questions.length }} 题</span>
           <button class="ab-link" @click="store.toggleAll()">{{ store.allSelected ? '取消全选' : '全选' }}</button>
@@ -331,7 +334,7 @@ async function forceCommit() {
           <div class="ab-actions">
             <button class="ab-btn ghost" @click="leaveJob">返回任务列表</button>
             <button
-              class="ab-btn ghost" :disabled="busy.has('eval')"
+              v-if="auth.isAdmin" class="ab-btn ghost" :disabled="busy.has('eval')"
               title="把当前核对结果保存为标准答案，用于评测解析效果"
               @click="store.markEvalSample()"
             >{{ job?.evalSampleId ? '更新评测样本' : '设为评测样本' }}</button>

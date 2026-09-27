@@ -85,8 +85,8 @@ def _kp_key(k: dict[str, Any]) -> str:
     return (k.get("path") or k.get("name") or "").strip()
 
 
-def build_catalog(questions: list[BankQuestion]) -> list[Topic]:
-    """题库中出现的知识点及其各级上级（不含最顶层的模块），按题数从多到少，最多 CATALOG_MAX 个。"""
+def build_catalog(questions: list[BankQuestion], limit: int | None = CATALOG_MAX) -> list[Topic]:
+    """题库中出现的知识点及其各级上级（不含最顶层的模块），按题数从多到少，最多 limit 个。"""
     counts: Counter[str] = Counter()
     for q in questions:
         keys: set[str] = set()
@@ -97,7 +97,7 @@ def build_catalog(questions: list[BankQuestion]) -> list[Topic]:
             parts = key.split(PATH_SEP)
             keys.update(PATH_SEP.join(parts[:i]) for i in range(min(2, len(parts)), len(parts) + 1))
         counts.update(keys)
-    top = sorted(counts.items(), key=lambda x: (-x[1], x[0]))[:CATALOG_MAX]
+    top = sorted(counts.items(), key=lambda x: (-x[1], x[0]))[:limit]
     return [Topic(code=f"k{i}", key=key, name=key.split(PATH_SEP)[-1], count=n) for i, (key, n) in enumerate(top, 1)]
 
 
@@ -296,7 +296,8 @@ async def compose(s: Session, school_id: str, req: ComposeRequest) -> ComposeRes
     else:
         note = "未配置大模型，"
     if bp is None:
-        bp = keyword_blueprint(req, catalog, available)
+        # 关键词匹配不受清单长度限制，题数少的知识点也能匹配到
+        bp = keyword_blueprint(req, build_catalog(questions, limit=None), available)
         named = "、".join(k.split(PATH_SEP)[-1] for k in bp.focus)
         bp.reply = note + (f"已按您提到的知识点（{named}）和当前设置组卷。" if named else "已按当前设置和默认结构组卷。")
 

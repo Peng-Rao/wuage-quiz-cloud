@@ -1,97 +1,53 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { MY_PAPERS, PAPERS } from '@/data/mock'
-
+import { bankApi, type PaperSummary } from '@/api/bank'
+import { useAuthStore } from '@/stores/auth'
+import { useAppStore } from '@/stores/app'
+import { useBasketStore } from '@/stores/basket'
+const auth = useAuthStore()
+const app = useAppStore()
+const basket = useBasketStore()
 const router = useRouter()
 const keyword = ref('')
-const HOT = ['函数零点', '数列求和', '三角恒等变换', '2026 新高考 I 卷', '立体几何']
-
-const ENTRIES = [
+const papers = ref<PaperSummary[]>([])
+const error = ref('')
+const loading = ref(false)
+let sequence = 0
+watch(() => [app.stage, app.subject], async () => {
+  const seq = ++sequence; loading.value = true; error.value = ''
+  try {
+    const result = await bankApi.listPapers({ stage: app.stage, subject: app.subject, limit: 5 })
+    if (seq === sequence) papers.value = result.items
+  } catch (e) { if (seq === sequence) error.value = (e as Error).message }
+  finally { if (seq === sequence) loading.value = false }
+}, { immediate: true })
+const entries = computed(() => [
   { mark: '章', title: '章节选题', desc: '按教材版本与章节同步选题', to: '/chapter' },
-  { mark: '知', title: '知识点选题', desc: '按知识体系精准定位考点', to: '/knowledge' },
-  { mark: '智', title: '智能组卷', desc: '设定题量与难度，自动生成试卷', to: '/paper' },
-  { mark: '卷', title: '试卷选题', desc: '按年级、学科浏览已入库的整套试卷', to: '/papers' },
-]
-
-const paperTab = ref('期中')
-
-function search(q = keyword.value) {
-  router.push({ path: '/knowledge', query: q.trim() ? { q: q.trim() } : {} })
-}
+  { mark: '知', title: '知识点选题', desc: '按可见题目的知识体系定位考点', to: '/knowledge' },
+  { mark: '卷', title: auth.isStaff ? 'AI 辅助组卷' : '手动组卷', desc: auth.isStaff ? '按题量、难度与考点智能选题' : '自由选题排版，下载教学试卷', to: '/paper' },
+  { mark: '题', title: '试卷选题', desc: '浏览权限范围内的已入库试卷', to: '/papers' },
+])
+function search() { router.push({ path: '/knowledge', query: keyword.value.trim() ? { q: keyword.value.trim() } : {} }) }
 </script>
-
 <template>
   <main>
-    <section class="hero">
-      <div class="container hero-inner">
-        <h1 class="serif">为老师准备的干净题库</h1>
-        <p>按教材章节或知识点选题，加入试题篮后一键排版，导出 Word / PDF 试卷。</p>
-        <form class="search" @submit.prevent="search()">
-          <input v-model="keyword" placeholder="输入题干关键词、知识点或试卷名称" aria-label="搜索">
-          <button type="submit">搜 题</button>
-        </form>
-        <div class="hot">
-          <span>热门：</span>
-          <button v-for="h in HOT" :key="h" type="button" @click="search(h)">{{ h }}</button>
-        </div>
-      </div>
-    </section>
-
+    <section class="hero"><div class="container hero-inner">
+      <h1 class="serif">{{ auth.user?.displayName }}，欢迎回来</h1>
+      <p>{{ auth.isAdmin ? '管理全校题库、账号与教研协作。' : auth.isStaff ? '专注所负责学科，上传、审核与 AI 组卷。' : '你的题库仅展示分配给本人且审核通过的题目与知识点，可手动组卷并下载。' }}</p>
+      <form class="search" @submit.prevent="search"><input v-model="keyword" placeholder="输入题干关键词、知识点或试卷名称" aria-label="搜索"><button type="submit">搜 题</button></form>
+    </div></section>
     <div class="container body">
-      <div class="entries">
-        <RouterLink v-for="e in ENTRIES" :key="e.title" :to="e.to" class="card entry">
-          <div class="entry-head">
-            <span class="entry-mark serif">{{ e.mark }}</span>
-            <span class="entry-title">{{ e.title }}</span>
-          </div>
-          <span class="entry-desc">{{ e.desc }}</span>
-        </RouterLink>
-      </div>
-
-      <div class="split">
-        <section class="card papers">
-          <div class="papers-head">
-            <h2>最新试卷</h2>
-            <div class="tabs">
-              <button
-                v-for="k in Object.keys(PAPERS)" :key="k" class="chip"
-                :class="{ 'is-soft': k === paperTab }" @click="paperTab = k"
-              >{{ k }}</button>
-            </div>
-            <RouterLink to="/papers" class="more">更多 ›</RouterLink>
-          </div>
-          <div>
-            <div v-for="p in PAPERS[paperTab]" :key="p.title" class="paper-row">
-              <span class="tag">{{ p.tag }}</span>
-              <span class="paper-title">{{ p.title }}</span>
-              <span class="paper-region">{{ p.region }}</span>
-              <span class="paper-date">{{ p.date }}</span>
-            </div>
-          </div>
-        </section>
-
-        <aside class="side">
-          <section class="card side-card">
-            <h2>我的组卷</h2>
-            <div class="mine">
-              <div v-for="m in MY_PAPERS" :key="m.title" class="mine-item">
-                <span class="mine-title">{{ m.title }}</span>
-                <span class="mine-meta">{{ m.meta }}</span>
-              </div>
-            </div>
-          </section>
-          <section class="school">
-            <span class="school-title">校本题库</span>
-            <span class="school-desc">上传本校试卷，自动拆分为单题，与教研组共享。</span>
-            <RouterLink to="/upload" class="school-btn">上传试卷</RouterLink>
-          </section>
-        </aside>
-      </div>
+      <div class="entries"><RouterLink v-for="e in entries" :key="e.to" :to="e.to" class="card entry"><div class="entry-head"><span class="entry-mark serif">{{ e.mark }}</span><span class="entry-title">{{ e.title }}</span></div><span class="entry-desc">{{ e.desc }}</span></RouterLink></div>
+      <div class="split"><section class="card papers"><div class="papers-head"><h2>{{ auth.isStaff ? '最新试卷' : '我的已审核题目' }}</h2><RouterLink to="/papers" class="more">更多 ›</RouterLink></div>
+        <p v-if="error" role="alert">{{ error }}</p><p v-else-if="loading">加载中…</p><p v-else-if="!papers.length">当前学科暂无可查看的试卷{{ auth.isStaff ? '，可上传试卷开始整理。' : '，请联系管理员或组长审核分配。' }}</p>
+        <RouterLink v-for="p in papers" :key="p.id" :to="`/papers/${p.id}`" class="paper-row"><span class="tag">{{ p.meta.subject }}</span><span class="paper-title">{{ p.title }}</span><span class="paper-date">{{ p.questionCount }} 道题</span></RouterLink>
+      </section><aside class="side"><section class="card side-card"><h2>我的组卷</h2><div class="mine"><span class="mine-title">试题篮已选 {{ basket.count }} 道题</span><span class="mine-meta">当前合计 {{ basket.totalScore }} 分</span><RouterLink to="/paper">继续组卷与下载 ›</RouterLink></div></section>
+        <section v-if="auth.isStaff" class="school"><span class="school-title">校本题库</span><span class="school-desc">上传试卷，AI 解析后核对入库，再审核分配给老师。</span><RouterLink to="/upload" class="school-btn">上传试卷</RouterLink></section>
+      </aside></div>
     </div>
   </main>
 </template>
-
 <style scoped>
 .hero { background: var(--c-primary); color: #fff; }
 .hero-inner { padding-top: 56px; padding-bottom: 64px; display: flex; flex-direction: column; gap: 22px; }

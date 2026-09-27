@@ -237,6 +237,7 @@ def search_questions(s: Session, school_id: str, f: BankFilter, sort: str = "def
 def bank_out(b: BankQuestion) -> BankQuestionOut:
     store = get_store()
     return BankQuestionOut(
+        owner_id=b.owner_id, reviewed_by=b.reviewed_by, reviewed_at=b.reviewed_at,
         id=b.id, type=b.type, score=b.score, stem=b.stem, options=b.options or [], answer=b.answer, analysis=b.analysis,
         answer_source=b.answer_source, knowledge_points=b.knowledge_points or [], coef=b.coef,
         images=[store.public_url(k) for k in b.images or []],
@@ -344,6 +345,8 @@ def paper_detail(s: Session, school_id: str, paper_id: str) -> PaperDetail | Non
 def sync_meta(s: Session, job: ParseJob) -> None:
     """试卷分类修改后，同步到已入库题目的快照，按学段学科、年份等检索时以最新分类为准。"""
     for b in s.scalars(select(BankQuestion).where(BankQuestion.source_job_id == job.id)):
+        if (b.meta or {}).get("subject") != (job.meta or {}).get("subject"):
+            b.reviewed_at, b.reviewed_by = None, None
         b.meta = job.meta
 
 

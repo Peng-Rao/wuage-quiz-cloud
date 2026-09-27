@@ -8,6 +8,7 @@ FastAPI 实现的试卷解析后端，接口契约见 [docs/ai-parse-api.md](../
 cd server
 uv sync
 cp .env.example .env        # 填写 MINERU_TOKEN、LLM_*（可先不填）
+uv run python -m app.create_admin admin  # 首次创建管理员，交互输入密码
 uv run uvicorn app.main:app --port 8000 --reload
 ```
 
@@ -18,6 +19,20 @@ npm run dev:api
 ```
 
 `GET /api/health` 可查看当前启用了哪些引擎：`{"mineru": true, "llm": true, ...}`。
+
+## 认证和权限
+
+除健康检查、登录、退出外，业务接口均要求登录 Cookie。管理员通过 `/api/users` 管理账号；组长限授权学科，普通用户限本人已分配且审核通过的题目。请求级数据库会话统一过滤题目、任务、知识树和聚合统计；文件接口另校验题目配图权限，普通用户不能读取整页原图。\
+- `POST /api/auth/login`：`{username, password}`，返回用户资料并设置 HttpOnly Cookie。
+- `GET /api/auth/me`：恢复会话；`POST /api/auth/logout`：撤销会话。
+- `GET/POST /api/users`、`PUT /api/users/{id}`：仅管理员，创建/修改时传 `displayName, role, subjects, active, password`；更新可省略密码。
+- `GET /api/review-recipients`：管理员/组长可分配的用户。
+- `POST /api/bank/review`：管理员/组长提交 `{questionIds, ownerId, approved}`，最多 100 题。
+- `POST /api/compose`：AI 组卷，仅管理员/组长；提交 `{stage, subject, total, difficulty, messages}`（完整对话），组长只能为授权学科组卷，候选题同样受数据权限过滤。
+- 上传创建任务时 `options.subject` 为当前学科，组长必填且必须属于授权学科。上传凭证绑定创建者，不能复用他人的上传文件。
+- 历史题目不会自动开放给普通用户，需在试卷详情重新审核并分配。
+
+账号密码和会话均不存明文；登录失败按账号与来源地址限流。修改角色、学科、密码或停用账号将撤销其所有会话。前后端推荐同源，跨源开发须正确配置 `CORS_ORIGINS`。HTTPS 设置 `COOKIE_SECURE=true`。
 
 ## 配置
 
@@ -36,6 +51,8 @@ npm run dev:api
 | `MINERU_PRICE_PER_PAGE` | MinerU 单价，元 / 页 |
 | `CURRENCY` | 金额前缀，默认 `¥` |
 | `DATABASE_URL` | 默认 `data/app.db`（SQLite） |
+| `SESSION_HOURS` | 会话有效期，默认 12 小时 |
+| `COOKIE_SECURE` | HTTPS 部署设为 true，本地 HTTP 开发为 false |
 
 ## 流水线
 

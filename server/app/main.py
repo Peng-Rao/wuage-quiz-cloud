@@ -1,12 +1,13 @@
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 
-from .api import bank, batches, compose, eval, files, jobs, knowledge, questions, similar, usage
+from .api import auth, bank, batches, compose, review, eval, files, jobs, knowledge, questions, similar, usage
+from .auth import admin, current_user, staff
 from .config import get_settings
 from .db import SessionLocal, init_db
 from .knowledge_tree import seed_builtin
@@ -20,7 +21,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name
 async def lifespan(_: FastAPI):
     init_db()
     with SessionLocal() as s:
-        # 同步内置知识树（P1 未接入账号体系，归属演示学校）
+        # 同步当前学校的内置知识树。
         changed, removed = seed_builtin(s, current_school())
         if changed or removed:
             logging.getLogger(__name__).info("内置知识树：更新 %d 棵，移除 %d 棵", changed, removed)
@@ -37,6 +38,14 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def private_api_cache(request: Request, call_next):
+    response = await call_next(request)
+    if request.url.path.startswith("/api/"):
+        response.headers["Cache-Control"] = "no-store"
+    return response
 
 
 # 错误统一为 { "message": "..." }，与前端约定一致
@@ -58,16 +67,18 @@ def health() -> dict:
     return {"ok": True, "parsers": s.parser_chain, "mineru": bool(s.mineru_token), "llm": s.llm_enabled}
 
 
-app.include_router(files.router)
-app.include_router(jobs.router)
-app.include_router(questions.router)
-app.include_router(usage.router)
-app.include_router(batches.router)
-app.include_router(similar.router)
-app.include_router(knowledge.router)
-app.include_router(eval.router)
-app.include_router(bank.router)
-app.include_router(compose.router)
+app.include_router(auth.router)
+app.include_router(review.router)
+app.include_router(files.router, dependencies=[Depends(current_user)])
+app.include_router(jobs.router, dependencies=[Depends(staff)])
+app.include_router(questions.router, dependencies=[Depends(staff)])
+app.include_router(usage.router, dependencies=[Depends(admin)])
+app.include_router(batches.router, dependencies=[Depends(staff)])
+app.include_router(similar.router, dependencies=[Depends(staff)])
+app.include_router(knowledge.router, dependencies=[Depends(current_user)])
+app.include_router(eval.router, dependencies=[Depends(admin)])
+app.include_router(bank.router, dependencies=[Depends(current_user)])
+app.include_router(compose.router, dependencies=[Depends(staff)])
 
 
 # ---------------- 前端页面（生产部署） ----------------
