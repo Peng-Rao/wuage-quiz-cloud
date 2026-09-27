@@ -16,6 +16,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from .db import BankQuestion, DraftQuestion, KnowledgeNode, KnowledgeTree, ParseJob
+from .chapters import book as chapter_book, chapter_node, kps_match
 from .knowledge_tree import PATH_SEP
 from .schemas import (
     BankQuestionOut, DuplicatePaper, FacetCount, PaperDetail, PaperFacets, PaperMeta, PaperPage, PaperSummary,
@@ -34,11 +35,18 @@ _YEAR = re.compile(r"(?<!\d)((?:19|20)\d{2})(?!\d)")
 class BankFilter:
     stage: str | None = None
     subject: str | None = None
-    node_id: str | None = None
+    # 知识点节点（含下级），多选时含任一即可
+    node_ids: list[str] = field(default_factory=list)
+    # 教材章或节
+    chapter_id: str | None = None
     type: str | None = None
     diff: str | None = None
-    # 试卷类型包含任一关键词，如 ["期中", "期末"]
+    # 试卷类型或名称包含任一关键词，如 ["期中", "期末"]
     paper_types: list[str] = field(default_factory=list)
+    # 地区（省级，前缀匹配）、年级、学期（上 / 下）
+    region: str | None = None
+    grade: str | None = None
+    term: str | None = None
     # 「2026」：学年或试卷名称中含该年份；「<2024」：最早年份早于 2024
     year: str | None = None
     q: str | None = None
@@ -89,6 +97,50 @@ def knowledge_counts(s: Session, school_id: str, tree: KnowledgeTree) -> dict[st
     return dict(counts)
 
 
+def chapter_counts(s: Session, school_id: str, book_id: str) -> dict[str, int] | None:
+    """某册教材各章、节的入库题数（与教材同学段学科的题），没有题的不返回；教材不存在时返回 None。"""
+    got = chapter_book(book_id)
+    if got is None:
+        return None
+    version, bk = got
+    nodes = [chapter_node(c["id"]) for c in bk["chapters"]] + [chapter_node(x["id"]) for c in bk["chapters"] for x in c["sections"]]
+    rows = s.execute(select(BankQuestion.knowledge_points).where(
+        BankQuestion.school_id == school_id,
+        BankQuestion.meta["stage"].as_string() == version["stage"],
+        BankQuestion.meta["subject"].as_string() == version["subject"],
+    ))
+    counts: Counter[str] = Counter()
+    for (kps,) in rows:
+        counts.update(n.id for n in nodes if n is not None and kps_match(kps, n.knowledge))
+    return dict(counts)
+
+
+def question_facets(s: Session, school_id: str, stage: str | None, subject: str | None) -> dict[str, list[FacetCount]]:
+    """选题筛选的可选值：地区（省级）、年级、年份，按题数排序。"""
+    stmt = select(BankQuestion.meta).where(BankQuestion.school_id == school_id)
+    if stage:
+        stmt = stmt.where(BankQuestion.meta["stage"].as_string() == stage)
+    if subject:
+        stmt = stmt.where(BankQuestion.meta["subject"].as_string() == subject)
+    regions: Counter[str] = Counter()
+    grades: Counter[str] = Counter()
+    years: Counter[str] = Counter()
+    for (m,) in s.execute(stmt):
+        m = m or {}
+        if p := province(m.get("region") or ""):
+            regions[p] += 1
+        if g := m.get("grade"):
+            grades[g] += 1
+        if ys := _years(_school_year(m), m.get("title") or ""):
+            years[str(min(ys))] += 1
+    rank = {v: i for i, v in enumerate(GRADE_ORDER)}
+    return {
+        "regions": [FacetCount(name=k, count=v) for k, v in regions.most_common()],
+        "grades": [FacetCount(name=k, count=v) for k, v in sorted(grades.items(), key=lambda x: (rank.get(x[0], 99), x[0]))],
+        "years": [FacetCount(name=k, count=v) for k, v in sorted(years.items(), reverse=True)],
+    }
+
+
 # ---------------- 题目 ----------------
 
 def _years(*texts: str) -> list[int]:
@@ -106,6 +158,22 @@ def _year_ok(meta: dict[str, Any], cond: str) -> bool:
 
 def _paper_type(meta: dict[str, Any]) -> str:
     return meta.get("paperType") or meta.get("paper_type") or ""
+
+
+def _school_year(meta: dict[str, Any]) -> str:
+    return meta.get("schoolYear") or meta.get("school_year") or ""
+
+
+def province(region: str) -> str:
+    """地区的省级部分：「北京 · 海淀」→「北京」。"""
+    return re.split(r"\s*[·•/]\s*", region.strip(), maxsplit=1)[0] if region else ""
+
+
+def term_of(meta: dict[str, Any]) -> str:
+    """学期：学年「2026—2027 上」或名称「……上学期……」中的上 / 下。"""
+    text = _school_year(meta) + " " + (meta.get("title") or "")
+    m = re.search(r"\d{4}\s*(上|下)|(上|下)(?:学期|册)", text)
+    return (m.group(1) or m.group(2)) if m else ""
 
 
 def search_questions(s: Session, school_id: str, f: BankFilter, sort: str = "default",
@@ -135,15 +203,23 @@ def search_questions(s: Session, school_id: str, f: BankFilter, sort: str = "def
         stmt = (stmt.outerjoin(ParseJob, ParseJob.id == BankQuestion.source_job_id)
                 .order_by(ParseJob.created_at.desc(), BankQuestion.source_job_id, BankQuestion.source_no))
 
-    node = s.get(KnowledgeNode, f.node_id) if f.node_id else None
-    sub = subtree(s, node) if node else None
+    subs = [subtree(s, n) for n in (s.get(KnowledgeNode, i) for i in f.node_ids) if n is not None]
+    chapter = chapter_node(f.chapter_id) if f.chapter_id else None
     kw = normalize(f.q or "")
 
     def keep(b: BankQuestion) -> bool:
         m = b.meta or {}
-        if f.node_id and (sub is None or not kp_in_subtree(b.knowledge_points, *sub)):
+        if f.node_ids and not any(kp_in_subtree(b.knowledge_points, *sub) for sub in subs):
             return False
-        if f.paper_types and not any(t in _paper_type(m) for t in f.paper_types):
+        if f.chapter_id and (chapter is None or not kps_match(b.knowledge_points, chapter.knowledge)):
+            return False
+        if f.paper_types and not any(t in _paper_type(m) + (m.get("title") or "") for t in f.paper_types):
+            return False
+        if f.region and province(m.get("region") or "") != f.region:
+            return False
+        if f.grade and (m.get("grade") or "") != f.grade:
+            return False
+        if f.term and term_of(m) != f.term:
             return False
         if f.year and not _year_ok(m, f.year):
             return False
@@ -177,6 +253,9 @@ class PaperFilter:
     grade: str | None = None
     subject: str | None = None
     paper_type: str | None = None
+    textbook: str | None = None
+    # 试卷分类（同步教学、阶段测试等）：试卷类型或名称含任一关键词
+    category: list[str] = field(default_factory=list)
     q: str | None = None
 
 
@@ -216,7 +295,9 @@ UNCLASSIFIED = "未分类"
 
 
 def _paper_match(p: PaperSummary, f: PaperFilter, skip: str | None = None) -> bool:
-    for dim in ("stage", "grade", "subject", "paper_type"):
+    if f.category and not any(k in (p.meta.paper_type + p.title) for k in f.category):
+        return False
+    for dim in ("stage", "grade", "subject", "paper_type", "textbook"):
         want = getattr(f, dim)
         if want and skip != dim and (getattr(p.meta, dim) or UNCLASSIFIED) != want:
             return False
@@ -246,6 +327,7 @@ def list_papers(s: Session, school_id: str, f: PaperFilter, limit: int = 20, off
     facets = PaperFacets(
         stages=_facet(papers, f, "stage", STAGE_ORDER), grades=_facet(papers, f, "grade", GRADE_ORDER),
         subjects=_facet(papers, f, "subject"), paper_types=_facet(papers, f, "paper_type"),
+        textbooks=_facet(papers, f, "textbook"),
     )
     return PaperPage(items=matched[offset:offset + limit], total=len(matched), facets=facets)
 

@@ -60,9 +60,12 @@ POST /api/parse-jobs/{id}/commit    → 入校本题库
 | POST | `/api/parse-jobs/{id}/generate-answers` | `{ questionIds?: string[], overwrite?: boolean }` | `AnswerTask`（202） |
 | GET | `/api/parse-jobs/{id}/usage` | — | `JobUsage`（汇总 + 每次调用明细） |
 | GET | `/api/usage/summary?days=30` | — | `UsageOverview`（近 N 天用量与平均成本） |
-| GET | `/api/bank/questions?stage=&subject=&nodeId=&type=&diff=&paperType=&year=&q=&paperId=&sort=&limit=&offset=` | — | `{ items: BankQuestion[], total }`（校本题库选题） |
+| GET | `/api/bank/questions?stage=&subject=&nodeId=&chapterId=&type=&diff=&paperType=&year=&region=&grade=&term=&q=&paperId=&sort=&limit=&offset=` | — | `{ items: BankQuestion[], total }`（校本题库选题） |
 | GET | `/api/bank/knowledge-counts?treeId=` | — | `{ [nodeId]: number }`（各知识点含下级的入库题数） |
-| GET | `/api/papers?stage=&grade=&subject=&paperType=&q=&limit=&offset=` | — | `PaperPage`（试卷库，含各维度 facets） |
+| GET | `/api/bank/facets?stage=&subject=` | — | `QuestionFacets`（地区、年级、年份的可选值与题数） |
+| GET | `/api/chapters?stage=&subject=` | — | `TextbookVersion[]`（教材版本 → 册 → 章 → 节） |
+| GET | `/api/bank/chapter-counts?bookId=` | — | `{ [chapterOrSectionId]: number }`（某册各章、节的入库题数） |
+| GET | `/api/papers?stage=&grade=&subject=&textbook=&paperType=&category=&q=&limit=&offset=` | — | `PaperPage`（试卷库，含各维度 facets） |
 | GET | `/api/papers/{id}` | — | `PaperDetail`（按原卷题号排列的题目） |
 | DELETE | `/api/papers/{id}` | — | 204（移出试卷库：删除已入库的题，草稿题恢复为未保存） |
 
@@ -182,7 +185,9 @@ POST /api/parse-jobs/{id}/commit    → 入校本题库
 
 前端类型见 `src/api/bank/types.ts`，与 `VITE_PARSE_API` 共用 mock / http 开关。
 
-- `nodeId`：知识点节点，含所有下级。题目的知识点按节点 id 或路径匹配——内置知识树更新后节点 id 会重建，路径不变，已入库的题仍能归入节点。
+- `nodeId`：知识点节点，含所有下级；逗号分隔多个时含任一即可。`chapterId`：教材章或节，题目知识点（含各级上级名称）属于该章节对应的知识点即归入。
+- `region`：省级地区（「北京 · 海淀」按「北京」）；`term`：学期 `上` / `下`（取自学年或试卷名称）；`paperType`：场景关键词，匹配试卷类型或名称。
+- `nodeId` 匹配：题目的知识点按节点 id 或路径匹配——内置知识树更新后节点 id 会重建，路径不变，已入库的题仍能归入节点。
 - `diff`：`容易`（系数 ≤ 0.3）/ `适中`（≤ 0.6）/ `较难`；`paperType`：试卷类型关键词，逗号分隔，含任一即可（如 `期中,期末`）；
   `year`：`2026` 表示学年或试卷名称中含该年份，`<2024` 表示更早；`sort`：`default`（按试卷、题号）/ `latest` / `easy` / `hard`。
 - 试卷库中的一份试卷 = 同一解析任务入库的题，`PaperSummary.id` 为任务 id；`sourceQuestionCount > questionCount` 表示只入库了部分题。

@@ -16,8 +16,9 @@ const isActive = (to: string) => (to === '/' ? route.path === '/' : route.path =
 
 const NAV = [
   { to: '/', label: '首页' },
-  { to: '/pick', label: '选题组卷' },
-  { to: '/papers', label: '试卷库' },
+  { to: '/chapter', label: '章节选题' },
+  { to: '/knowledge', label: '知识点选题' },
+  { to: '/papers', label: '试卷选题' },
   { to: '/paper', label: '试卷编辑' },
   { to: '/upload', label: '试卷解析' },
 ]

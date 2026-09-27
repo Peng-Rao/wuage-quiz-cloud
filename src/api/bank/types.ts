@@ -33,14 +33,20 @@ export interface BankQuery {
   subject?: string
   /** 知识点所在的知识树（mock 按路径匹配时需要） */
   treeId?: string
-  /** 知识点节点，含所有下级知识点 */
-  nodeId?: string
+  /** 知识点节点，含所有下级知识点；多个时含任一即可 */
+  nodeIds?: string[]
+  /** 教材章或节（见 chapters） */
+  chapterId?: string
   type?: QuestionType
   diff?: '容易' | '适中' | '较难'
-  /** 试卷类型关键词，含任一即可，如 ['期中', '期末'] */
+  /** 场景：试卷类型或名称含任一关键词，如 ['期中', '期末'] */
   paperTypes?: string[]
   /** '2026'；'<2024' 表示更早 */
   year?: string
+  /** 省级地区，如「北京」 */
+  region?: string
+  grade?: string
+  term?: '上' | '下'
   q?: string
   paperId?: string
   sort?: BankSort
@@ -81,6 +87,46 @@ export interface PaperFacets {
   grades: FacetCount[]
   subjects: FacetCount[]
   paperTypes: FacetCount[]
+  /** 教材版本 */
+  textbooks: FacetCount[]
+}
+
+/** 选题「更多」筛选的可选值 */
+export interface QuestionFacets {
+  regions: FacetCount[]
+  grades: FacetCount[]
+  years: FacetCount[]
+}
+
+export interface ChapterSection {
+  id: string
+  name: string
+  /** 对应的知识点名称：题目知识点（含各级上级）属于其中之一即归入本节 */
+  knowledge: string[]
+}
+
+export interface ChapterItem {
+  id: string
+  name: string
+  sections: ChapterSection[]
+}
+
+/** 一册教材，如「必修 第一册」 */
+export interface TextbookBook {
+  id: string
+  name: string
+  grade: string
+  /** 平台标注的「新教材」「旧教材」；新教材目录未上线时为旧教材 */
+  edition: string
+  chapters: ChapterItem[]
+}
+
+/** 教材版本，如「人教A版」；同一学科多个版本时第一个为默认 */
+export interface TextbookVersion {
+  name: string
+  /** 适用地区，如「厦门」 */
+  region: string
+  books: TextbookBook[]
 }
 
 export interface PaperPage extends Page<PaperSummary> {
@@ -98,6 +144,10 @@ export interface PaperQuery {
   grade?: string
   subject?: string
   paperType?: string
+  /** 教材版本 */
+  textbook?: string
+  /** 试卷分类（同步教学、阶段测试等）：试卷类型或名称含任一关键词 */
+  category?: string[]
   q?: string
   limit?: number
   offset?: number
@@ -105,6 +155,12 @@ export interface PaperQuery {
 
 export interface BankApi {
   listQuestions(query: BankQuery): Promise<Page<BankQuestion>>
+  /** 选题「更多」筛选的可选值 */
+  questionFacets(stage: string, subject: string): Promise<QuestionFacets>
+  /** 学段学科的教材版本与章节目录 */
+  chapters(stage: string, subject: string): Promise<TextbookVersion[]>
+  /** 某册教材各章、节的入库题数，没有题的不返回 */
+  chapterCounts(bookId: string): Promise<Record<string, number>>
   /** 知识树各节点（含下级）的入库题数，没有题的节点不返回 */
   knowledgeCounts(treeId: string): Promise<Record<string, number>>
   listPapers(query: PaperQuery): Promise<PaperPage>
