@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, reactive, ref, useTemplateRef } from 'vue'
+import { computed, reactive, ref } from 'vue'
 import { storeToRefs } from 'pinia'
 import { CN_NUM } from '@/data/mock'
 import type { QuestionType } from '@/api/parse'
@@ -36,23 +36,43 @@ const sections = computed(() => {
   })
 })
 
-const sheet = useTemplateRef<HTMLElement>('sheet')
-
 function exportPdf() {
   window.print()
 }
 
-/** 以 Word 可识别的 HTML 文档导出；正式版可替换为 docx.js 生成 .docx */
-function downloadWord() {
-  if (!sheet.value) return
-  const html = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word"><head><meta charset="utf-8"><title>${TITLE}</title>
-<style>body{font-family:"宋体",serif;font-size:10.5pt;line-height:1.8}h1{font-size:16pt;text-align:center}.center{text-align:center}</style></head><body>${sheet.value.innerHTML}</body></html>`
-  const blob = new Blob(['﻿', html], { type: 'application/msword' })
-  const a = document.createElement('a')
-  a.href = URL.createObjectURL(blob)
-  a.download = `${TITLE}${subject.value}试卷.doc`
-  a.click()
-  URL.revokeObjectURL(a.href)
+/** 导出 .docx：公式为 Word 原生公式，题目配图嵌入文档（生成器按需加载） */
+const exporting = ref(false)
+const exportError = ref('')
+async function downloadWord() {
+  if (!basket.count || exporting.value) return
+  exporting.value = true
+  exportError.value = ''
+  try {
+    const { buildDocx } = await import('@/utils/docx')
+    const blob = await buildDocx({
+      secret: '绝密★启用前', title: TITLE, subtitle: subjectTitle.value,
+      info: `考试时间：120 分钟　满分：${basket.totalScore} 分`,
+      fields: ['学校：__________', '姓名：__________', '班级：__________', '考号：__________'],
+      notice: '注意事项：1. 答题前填写好自己的姓名、班级、考号等信息。2. 请将答案正确填写在答题卡上。',
+      sections: sections.value.map((s) => ({
+        heading: s.heading,
+        items: s.items.map((it) => ({
+          no: it.no, scoreMark: opts.score && s.each === null ? `（${it.score} 分）` : '', stem: it.q.stem,
+          options: it.q.options, images: it.q.images, answer: it.q.answer, analysis: it.q.analysis,
+        })),
+      })),
+      showAnswer: opts.showAns, answerCard: opts.card ? basket.count : 0, size: size.value, binding: opts.binding,
+    })
+    const a = document.createElement('a')
+    a.href = URL.createObjectURL(blob)
+    a.download = `${TITLE}${subject.value}试卷.docx`
+    a.click()
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000)
+  } catch (e) {
+    exportError.value = `导出失败：${(e as Error).message}`
+  } finally {
+    exporting.value = false
+  }
 }
 
 function genCard() {
@@ -154,7 +174,7 @@ function focusRow(id: string) {
           <RouterLink to="/papers" class="btn btn-outline">从试卷选题整卷组卷</RouterLink>
         </div>
       </div>
-      <div v-else ref="sheet" class="sheet-inner">
+      <div v-else class="sheet-inner">
         <div class="head center">
           <div class="secret">绝密★启用前</div>
           <h1>{{ TITLE }}</h1>
@@ -210,7 +230,8 @@ function focusRow(id: string) {
           </div>
         </div>
       </div>
-      <button class="btn btn-primary" :disabled="!basket.count" @click="downloadWord">下载 Word</button>
+      <button class="btn btn-primary" :disabled="!basket.count || exporting" @click="downloadWord">{{ exporting ? '生成中…' : '下载 Word' }}</button>
+      <p v-if="exportError" class="export-err">{{ exportError }}</p>
       <button class="btn btn-outline" :disabled="!basket.count" @click="exportPdf">导出 PDF</button>
       <button class="btn" :disabled="!basket.count" @click="genCard">生成答题卡</button>
     </aside>
@@ -321,6 +342,7 @@ function focusRow(id: string) {
 /* 右侧设置 */
 .side { flex: 1 0 240px; display: flex; flex-direction: column; gap: 14px; }
 .side .btn:disabled { opacity: .5; cursor: default; }
+.export-err { margin: -6px 0 0; font-size: 12px; color: var(--c-hard); }
 .settings { padding: 18px; display: flex; flex-direction: column; gap: 12px; }
 .sizes-wrap { display: flex; flex-direction: column; gap: 6px; border-top: 1px solid var(--c-divider); padding-top: 12px; }
 .sizes { display: flex; gap: 6px; }

@@ -34,7 +34,9 @@ npm run build    # 类型检查 + 生产构建
 - 章节选题使用厦门市小学、初中、高中现用版本的教材目录（`server/app/data/chapters/`，由 `server/scripts/crawl_textbooks.py`
   从国家中小学智慧教育平台抓取）：每节对应若干知识点，按题目已标注的知识点归入章节。「最热」「分类（典型题、压轴题等）」「解题方法」暂无数据支持。
 - 首页「最新试卷」「我的组卷」仍为演示数据；试卷编辑页的标题、考试时间为固定文案。
-- 「下载 Word」导出的是 Word 可打开的 HTML 格式 `.doc`，正式版建议换成 docx.js 生成 `.docx`。
+- 数学公式：题目中以 `$…$` / `$$…$$` 包裹的 LaTeX 用 KaTeX 显示；编辑题目时可用可视化公式编辑器（MathLive，按需加载）插入或修改公式。
+- 「下载 Word」在浏览器中生成 `.docx`（`src/utils/docx.ts`）：公式转换为 Word 原生公式（LaTeX → KaTeX MathML → OMML，`src/utils/omml.ts`），
+  可在 Word 中直接编辑；题目配图嵌入文档；KaTeX 无法解析的公式保留原文。装订线以装订边距（gutter）表示。
 - 「导出 PDF」调用浏览器打印（已写好打印样式）。
 - 收藏、纠错、智能补题、编辑题目等按钮暂未接功能。
 
