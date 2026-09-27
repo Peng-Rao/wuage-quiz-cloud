@@ -141,8 +141,8 @@ function focusRow(id: string) {
 
       <div class="total"><span>共 {{ basket.count }} 题 · 总分</span><b>{{ basket.totalScore }} 分</b></div>
       <div class="more">
-        <RouterLink to="/pick" class="more-btn">＋ 继续选题</RouterLink>
-        <RouterLink to="/papers" class="more-btn">从试卷库添加</RouterLink>
+        <RouterLink to="/chapter" class="more-btn">＋ 继续选题</RouterLink>
+        <RouterLink to="/papers" class="more-btn">从试卷选题添加</RouterLink>
       </div>
     </aside>
 
@@ -150,8 +150,8 @@ function focusRow(id: string) {
       <div v-if="!basket.count" class="sheet-empty no-print">
         <p>试题篮还是空的，先去挑选题目吧。</p>
         <div class="empty-links">
-          <RouterLink to="/pick" class="btn btn-primary">选题组卷</RouterLink>
-          <RouterLink to="/papers" class="btn btn-outline">从试卷库整卷组卷</RouterLink>
+          <RouterLink to="/chapter" class="btn btn-primary">去选题</RouterLink>
+          <RouterLink to="/papers" class="btn btn-outline">从试卷选题整卷组卷</RouterLink>
         </div>
       </div>
       <div v-else ref="sheet" class="sheet-inner">

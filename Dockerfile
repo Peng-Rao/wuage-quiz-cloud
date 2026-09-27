@@ -13,8 +13,9 @@ RUN npm ci --no-audit --no-fund
 COPY index.html vite.config.ts env.d.ts tsconfig.json tsconfig.app.json tsconfig.node.json .env.api ./
 COPY public ./public
 COPY src ./src
-# 前端模拟数据复用内置知识树（构建时会一并编译）
+# 前端模拟数据复用内置知识树与教材目录（构建时会一并编译）
 COPY server/app/data/knowledge ./server/app/data/knowledge
+COPY server/app/data/chapters ./server/app/data/chapters
 # --mode api：页面连接同源的 /api，而不是内存模拟数据
 RUN npm run build:api
 

@@ -74,6 +74,17 @@ npm run dev:api
 
 ### 校本题库选题与试卷库
 
+- `app/chapters.py`：内置教材章节目录（`app/data/chapters/*.json`，版本 → 册 → 章 → 节），每节的 `knowledge` 为对应的知识点名称；
+  按章节筛选时，题目知识点（含各级上级名称）属于该节 `knowledge` 的即归入该节，题目无需单独标注章节。
+- `scripts/crawl_textbooks.py`：从国家中小学智慧教育平台（同步课堂）抓取厦门市现用版本的教材目录并生成上述文件，只取目录标题；
+  版本清单见脚本中的 `XIAMEN`，依据《厦门市小初高教材 PDF 检索与下载入口》。每节对应的知识点保留手工校订与大模型结果，其余用大模型
+  （`--no-thinking` 关闭思考）或名称匹配生成：
+
+  ```bash
+  uv run python scripts/crawl_textbooks.py --no-thinking            # 抓取（缓存在 data/cache/smartedu）并生成
+  uv run python scripts/crawl_textbooks.py --offline --only 高中数学  # 只用缓存重新生成某学科
+  ```
+
 - `app/bank.py`：按学段学科、知识点（含下级，节点 id 或路径匹配）、题型、难度、试卷类型、年份、关键词检索入库题；
   知识树各节点的题数；按解析任务聚合的试卷库（含年级、学科等 facets）。
 - 知识点、试卷类型、年份、关键词在内存中筛选，单校题量达到数万后需改为「题目—知识点」关联表。

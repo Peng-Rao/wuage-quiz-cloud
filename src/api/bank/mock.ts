@@ -1,7 +1,42 @@
 import { DIFF_COEFS, QUESTIONS, coefToDiff } from '@/data/mock'
 import { mockParseApi } from '../parse/mock'
 import type { KnowledgePointRef, KnowledgeTreeNode, PaperMeta, QuestionType } from '../parse/types'
-import type { BankApi, BankQuestion, FacetCount, PaperDetail, PaperSummary } from './types'
+import type { BankApi, BankQuestion, FacetCount, PaperDetail, PaperSummary, TextbookVersion } from './types'
+
+// 与后端共用内置教材目录（server/app/data/chapters）
+type RawChapters = {
+  stage: string; subject: string; version: string; order?: number; region?: string
+  books: { name: string; grade: string; edition?: string; chapters: { name: string; knowledge?: string[]; sections: { name: string; knowledge: string[] }[] }[] }[]
+}
+const rawChapters = import.meta.glob<RawChapters>('../../../server/app/data/chapters/*.json', { eager: true, import: 'default' })
+/** 章或节 id → 对应的知识点名称（章为本身与各节之和） */
+const CHAPTER_KNOWLEDGE = new Map<string, Set<string>>()
+/** mock 中章节 id 直接用名称路径；同一学科多个版本时 order 小的为默认 */
+const CATALOG = Object.values(rawChapters).sort((a, b) => (a.order ?? 0) - (b.order ?? 0)).map((v) => ({
+  stage: v.stage, subject: v.subject,
+  version: {
+    name: v.version, region: v.region ?? '',
+    books: v.books.map((b) => {
+      const bid = `${v.stage}${v.subject}/${v.version}/${b.name}`
+      return {
+        id: bid, name: b.name, grade: b.grade, edition: b.edition ?? '',
+        chapters: b.chapters.map((c, ci) => {
+          // 同一级重名时用序号区分（与后端保证 id 唯一的方式不同，mock 只需唯一）
+          const cid = `${bid}/${ci}.${c.name}`
+          const sections = c.sections.map((x, si) => ({ id: `${cid}/${si}.${x.name}`, name: x.name, knowledge: x.knowledge }))
+          for (const x of sections) CHAPTER_KNOWLEDGE.set(x.id, new Set(x.knowledge))
+          CHAPTER_KNOWLEDGE.set(cid, new Set([...(c.knowledge ?? []), ...c.sections.flatMap((x) => x.knowledge)]))
+          return { id: cid, name: c.name, sections }
+        }),
+      }
+    }),
+  } as TextbookVersion,
+}))
+/** 知识点及其各级上级的名称 */
+const kpNames = (k: KnowledgePointRef) => new Set([k.name, ...(k.path?.split(' / ') ?? [])])
+const inChapter = (q: BankQuestion, names: Set<string>) => q.knowledgePoints.some((k) => [...kpNames(k)].some((n) => names.has(n)))
+const province = (r: string) => r.split(/\s*[·•/]\s*/)[0]
+const termOf = (m: PaperMeta) => (`${m.schoolYear} ${m.title}`.match(/\d{4}\s*(上|下)|(上|下)(?:学期|册)/) ?? []).slice(1).find(Boolean) ?? ''
 
 /** 演示用校本题库：三份已入库的试卷，知识点按内置知识树路径标注 */
 
@@ -51,8 +86,8 @@ const SEEDS: Seed[] = [
     meta: { title: '厦门市 2025—2026 学年九年级上学期化学 10 月月考', stage: '初中', subject: '化学', grade: '九年级', paperType: '月考', region: '福建 · 厦门', schoolYear: '2025—2026', textbook: '人教版' },
     date: '2025-10-20T10:00:00Z',
     items: [
-      { id: 'c1', type: '单选题', score: 2, stem: '下列变化中，属于化学变化的是（　　）', options: ['冰雪融化', '酒精挥发', '铁锅生锈', '玻璃破碎'], answer: 'C', analysis: '铁锅生锈生成了新物质铁锈，属于化学变化。', answerSource: 'paper', knowledgePoints: [], coef: 0.12, images: [] },
-      { id: 'c2', type: '填空题', score: 4, stem: '用化学用语填空：2 个氢原子 ______；3 个水分子 ______。', options: [], answer: '2H；3H₂O', analysis: null, answerSource: 'paper', knowledgePoints: [], coef: 0.35, images: [] },
+      { id: 'c1', type: '单选题', score: 2, stem: '下列变化中，属于化学变化的是（　　）', options: ['冰雪融化', '酒精挥发', '铁锅生锈', '玻璃破碎'], answer: 'C', analysis: '铁锅生锈生成了新物质铁锈，属于化学变化。', answerSource: 'paper', knowledgePoints: [{ id: 'kp:c1', name: '物理变化与化学变化', path: null, inTree: false }], coef: 0.12, images: [] },
+      { id: 'c2', type: '填空题', score: 4, stem: '用化学用语填空：2 个氢原子 ______；3 个水分子 ______。', options: [], answer: '2H；3H₂O', analysis: null, answerSource: 'paper', knowledgePoints: [{ id: 'kp:c2', name: '符号前系数与右下角下标', path: null, inTree: false }], coef: 0.35, images: [] },
     ],
   },
 ]
@@ -105,18 +140,20 @@ export const mockBankApi: BankApi = {
   async listQuestions(p) {
     await sleep(120)
     let paths: string[] | null = null
-    if (p.nodeId && p.treeId) {
+    if (p.nodeIds?.length && p.treeId) {
       const { path } = await treeIndex(p.treeId)
-      const base = path.get(p.nodeId)
-      paths = base ? [base] : []
+      paths = p.nodeIds.map((id) => path.get(id)).filter((x): x is string => !!x)
     }
+    const chapter = p.chapterId ? CHAPTER_KNOWLEDGE.get(p.chapterId) ?? new Set<string>() : null
     const kw = p.q?.trim()
     let out = QS.filter((q) => {
       const m = metaOf(q)
       return (!p.stage || m.stage === p.stage) && (!p.subject || m.subject === p.subject)
         && (!p.paperId || q.paperId === p.paperId) && (!p.type || q.type === p.type)
         && (!p.diff || coefToDiff(q.coef) === p.diff)
-        && (!p.paperTypes?.length || p.paperTypes.some((t) => m.paperType.includes(t)))
+        && (!p.paperTypes?.length || p.paperTypes.some((t) => (m.paperType + m.title).includes(t)))
+        && (!p.region || province(m.region) === p.region) && (!p.grade || m.grade === p.grade)
+        && (!p.term || termOf(m) === p.term) && (!chapter || inChapter(q, chapter))
         && (!p.year || (p.year.startsWith('<')
           ? years(m.schoolYear + m.title).some((y) => y < +p.year!.slice(1))
           : years(m.schoolYear + m.title).includes(+p.year)))
@@ -128,6 +165,37 @@ export const mockBankApi: BankApi = {
     if (p.sort === 'hard') out = [...out].sort((a, b) => b.coef - a.coef)
     const offset = p.offset ?? 0
     return clone({ items: out.slice(offset, offset + (p.limit ?? 10)), total: out.length })
+  },
+
+  async questionFacets(stage, subject) {
+    await sleep(60)
+    const metas = QS.map(metaOf).filter((m) => m.stage === stage && m.subject === subject)
+    const count = (vals: string[]) => [...vals.reduce((c, v) => (v ? c.set(v, (c.get(v) ?? 0) + 1) : c), new Map<string, number>())]
+      .map(([name, n]) => ({ name, count: n })).sort((a, b) => b.count - a.count)
+    return {
+      regions: count(metas.map((m) => province(m.region))),
+      grades: count(metas.map((m) => m.grade)),
+      years: count(metas.map((m) => String(Math.min(...years(m.schoolYear + m.title))))).sort((a, b) => b.name.localeCompare(a.name)),
+    }
+  },
+
+  async chapters(stage, subject) {
+    await sleep(60)
+    return clone(CATALOG.filter((c) => c.stage === stage && c.subject === subject).map((c) => c.version))
+  },
+
+  async chapterCounts(bookId) {
+    await sleep(60)
+    const entry = CATALOG.find((c) => c.version.books.some((b) => b.id === bookId))
+    if (!entry) throw new Error('教材不存在')
+    const qs = QS.filter((q) => metaOf(q).stage === entry.stage && metaOf(q).subject === entry.subject)
+    const counts: Record<string, number> = {}
+    for (const [id, names] of CHAPTER_KNOWLEDGE) {
+      if (!id.startsWith(bookId + '/')) continue
+      const n = qs.filter((q) => inChapter(q, names)).length
+      if (n) counts[id] = n
+    }
+    return counts
   },
 
   async knowledgeCounts(treeId) {
@@ -151,6 +219,8 @@ export const mockBankApi: BankApi = {
       && (!p.grade || skip === 'grade' || (x.meta.grade || '未分类') === p.grade)
       && (!p.subject || skip === 'subject' || (x.meta.subject || '未分类') === p.subject)
       && (!p.paperType || skip === 'paperType' || (x.meta.paperType || '未分类') === p.paperType)
+      && (!p.textbook || skip === 'textbook' || (x.meta.textbook || '未分类') === p.textbook)
+      && (!p.category?.length || p.category.some((k) => (x.meta.paperType + x.title).includes(k)))
       && (!p.q || [x.title, x.meta.region, x.meta.schoolYear].join(' ').includes(p.q))
     const items = all.filter((x) => match(x))
     const offset = p.offset ?? 0
@@ -161,6 +231,7 @@ export const mockBankApi: BankApi = {
         grades: facet(all.filter((x) => match(x, 'grade')), 'grade'),
         subjects: facet(all.filter((x) => match(x, 'subject')), 'subject'),
         paperTypes: facet(all.filter((x) => match(x, 'paperType')), 'paperType'),
+        textbooks: facet(all.filter((x) => match(x, 'textbook')), 'textbook'),
       },
     })
   },

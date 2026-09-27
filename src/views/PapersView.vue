@@ -9,20 +9,32 @@ const route = useRoute()
 const router = useRouter()
 const basket = useBasketStore()
 
-type Dim = 'stage' | 'grade' | 'subject' | 'paperType'
+type Dim = 'stage' | 'grade' | 'subject' | 'textbook' | 'paperType'
 const DIMS: { key: Dim; label: string; facet: keyof PaperFacets }[] = [
   { key: 'stage', label: '学段', facet: 'stages' },
   { key: 'grade', label: '年级', facet: 'grades' },
   { key: 'subject', label: '学科', facet: 'subjects' },
+  { key: 'textbook', label: '版本', facet: 'textbooks' },
   { key: 'paperType', label: '类型', facet: 'paperTypes' },
+]
+
+/** 试卷分类：按试卷类型或名称中的关键词归类 */
+const CATEGORIES: { key: string; label: string; kw: string[] }[] = [
+  { key: '', label: '全部', kw: [] },
+  { key: 'sync', label: '同步教学', kw: ['单元', '课时', '作业', '周练', '练习', '同步', '预习'] },
+  { key: 'stage', label: '阶段测试', kw: ['期中', '期末', '月考', '联考', '阶段', '质检', '开学'] },
+  { key: 'exam', label: '升学备考', kw: ['高考', '中考', '小升初', '模拟', '一轮', '二轮', '三轮', '冲刺', '真题', '学考', '学业水平'] },
+  { key: 'contest', label: '竞赛', kw: ['竞赛', '强基', '自主招生'] },
 ]
 
 // 筛选条件保存在地址栏，返回、刷新后保持
 const str = (v: unknown) => (typeof v === 'string' ? v : '')
 const filters = computed(() => ({
   stage: str(route.query.stage), grade: str(route.query.grade), subject: str(route.query.subject),
-  paperType: str(route.query.paperType), q: str(route.query.q),
+  textbook: str(route.query.textbook), paperType: str(route.query.paperType), q: str(route.query.q),
+  cat: str(route.query.cat),
 }))
+const catKw = computed(() => CATEGORIES.find((c) => c.key === filters.value.cat)?.kw ?? [])
 const page = computed(() => Math.max(1, Number(route.query.page) || 1))
 const keyword = ref(filters.value.q)
 watch(() => filters.value.q, (q) => { keyword.value = q })
@@ -50,7 +62,9 @@ async function load() {
     const f = filters.value
     const r = await bankApi.listPapers({
       stage: f.stage || undefined, grade: f.grade || undefined, subject: f.subject || undefined,
-      paperType: f.paperType || undefined, q: f.q || undefined, limit: PAGE_SIZE, offset: (page.value - 1) * PAGE_SIZE,
+      textbook: f.textbook || undefined, paperType: f.paperType || undefined,
+      category: catKw.value.length ? catKw.value : undefined,
+      q: f.q || undefined, limit: PAGE_SIZE, offset: (page.value - 1) * PAGE_SIZE,
     })
     if (my === seq) data.value = r
   } catch (e) {
@@ -86,12 +100,15 @@ async function addPaper(p: PaperSummary) {
 
 <template>
   <main class="papers container">
-    <div class="page-head">
-      <div>
-        <h1>试卷库</h1>
-        <p>按年级、学科浏览已入库的整套试卷；可整卷加入试题篮，或直接以原卷组卷。</p>
-      </div>
-      <form class="search" @submit.prevent="setQuery({ q: keyword.trim() || undefined })">
+    <nav class="crumb" aria-label="当前位置">
+      <RouterLink to="/">首页</RouterLink><span>›</span><span>试卷选题</span>
+    </nav>
+    <div class="card cats">
+      <button
+        v-for="c in CATEGORIES" :key="c.key" class="cat" :class="{ on: filters.cat === c.key }"
+        @click="setQuery({ cat: c.key || undefined })"
+      >{{ c.label }}</button>
+      <form class="search" role="search" @submit.prevent="setQuery({ q: keyword.trim() || undefined })">
         <input v-model="keyword" placeholder="试卷名称、地区、学年" aria-label="搜索试卷">
         <button type="submit">搜索</button>
       </form>
@@ -166,11 +183,15 @@ async function addPaper(p: PaperSummary) {
 </template>
 
 <style scoped>
-.papers { padding-top: 24px; padding-bottom: 56px; display: flex; flex-direction: column; gap: 16px; }
-.page-head { display: flex; flex-wrap: wrap; gap: 16px 32px; align-items: flex-end; justify-content: space-between; }
-.page-head h1 { margin: 0 0 6px; font-size: 22px; font-weight: 700; }
-.page-head p { margin: 0; font-size: 13px; color: var(--c-text-3); }
-.search { display: flex; gap: 6px; width: min(100%, 400px); }
+.crumb { display: flex; gap: 8px; font-size: 13px; color: var(--c-text-4); margin-bottom: -4px; }
+.crumb a { color: var(--c-text-3); }
+.cats { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 36px; padding: 0 20px 0 28px; }
+.cats .search { margin-left: auto; }
+.cat { border: none; background: none; padding: 16px 0 12px; font-size: 17px; color: var(--c-text-2); border-bottom: 3px solid transparent; }
+.cat:hover { color: var(--c-primary); }
+.cat.on { color: var(--c-primary); font-weight: 600; border-bottom-color: var(--c-primary); }
+.papers { padding-top: 14px; padding-bottom: 56px; display: flex; flex-direction: column; gap: 16px; }
+.search { display: flex; gap: 6px; width: min(100%, 360px); padding: 8px 0; }
 .search input {
   flex: 1; min-width: 0; height: 36px; border: 1px solid var(--c-border); border-radius: var(--r-md); padding: 0 12px;
   font-size: 14px; background: #fff; color: var(--c-ink);

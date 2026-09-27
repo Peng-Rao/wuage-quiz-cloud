@@ -5,7 +5,7 @@ import { TYPE_ORDER, coefToDiff } from '@/data/mock'
 import { bankApi, type PaperDetail } from '@/api/bank'
 import { useAppStore } from '@/stores/app'
 import { fromBank, useBasketStore } from '@/stores/basket'
-import BankQuestionCard from '@/components/bank/BankQuestionCard.vue'
+import QuestionCard from '@/components/bank/QuestionCard.vue'
 import DifficultyBar from '@/components/DifficultyBar.vue'
 import ModalDialog from '@/components/ModalDialog.vue'
 
@@ -84,7 +84,7 @@ function replaceAndGo() {
 
 <template>
   <main class="detail container">
-    <RouterLink to="/papers" class="back">‹ 试卷库</RouterLink>
+    <RouterLink to="/papers" class="back">‹ 试卷选题</RouterLink>
 
     <div v-if="error" class="card empty err">{{ error }}</div>
     <div v-else-if="!paper" class="card empty">加载中…</div>
@@ -125,8 +125,8 @@ function replaceAndGo() {
       </div>
 
       <div class="list">
-        <BankQuestionCard
-          v-for="(q, i) in qs" :key="q.id" :q="q" :no="q.source?.no ?? i + 1" hide-source
+        <QuestionCard
+          v-for="(q, i) in qs" :key="q.id" :q="q" :no="q.source?.no ?? i + 1" in-paper
           :show-answer="showAns(q.id)" :in-basket="basket.has(q.id)"
           @toggle-answer="ansOpen[q.id] = !showAns(q.id)" @toggle-basket="basket.toggle(fromBank(q))"
         />

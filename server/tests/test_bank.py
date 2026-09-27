@@ -235,3 +235,78 @@ def test_remove_paper(client):
     assert client.delete(f"/api/papers/{job}").status_code == 404
     # 移出后可重新保存
     assert _commit(client, job, ids)["savedCount"] == 1
+
+
+# ---------------- 章节选题与筛选 ----------------
+
+def test_builtin_chapters_map_to_knowledge_tree():
+    """内置教材目录中的知识点都应能在同学段学科的内置知识树中找到（树外的个别名称按名称匹配）。"""
+    import json
+    from pathlib import Path
+
+    from app.chapters import catalog
+
+    kdir = Path(__file__).parent.parent / "app" / "data" / "knowledge"
+    for v in catalog():
+        tree = json.loads((kdir / f"{v['stage']}{v['subject']}.json").read_text(encoding="utf-8"))
+        names: set[str] = set()
+
+        def walk(ns):  # noqa: ANN001
+            for n in ns:
+                names.add(n["name"])
+                walk(n.get("children", []))
+
+        walk(tree["nodes"])
+        wanted = {k for b in v["books"] for c in b["chapters"] for x in c["sections"] for k in x["knowledge"]}
+        assert wanted - names <= {"数学归纳法"}, (v["version"], wanted - names)
+        ids = [x["id"] for b in v["books"] for c in b["chapters"] for x in [c, *c["sections"]]]
+        assert len(ids) == len(set(ids))
+
+
+def test_chapter_filter_counts_and_more_filters(client):
+    books = client.get("/api/chapters", params={"stage": "高中", "subject": "数学"}).json()
+    assert books[0]["name"] == "人教A版"
+    b1 = books[0]["books"][0]
+    ch1 = b1["chapters"][0]
+    sec = {x["name"]: x["id"] for x in ch1["sections"]}
+    assert b1["name"] == "必修 第一册" and "1.2 集合间的基本关系" in sec
+    assert client.get("/api/chapters", params={"stage": "高中", "subject": "信息技术"}).json() == []
+
+    meta = dict(MATH_META, title="章节筛选测试：浙江杭州高一下学期期末数学", region="浙江 · 杭州", grade="高一",
+                school_year="2025—2026 下", paper_type="期末考试")
+    with SessionLocal() as s:
+        tree = s.scalars(select(KnowledgeTree).where(KnowledgeTree.school_id == current_school(), KnowledgeTree.builtin.is_(True),
+                                                     KnowledgeTree.stage == "高中", KnowledgeTree.subject == "数学")).one()
+        subset, compl, deriv = _node(s, tree, "子集"), _node(s, tree, "补集"), _node(s, tree, "导数研究极值")
+        pid = _paper(s, meta, [
+            {"type": "单选题", "score": 5, "stem": "章节筛选测试：子集个数", "coef": 0.2, "kps": [_kp(subset)]},
+            {"type": "单选题", "score": 5, "stem": "章节筛选测试：补集运算", "coef": 0.3, "kps": [_kp(compl, stale_id=True)]},
+            {"type": "解答题", "score": 12, "stem": "章节筛选测试：极值", "coef": 0.7, "kps": [_kp(deriv)]},
+        ])
+        s.commit()
+        ids = {"subset": subset.id, "compl": compl.id, "deriv": deriv.id}
+
+    base = {"paperId": pid}
+    assert _search(client, chapterId=sec["1.2 集合间的基本关系"], **base)["total"] == 1
+    assert _search(client, chapterId=sec["1.3 集合的基本运算"], **base)["total"] == 1  # 按路径中的名称匹配
+    assert _search(client, chapterId=ch1["id"], **base)["total"] == 2  # 章 = 各节之和
+    assert _search(client, chapterId="missing", **base)["total"] == 0
+    # 知识点多选：含任一即可
+    assert _search(client, nodeId=f"{ids['subset']},{ids['deriv']}", **base)["total"] == 2
+    # 地区（省级）、年级、学期、场景（试卷类型或名称）
+    assert _search(client, region="浙江", **base)["total"] == 3
+    assert _search(client, region="北京", **base)["total"] == 0
+    assert _search(client, grade="高一", term="下", **base)["total"] == 3
+    assert _search(client, term="上", **base)["total"] == 0
+    assert _search(client, paperType="期末", **base)["total"] == 3
+
+    counts = client.get("/api/bank/chapter-counts", params={"bookId": b1["id"]}).json()
+    assert counts[sec["1.2 集合间的基本关系"]] >= 1 and counts[ch1["id"]] >= 2
+    assert client.get("/api/bank/chapter-counts", params={"bookId": "missing"}).status_code == 404
+
+    facets = client.get("/api/bank/facets", params={"stage": "高中", "subject": "数学"}).json()
+    assert "浙江" in {f["name"] for f in facets["regions"]} and "2025" in {f["name"] for f in facets["years"]}
+
+    page = client.get("/api/papers", params={"q": "章节筛选测试", "category": "期中,期末"}).json()
+    assert [p["id"] for p in page["items"]] == [pid]
+    assert client.get("/api/papers", params={"q": "章节筛选测试", "category": "高考"}).json()["total"] == 0

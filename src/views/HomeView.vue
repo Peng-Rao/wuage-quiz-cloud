@@ -8,16 +8,16 @@ const keyword = ref('')
 const HOT = ['函数零点', '数列求和', '三角恒等变换', '2026 新高考 I 卷', '立体几何']
 
 const ENTRIES = [
-  { mark: '章', title: '章节选题', desc: '按教材版本与章节同步选题', to: '/pick' },
-  { mark: '知', title: '知识点选题', desc: '按知识体系精准定位考点', to: { path: '/pick', query: { tree: '知识点' } } },
+  { mark: '章', title: '章节选题', desc: '按教材版本与章节同步选题', to: '/chapter' },
+  { mark: '知', title: '知识点选题', desc: '按知识体系精准定位考点', to: '/knowledge' },
   { mark: '智', title: '智能组卷', desc: '设定题量与难度，自动生成试卷', to: '/paper' },
-  { mark: '卷', title: '试卷库', desc: '按年级、学科浏览已入库的整套试卷', to: '/papers' },
+  { mark: '卷', title: '试卷选题', desc: '按年级、学科浏览已入库的整套试卷', to: '/papers' },
 ]
 
 const paperTab = ref('期中')
 
 function search(q = keyword.value) {
-  router.push({ path: '/pick', query: q.trim() ? { q: q.trim() } : {} })
+  router.push({ path: '/knowledge', query: q.trim() ? { q: q.trim() } : {} })
 }
 </script>
 

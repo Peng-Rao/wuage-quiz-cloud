@@ -451,6 +451,7 @@ class PaperFacets(Model):
     grades: list[FacetCount]
     subjects: list[FacetCount]
     paper_types: list[FacetCount]
+    textbooks: list[FacetCount] = []
 
 
 class PaperPage(Model):
@@ -458,6 +459,43 @@ class PaperPage(Model):
     total: int
     # 各维度在其余筛选条件下的试卷数
     facets: PaperFacets
+
+
+class QuestionFacets(Model):
+    """选题「更多」筛选的可选值。"""
+
+    regions: list[FacetCount]
+    grades: list[FacetCount]
+    years: list[FacetCount]
+
+
+class ChapterSection(Model):
+    id: str
+    name: str
+    # 对应的知识点名称
+    knowledge: list[str]
+
+
+class ChapterItem(Model):
+    id: str
+    name: str
+    sections: list[ChapterSection]
+
+
+class TextbookBook(Model):
+    id: str
+    name: str
+    grade: str
+    # 平台标注的新教材 / 旧教材（新教材目录未上线时退用旧教材）
+    edition: str = ""
+    chapters: list[ChapterItem]
+
+
+class TextbookVersion(Model):
+    name: str
+    # 适用地区，如「厦门」（该地区现用版本）
+    region: str = ""
+    books: list[TextbookBook]
 
 
 class PaperDetail(PaperSummary):
