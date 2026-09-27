@@ -5,6 +5,7 @@ export const PURPOSE_LABELS: Record<string, string> = {
   classify: '试卷分类',
   segment: '拆题',
   answer: 'AI 解答',
+  compose: 'AI 组卷',
 }
 
 /** 12345 → 1.2 万；小于 1 万原样显示 */

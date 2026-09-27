@@ -531,3 +531,57 @@ class EvalRunOut(Model):
 
 # 前向引用（SimilarQuestion 定义在 QuestionSource、KnowledgePointRef 之前）
 SimilarQuestion.model_rebuild()
+
+
+# ---------------- AI 组卷（Demo） ----------------
+
+class ComposeMessage(Model):
+    role: Literal["user", "assistant"]
+    content: str = Field(min_length=1, max_length=2000)
+
+
+class ComposeRequest(Model):
+    stage: str
+    subject: str
+    # 老师当前的设置；对话中要求改变时以大模型整理的蓝图为准
+    total: int = Field(default=100, ge=10, le=300)
+    difficulty: float = Field(default=0.45, ge=0.05, le=0.95)
+    # 完整对话，最后一条为老师本次的要求
+    messages: list[ComposeMessage] = Field(min_length=1, max_length=20)
+
+
+class ComposeItem(Model):
+    question: BankQuestionOut
+    score: int
+
+
+class ComposeSection(Model):
+    type: QuestionType
+    score: int
+    items: list[ComposeItem]
+
+
+class ComposeFocus(Model):
+    """重点考查的知识点及选入的题数。"""
+
+    name: str
+    path: str | None = None
+    weight: int
+    count: int
+
+
+class ComposeResult(Model):
+    # 给老师的组卷说明
+    reply: str
+    title: str
+    total: int
+    # 目标平均难度
+    difficulty: float
+    # 实际平均难度（按分值加权）
+    actual_difficulty: float
+    sections: list[ComposeSection]
+    focus: list[ComposeFocus]
+    # 题库不足等提示
+    gaps: list[str]
+    # 需求是否由大模型理解；未配置或调用失败时为 false（按关键词匹配知识点）
+    ai: bool

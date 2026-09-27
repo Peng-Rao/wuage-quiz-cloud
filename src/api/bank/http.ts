@@ -1,5 +1,7 @@
 import { query, request } from '../request'
-import type { BankApi, BankQuestion, Page, PaperDetail, PaperPage, QuestionFacets, TextbookVersion } from './types'
+import type {
+  BankApi, BankQuestion, ComposeResult, Page, PaperDetail, PaperPage, QuestionFacets, TextbookVersion,
+} from './types'
 
 export const httpBankApi: BankApi = {
   listQuestions: (p) => request<Page<BankQuestion>>('GET', `/api/bank/questions?${query({
@@ -17,4 +19,5 @@ export const httpBankApi: BankApi = {
   })}`),
   getPaper: (id) => request<PaperDetail>('GET', `/api/papers/${encodeURIComponent(id)}`),
   removePaper: (id) => request<void>('DELETE', `/api/papers/${encodeURIComponent(id)}`),
+  compose: (req) => request<ComposeResult>('POST', '/api/compose', req),
 }

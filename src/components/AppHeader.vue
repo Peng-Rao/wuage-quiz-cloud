@@ -19,6 +19,7 @@ const NAV = [
   { to: '/chapter', label: '章节选题' },
   { to: '/knowledge', label: '知识点选题' },
   { to: '/papers', label: '试卷选题' },
+  { to: '/compose', label: 'AI 组卷' },
   { to: '/paper', label: '试卷编辑' },
   { to: '/upload', label: '试卷解析' },
 ]
