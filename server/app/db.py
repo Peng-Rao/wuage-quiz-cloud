@@ -200,10 +200,12 @@ class BankQuestion(Base):
 
 _settings = get_settings()
 _settings.data_dir.mkdir(parents=True, exist_ok=True)
-engine = create_engine(
-    _settings.db_url,
-    connect_args={"check_same_thread": False} if _settings.db_url.startswith("sqlite") else {},
-)
+if _settings.db_url.startswith("sqlite"):
+    engine = create_engine(_settings.db_url, connect_args={"check_same_thread": False})
+else:
+    # PostgreSQL：会话时区固定为 UTC，读出的时间与数据库服务器的时区设置无关；
+    # pool_pre_ping 在数据库重启后自动丢弃失效连接
+    engine = create_engine(_settings.db_url, connect_args={"options": "-c timezone=UTC"}, pool_pre_ping=True)
 
 if _settings.db_url.startswith("sqlite"):
     @event.listens_for(engine, "connect")
@@ -301,7 +303,8 @@ def migrate_coef_semantics(eng=None) -> int:  # noqa: ANN001
             return 0
         n = 0
         for table in ("draft_question", "bank_question"):
-            n += conn.execute(text(f"UPDATE {table} SET coef = ROUND(1 - coef, 2)")).rowcount or 0
+            # PostgreSQL 的 ROUND(x, 2) 只接受 numeric
+            n += conn.execute(text(f"UPDATE {table} SET coef = ROUND(CAST(1 - coef AS NUMERIC), 2)")).rowcount or 0
         conn.execute(text("INSERT INTO app_meta (key, value) VALUES ('coef_semantics', 'difficulty')"))
     return n
 

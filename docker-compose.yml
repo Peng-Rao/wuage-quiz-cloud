@@ -1,5 +1,27 @@
-# docker compose up -d --build 后访问 http://localhost:8000/upload
+# docker compose up -d --build 后访问 http://localhost:8000
+# 数据库为 PostgreSQL（db 服务）；上传文件、页面图保存在应用的 /data 卷中
 services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: fg_quiz
+      POSTGRES_USER: fg_quiz
+      # 数据库端口不对外开放，只有 app 能访问；正式部署请在仓库根目录的 .env 中设置 POSTGRES_PASSWORD
+      #（密码会写进连接地址，只用字母、数字、- 和 _）
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-fg-quiz-local}
+    # 只绑定本机地址，供本地开发（uv run uvicorn）和 psql 连接，其他机器访问不到；
+    # 用 5433 避免与本机安装的 PostgreSQL（5432）冲突
+    ports:
+      - "127.0.0.1:5433:5432"
+    volumes:
+      - fg-quiz-pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U fg_quiz -d fg_quiz"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
   app:
     build: .
     image: fg-quiz-cloud:latest
@@ -9,9 +31,18 @@ services:
     env_file:
       - path: server/.env
         required: false
+    environment:
+      # 默认连接 db 服务（覆盖 server/.env 中的 DATABASE_URL）；容器间通信不走 SSL，
+      # 地址中的 sslmode 优先于 server/.env 里可能存在的 PGSSLMODE 等 libpq 变量。
+      # 改用外部 PostgreSQL 时，在仓库根目录的 .env 中设置 DATABASE_URL
+      DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://fg_quiz:${POSTGRES_PASSWORD:-fg-quiz-local}@db:5432/fg_quiz?sslmode=disable}
+    depends_on:
+      db:
+        condition: service_healthy
     volumes:
-      - fg-quiz-data:/data   # 数据库、上传文件、页面图
+      - fg-quiz-data:/data   # 上传文件、页面图；旧版本的 SQLite 数据库（app.db）也在这里，迁移见 README
     restart: unless-stopped
 
 volumes:
   fg-quiz-data:
+  fg-quiz-pg:

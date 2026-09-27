@@ -30,7 +30,7 @@ Docker 部署后执行 `docker compose exec app python -m app.create_admin admin
 
 上传前先在顶栏选择学科。入库后进入试卷详情，展开“审核与分配题目”，选择题目及归属用户，审核通过后普通用户即可查看。每道题目前归属一位用户；重新分配会替换原归属。撤回审核后立即停止后续读取。重新提交入库或变更学科会清除审核状态，需重新审核。历史题目默认未分配、未审核，由管理员或对应学科组长处理后再向普通用户开放。
 
-AI 辅助组卷位于试卷编辑页，调用已配置的大模型，从授权学科、学段、难度匹配的最近 100 道候选题中选择 1–30 道题并加入试题篮。未配置 AI 时显示说明，仍可手动组卷。试题篮仅保存在当前页面内存中，刷新或退出后清空，避免共用浏览器时泄露上一个账号的题目。
+AI 组卷位于 `/compose`（仅管理员、组长），见下方「目前是演示实现的部分」。试题篮仅保存在当前页面内存中，刷新或退出后清空，避免共用浏览器时泄露上一个账号的题目。
 
 会话使用 HttpOnly、SameSite Cookie，服务端只保存会话令牌摘要；密码使用带独立盐的 scrypt 哈希。会话默认 12 小时。HTTPS 部署设置 `COOKIE_SECURE=true`，并将实际站点来源加入 `CORS_ORIGINS`；推荐前后端同源部署。生产启用前备份数据库；启动时自动补充用户/会话表和题目归属/审核字段，不改动已有题目内容。
 
@@ -78,8 +78,13 @@ AI 辅助组卷位于试卷编辑页，调用已配置的大模型，从授权�
 前端页面与解析服务（`server/`）打包为一个镜像，服务同时提供页面和 `/api`。
 
 ```bash
-docker compose up -d --build        # 访问 http://localhost:8000/upload
+docker compose up -d --build        # 访问 http://localhost:8000
+docker compose exec app python -m app.create_admin admin   # 首次部署：创建管理员
 ```
+
+compose 包含两个服务：`app`（页面与接口）和 `db`（PostgreSQL 17）。数据库端口不对外开放；正式部署前在仓库根目录新建 `.env`，
+设置 `POSTGRES_PASSWORD=<只含字母、数字、-、_ 的强密码>`（首次启动时生效，之后修改需同时在数据库中改密码）。
+改用已有的外部 PostgreSQL 时，在根目录 `.env` 中设置 `DATABASE_URL=postgresql+psycopg://…`，`db` 服务可不用。
 
 或直接使用镜像：
 
@@ -89,9 +94,26 @@ docker run -d -p 8000:8000 --env-file server/.env -v fg-quiz-data:/data fg-quiz-
 ```
 
 - 配置：MinerU、大模型、单价等通过环境变量提供，见 `server/.env.example`；compose 默认读取 `server/.env`（不存在时只用规则拆题与轻量解析）。Key 不会打进镜像。
-- 数据：数据库、上传文件和页面图保存在卷 `/data`，重建容器不会丢失。
+- 数据：数据库在卷 `fg-quiz-pg`，上传文件和页面图在卷 `fg-quiz-data`（`/data`），重建容器不会丢失；`docker compose down -v` 会删除数据卷。
+- 备份：`docker compose exec db pg_dump -U fg_quiz fg_quiz > backup.sql`，另备份 `fg-quiz-data` 卷中的文件。
+- 单独 `docker run` 镜像时没有 `db` 服务：设置 `DATABASE_URL` 连接已有的 PostgreSQL，不设置则使用 `/data/app.db`（SQLite，适合试用）。
 - 进程：任务队列在进程内，只能运行 1 个服务进程；并发解析份数用 `WORKER_CONCURRENCY` 调整。多实例部署需先把队列换成 Redis、存储换成对象存储。
 - 服务以非 root 用户（uid 10001）运行，自带健康检查（`GET /api/health`）。
+
+### 从 SQLite 迁移到 PostgreSQL
+
+早期版本的数据库是 `/data/app.db`（SQLite）。升级后先只启动数据库、导入数据，再启动应用：
+
+```bash
+docker compose stop app                                    # 旧版本在运行时先停止
+docker compose up -d --build db
+docker compose run --rm --no-deps app python -m app.migrate_to_pg    # 读取数据卷中的 /data/app.db
+docker compose up -d
+```
+
+- 目标库已有数据时会拒绝执行（例如应用已在新库上启动过、自动写入了内置知识树），确认用 SQLite 的数据覆盖时加 `--replace`。
+- 在一个事务中复制全部表，失败时目标库不变；`app.db` 不会被修改或删除，确认无误后可自行删除。
+- 本地开发同理：`DATABASE_URL=postgresql+psycopg://… uv run python -m app.migrate_to_pg data/app.db`。
 
 ### 不同芯片架构
 

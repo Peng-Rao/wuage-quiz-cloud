@@ -2,7 +2,7 @@
 import hashlib
 import hmac
 import secrets
-from datetime import timezone
+from datetime import datetime, timezone
 
 from fastapi import Depends, HTTPException, Request
 from sqlalchemy import event, func, select
@@ -39,12 +39,17 @@ def check_origin(request: Request) -> None:
         raise HTTPException(403, "请求来源不受信任")
 
 
+def as_utc(d: datetime) -> datetime:
+    """SQLite 读出的是不带时区的 UTC 时间；PostgreSQL 读出的是带时区（数据库会话时区）的时间。"""
+    return d.replace(tzinfo=timezone.utc) if d.tzinfo is None else d.astimezone(timezone.utc)
+
+
 def current_user(request: Request) -> User:
     check_origin(request)
     with SessionLocal() as s:
         session = s.get(LoginSession, token_hash(request.cookies.get(COOKIE, "")))
         user = s.get(User, session.user_id) if session else None
-        if not session or session.expires_at.replace(tzinfo=timezone.utc) <= utcnow() or not user or not user.active:
+        if not session or as_utc(session.expires_at) <= utcnow() or not user or not user.active:
             raise HTTPException(401, "请先登录或重新登录")
         s.expunge(user)
     request.state.user = user

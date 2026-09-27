@@ -2,7 +2,9 @@
 # 福格云上题库：前端页面 + 解析服务打包为一个镜像，支持 linux/amd64 与 linux/arm64
 #   docker build -t fg-quiz-cloud .                                   # 构建本机架构
 #   docker buildx build --platform linux/amd64 -t fg-quiz-cloud --load .   # 指定架构
+#   docker compose up -d --build                                      # 推荐：连同 PostgreSQL 一起启动（见 docker-compose.yml）
 #   docker run -p 8000:8000 --env-file server/.env -v fg-quiz-data:/data fg-quiz-cloud
+#     单独运行时连接 DATABASE_URL 指定的数据库；未设置则使用 /data/app.db（SQLite）
 
 # ---------- 前端构建 ----------
 # 产物是纯静态文件、与 CPU 架构无关：固定在构建机的原生架构上运行，交叉构建时不走模拟器

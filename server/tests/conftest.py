@@ -13,7 +13,8 @@ with open(os.path.join(_web, "assets", "app-abc123.js"), "w") as f:
 os.environ.update({
     "STATIC_DIR": _web,
     "DATA_DIR": _tmp,
-    "DATABASE_URL": "",
+    # 默认用临时目录中的 SQLite；设置 TEST_DATABASE_URL 可在 PostgreSQL 上运行（库中已有的表会被清空重建）
+    "DATABASE_URL": os.environ.get("TEST_DATABASE_URL", ""),
     "MINERU_TOKEN": "",
     "LLM_BASE_URL": "",
     "LLM_API_KEY": "",
@@ -28,7 +29,9 @@ import pytest  # noqa: E402
 @pytest.fixture(autouse=True, scope="session")
 def _db():
     # 用量记录等会直接写库，所有测试共用已建好表的临时数据库
-    from app.db import init_db
+    from app.db import Base, engine, init_db
+    if engine.dialect.name != "sqlite":
+        Base.metadata.drop_all(engine)
     init_db()
     from app.auth import hash_password
     from app.db import SessionLocal, User

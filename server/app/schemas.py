@@ -17,8 +17,9 @@ REVIEW_CONFIDENCE = 0.8
 
 Bbox = tuple[float, float, float, float]
 
-# SQLite 不保存时区，读出的是 UTC 的 naive 时间；补上时区，前端才能正确换算为本地时间
-UtcDatetime = Annotated[datetime, AfterValidator(lambda d: d if d.tzinfo else d.replace(tzinfo=timezone.utc))]
+# 统一输出 UTC：SQLite 不保存时区，读出的是 UTC 的 naive 时间，补上时区；PostgreSQL 读出的带时区时间换算为 UTC
+UtcDatetime = Annotated[datetime, AfterValidator(
+    lambda d: d.replace(tzinfo=timezone.utc) if d.tzinfo is None else d.astimezone(timezone.utc))]
 
 
 class Model(BaseModel):
