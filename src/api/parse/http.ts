@@ -4,13 +4,15 @@ import type {
   SimilarQuestion, SourceImage, UsageOverview,
 } from './types'
 import { BASE, request } from '../request'
+import { useAppStore } from '@/stores/app'
 
 /** 按 docs/ai-parse-api.md 对接后端 */
 
 function putWithProgress(url: string, file: File, onProgress?: (pct: number) => void) {
   return new Promise<void>((resolve, reject) => {
     const xhr = new XMLHttpRequest()
-    xhr.open('PUT', url)
+    xhr.open('PUT', url.startsWith('/') ? BASE + url : url)
+    xhr.withCredentials = true
     xhr.upload.onprogress = e => e.lengthComputable && onProgress?.(Math.round((e.loaded / e.total) * 100))
     xhr.onload = () => (xhr.status < 300 ? resolve() : reject(new Error(`上传失败（HTTP ${xhr.status}）`)))
     xhr.onerror = () => reject(new Error('上传失败，请检查网络'))
@@ -39,14 +41,14 @@ async function uploadAll(files: File[], onProgress?: (pct: number) => void): Pro
 export const httpParseApi: ParseApi = {
   async createJob(files, options, onUploadProgress) {
     const fileKeys = await uploadAll(files, onUploadProgress)
-    return request<ParseJob>('POST', '/api/parse-jobs', { fileKeys, fileNames: files.map(f => f.name), options })
+    return request<ParseJob>('POST', '/api/parse-jobs', { fileKeys, fileNames: files.map(f => f.name), options: { ...options, subject: useAppStore().subject } })
   },
 
   async createBatch(papers, options, onUploadProgress) {
     const keys = await uploadAll(papers.flat(), onUploadProgress)
     let i = 0
     const items = papers.map(files => ({ fileKeys: files.map(() => keys[i++]), fileNames: files.map(f => f.name) }))
-    return request<ParseBatch>('POST', '/api/parse-batches', { items, options })
+    return request<ParseBatch>('POST', '/api/parse-batches', { items, options: { ...options, subject: useAppStore().subject } })
   },
 
   getBatch: id => request<ParseBatch>('GET', `/api/parse-batches/${id}`),

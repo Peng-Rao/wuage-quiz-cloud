@@ -5,6 +5,9 @@ import type { KnowledgePointRef, PaperMeta, QuestionSource, QuestionType } from 
 
 /** 已入库的题目 */
 export interface BankQuestion {
+  ownerId?: string | null
+  reviewedBy?: string | null
+  reviewedAt?: string | null
   id: string
   type: QuestionType
   /** 原卷分值 */

@@ -144,6 +144,11 @@ async def run_job(job_id: str) -> None:
     head = "\n".join(b.text for b in doc.blocks if b.page == 1 and b.type in ("text", "title"))[:3000]
     meta, w = await classify(head, settings)
     warnings += w
+    scope = options.get("subject")
+    if scope and meta.subject and meta.subject != scope:
+        raise UserFacingError(f"识别学科为{meta.subject}，与上传学科{scope}不一致，请切换学科后上传")
+    if scope and not meta.subject:
+        meta.subject = scope
     meta_dict = meta.model_dump()
     ctx.update(meta=meta_dict)
     ctx.stage("classify", "done", _meta_note(meta_dict))

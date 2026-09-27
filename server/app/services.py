@@ -7,7 +7,8 @@ from fastapi import HTTPException
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, object_session
 
-from .db import DraftQuestion, EvalSample, ParseJob
+from .db import DraftQuestion, EvalSample, ParseJob, UploadOwner
+from .auth import require_subject
 from .pipeline.files import validate_kinds
 from .schemas import (
     PARSE_STAGES, REVIEW_CONFIDENCE, DraftQuestionOut, JobListItem, ParseJobOut, ParseOptions, QuestionSource,
@@ -15,7 +16,7 @@ from .schemas import (
 )
 from .storage import get_store
 
-# P1 未接入账号体系，所有数据归属演示学校
+# 当前为单校部署；同校内按账号角色、学科和题目归属隔离。
 DEMO_SCHOOL = "demo"
 
 
@@ -87,9 +88,16 @@ def new_job(s: Session, file_keys: list[str], file_names: list[str], options: Pa
         file_type = validate_kinds(file_names)
     except ValueError as e:
         raise HTTPException(400, f"{file_names[0]}：{e}" if batch_id else str(e)) from e
+    actor = s.info.get("user")
+    if actor:
+        require_subject(actor, options.subject)
     store = get_store()
     sizes = []
     for key in file_keys:
+        if actor and actor.role != "admin":
+            owner = s.get(UploadOwner, key)
+            if not owner or owner.user_id != actor.id:
+                raise HTTPException(403, "无权使用该上传文件")
         if not key.startswith("uploads/") or not store.exists(key):
             raise HTTPException(400, "文件尚未上传完成")
         sizes.append(store.size(key))
@@ -98,6 +106,8 @@ def new_job(s: Session, file_keys: list[str], file_names: list[str], options: Pa
     job = ParseJob(
         id=uuid.uuid4().hex[:16],
         school_id=current_school(),
+        owner_id=actor.id if actor else None,
+        subject_scope=options.subject or None,
         batch_id=batch_id,
         file_name=f"{file_names[0]} 等 {len(file_names)} 个文件" if len(file_names) > 1 else file_names[0],
         file_count=len(file_names),
