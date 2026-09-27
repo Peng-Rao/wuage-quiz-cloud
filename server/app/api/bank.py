@@ -1,13 +1,16 @@
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import Field
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..bank import (
     SORTS, BankFilter, PaperFilter, bank_out, chapter_counts, knowledge_counts, list_papers, paper_detail,
     question_facets, remove_paper, search_questions,
 )
+from ..auth import require_subject, staff
 from ..chapters import versions
-from ..db import KnowledgeTree, get_session
-from ..schemas import BankQuestionPage, PaperDetail, PaperPage, QuestionFacets, TextbookVersion
+from ..db import BankQuestion, DraftQuestion, KnowledgeTree, get_session
+from ..schemas import Model, BankQuestionPage, PaperDetail, PaperPage, QuestionFacets, TextbookVersion
 from ..services import current_school, not_found
 
 router = APIRouter()
@@ -59,9 +62,23 @@ def bank_facets(stage: str | None = None, subject: str | None = None, s: Session
 
 
 @router.get("/api/chapters", response_model=list[TextbookVersion])
-def chapters(stage: str, subject: str) -> list[TextbookVersion]:
+def chapters(stage: str, subject: str, s: Session = Depends(get_session)) -> list[TextbookVersion]:
     """学段学科的教材版本、册与章节目录。"""
-    return [TextbookVersion.model_validate(v) for v in versions(stage, subject)]
+    require_subject(s.info["user"], subject)
+    result = [TextbookVersion.model_validate(v) for v in versions(stage, subject)]
+    if s.info["user"].role == "member":
+        for version in result:
+            for book in version.books:
+                counts = chapter_counts(s, current_school(), book.id) or {}
+                book.chapters = [chapter for chapter in book.chapters if counts.get(chapter.id)]
+                for chapter in book.chapters:
+                    chapter.sections = [section for section in chapter.sections if counts.get(section.id)]
+                    for section in chapter.sections:
+                        # The public catalog includes unrelated sibling knowledge labels.
+                        section.knowledge = []
+            version.books = [book for book in version.books if book.chapters]
+        result = [version for version in result if version.books]
+    return result
 
 
 @router.get("/api/bank/chapter-counts", response_model=dict[str, int])
@@ -88,7 +105,7 @@ def papers(
     return list_papers(s, current_school(), f, limit=limit, offset=offset)
 
 
-@router.delete("/api/papers/{paper_id}", status_code=204)
+@router.delete("/api/papers/{paper_id}", status_code=204, dependencies=[Depends(staff)])
 def delete_paper(paper_id: str, s: Session = Depends(get_session)) -> None:
     """移出试卷库：删除该卷已入库的题，草稿题恢复为未保存，可在核对页重新保存。"""
     if not remove_paper(s, current_school(), paper_id):
@@ -102,3 +119,18 @@ def paper(paper_id: str, s: Session = Depends(get_session)) -> PaperDetail:
     if got is None:
         raise not_found("试卷")
     return got
+
+
+class BasketCheck(Model):
+    ids: list[str] = Field(max_length=1000)
+
+
+@router.post("/api/basket/validate", status_code=204)
+def validate_basket(body: BasketCheck, s: Session = Depends(get_session)) -> None:
+    """Recheck current access before exporting a previously loaded question snapshot."""
+    wanted = set(body.ids)
+    allowed = set(s.scalars(select(BankQuestion.id).where(BankQuestion.id.in_(wanted))))
+    if s.info["user"].role != "member":
+        allowed.update(s.scalars(select(DraftQuestion.id).where(DraftQuestion.id.in_(wanted))))
+    if wanted - allowed:
+        raise HTTPException(403, "部分题目的授权已撤回或题目已更新，请清空试题篮后重新选题")

@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import { useAuthStore } from '@/stores/auth'
+import ReviewPanel from '@/components/bank/ReviewPanel.vue'
+const auth = useAuthStore()
 import { computed, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { TYPE_ORDER, coefToDiff } from '@/data/mock'
@@ -26,6 +29,10 @@ watch(() => props.id, async (id) => {
     if (props.id === id) error.value = (e as Error).message
   }
 }, { immediate: true })
+
+async function reloadPaper() {
+  try { paper.value = await bankApi.getPaper(props.id) } catch (e) { error.value = (e as Error).message }
+}
 
 const qs = computed(() => paper.value?.questions ?? [])
 const diffCount = (d: string) => qs.value.filter((q) => coefToDiff(q.coef) === d).length
@@ -115,7 +122,7 @@ function replaceAndGo() {
             {{ inBasket === qs.length ? '已全部加入试题篮' : '整卷加入试题篮' }}
           </button>
           <span class="basket-note">本卷 {{ inBasket }} / {{ qs.length }} 题在试题篮中</span>
-          <button class="btn-link remove" @click="removeOpen = true">移出试卷库</button>
+          <button v-if="auth.isStaff" class="btn-link remove" @click="removeOpen = true">移出试卷库</button>
         </div>
       </section>
 
@@ -132,6 +139,8 @@ function replaceAndGo() {
         />
       </div>
     </template>
+
+    <ReviewPanel v-if="auth.isStaff && paper" :questions="qs" @updated="reloadPaper" />
 
     <ModalDialog v-model="removeOpen" title="移出试卷库" :width="420">
       <p class="confirm">

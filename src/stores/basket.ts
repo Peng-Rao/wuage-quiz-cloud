@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { computed, ref, watch } from 'vue'
+import { computed, ref } from 'vue'
 import { SCORE, TYPE_ORDER } from '@/data/mock'
 import type { BankQuestion } from '@/api/bank'
 import type { DraftQuestion, QuestionType } from '@/api/parse'
@@ -56,37 +56,10 @@ export function fromDraft(q: DraftQuestion): BasketQuestion {
 
 const defaultScore = (q: BasketQuestion) => (q.score > 0 ? q.score : SCORE[q.type] ?? 5)
 
-const STORAGE_KEY = 'fg-basket-v2'
-
-interface Saved { items: BasketItem[]; typeOrder: QuestionType[] }
-
-function load(): Saved {
-  const empty = { items: [], typeOrder: [...TYPE_ORDER] }
-  try {
-    const v = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? 'null')
-    if (!v || !Array.isArray(v.items) || !Array.isArray(v.typeOrder)) return empty
-    const items = (v.items as BasketItem[]).filter((x) => x?.q?.id && x.q.type && typeof x.score === 'number')
-    // 补上缺失的题型，保证每种题型都在排序中
-    const order = [...new Set([...(v.typeOrder as QuestionType[]).filter((t) => TYPE_ORDER.includes(t)), ...TYPE_ORDER])]
-    return { items, typeOrder: order }
-  } catch {
-    return empty
-  }
-}
-
 export const useBasketStore = defineStore('basket', () => {
-  const saved = load()
-  const items = ref<BasketItem[]>(saved.items)
-  /** 大题（题型）顺序 */
-  const typeOrder = ref<QuestionType[]>(saved.typeOrder)
-
-  watch([items, typeOrder], () => {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify({ items: items.value, typeOrder: typeOrder.value }))
-    } catch {
-      // 隐私模式等场景下无法写入，忽略
-    }
-  }, { deep: true })
+  try { localStorage.removeItem('fg-basket-v2') } catch { /* Storage may be disabled. */ }
+  const items = ref<BasketItem[]>([])
+  const typeOrder = ref<QuestionType[]>([...TYPE_ORDER])
 
   const count = computed(() => items.value.length)
   const totalScore = computed(() => items.value.reduce((a, x) => a + x.score, 0))

@@ -7,6 +7,7 @@ import MathText from '@/components/MathText.vue'
 
 /** 选题结果中的一道题：来源简写、题型 | 难度 | 知识点、题干，底部为来源与操作 */
 const props = defineProps<{
+  canSimilar?: boolean
   q: BankQuestion
   /** 列表中的序号 */
   no: number
@@ -57,7 +58,7 @@ const paperTitle = computed(() => props.q.source?.title || props.q.source?.fileN
         </RouterLink>
       </template>
       <div class="acts">
-        <button class="act" @click="$emit('similar')">相似题</button>
+        <button v-if="canSimilar" class="act" @click="$emit('similar')">相似题</button>
         <button class="act">纠错</button>
         <button class="act" :class="{ on: showAnswer }" @click="$emit('toggle-answer')">{{ showAnswer ? '收起' : '详情' }}</button>
         <button class="act">收藏</button>

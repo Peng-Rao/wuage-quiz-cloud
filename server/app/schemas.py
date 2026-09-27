@@ -26,6 +26,7 @@ class Model(BaseModel):
 
 
 class ParseOptions(Model):
+    subject: str = ""
     ocr: bool = True
     answer: bool = True
     dedupe: bool = True
@@ -400,6 +401,9 @@ class KnowledgeNodeHit(Model):
 # ---------------- 校本题库与试卷库 ----------------
 
 class BankQuestionOut(Model):
+    owner_id: str | None = None
+    reviewed_by: str | None = None
+    reviewed_at: UtcDatetime | None = None
     id: str
     type: QuestionType
     score: float

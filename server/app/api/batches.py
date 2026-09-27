@@ -15,7 +15,9 @@ router = APIRouter(prefix="/api/parse-batches")
 
 def _batch_out(s: Session, batch: ParseBatch) -> BatchOut:
     jobs = list(s.scalars(select(ParseJob).where(ParseJob.batch_id == batch.id).order_by(ParseJob.created_at)))
-    return BatchOut(id=batch.id, total=batch.total, counts=dict(Counter(j.status for j in jobs)),
+    if not jobs:
+        raise not_found("批量任务")
+    return BatchOut(id=batch.id, total=len(jobs), counts=dict(Counter(j.status for j in jobs)),
                     jobs=[list_item(s, j) for j in jobs], created_at=batch.created_at)
 
 

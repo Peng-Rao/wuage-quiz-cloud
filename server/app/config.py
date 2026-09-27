@@ -20,6 +20,9 @@ class Settings(BaseSettings):
     database_url: str = ""  # 留空时使用 data_dir/app.db（SQLite）
     cors_origins: list[str] = ["http://localhost:5173", "http://localhost:5174"]
     max_file_mb: int = 50
+    session_hours: int = 12
+    # HTTPS 部署时设为 true；本地 HTTP 开发为 false。
+    cookie_secure: bool = False
 
     # 解析引擎：按顺序尝试，前一个不可用或失败时降级到下一个
     parser_chain: list[ParserName] = ["mineru_cloud", "lite"]

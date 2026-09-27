@@ -4,6 +4,8 @@ from collections.abc import Iterator
 from datetime import datetime, timezone
 from typing import Any
 
+from fastapi import Request
+
 from sqlalchemy import JSON, DateTime, Float, ForeignKey, Integer, String, Text, create_engine, event, inspect, text
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
 
@@ -16,6 +18,37 @@ def utcnow() -> datetime:
 
 class Base(DeclarativeBase):
     type_annotation_map = {dict[str, Any]: JSON, list[Any]: JSON}
+
+
+class User(Base):
+    __tablename__ = "app_user"
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    username: Mapped[str] = mapped_column(String(64), unique=True)
+    display_name: Mapped[str] = mapped_column(String(64))
+    password_hash: Mapped[str] = mapped_column(String(256))
+    role: Mapped[str] = mapped_column(String(16))
+    subjects: Mapped[list[Any]] = mapped_column(JSON, default=list)
+    active: Mapped[bool] = mapped_column(default=True)
+
+
+class LoginSession(Base):
+    __tablename__ = "login_session"
+    token_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    user_id: Mapped[str] = mapped_column(ForeignKey("app_user.id"), index=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class LoginThrottle(Base):
+    __tablename__ = "login_throttle"
+    key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    attempts: Mapped[int] = mapped_column(default=0)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class UploadOwner(Base):
+    __tablename__ = "upload_owner"
+    key: Mapped[str] = mapped_column(String(256), primary_key=True)
+    user_id: Mapped[str] = mapped_column(ForeignKey("app_user.id"))
 
 
 class ParseBatch(Base):
@@ -34,6 +67,8 @@ class ParseJob(Base):
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True)
     school_id: Mapped[str] = mapped_column(String(64), index=True)
+    owner_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    subject_scope: Mapped[str | None] = mapped_column(String(16), nullable=True)
     batch_id: Mapped[str | None] = mapped_column(String(32), index=True, nullable=True)
     # eval：评测时重新解析产生的任务，不出现在任务列表、不参与查重
     kind: Mapped[str | None] = mapped_column(String(8), nullable=True)
@@ -132,12 +167,15 @@ class AiUsage(Base):
 
 
 class BankQuestion(Base):
-    """校本题库。P1 仅保存入库快照，检索、审核在后续阶段实现。"""
+    """校本题库：入库快照、个人归属与审核记录。"""
 
     __tablename__ = "bank_question"
 
     id: Mapped[str] = mapped_column(String(48), primary_key=True)
     school_id: Mapped[str] = mapped_column(String(64), index=True)
+    owner_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    reviewed_by: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     source_job_id: Mapped[str] = mapped_column(String(32), index=True)
     source_draft_id: Mapped[str] = mapped_column(String(48), unique=True)
     type: Mapped[str] = mapped_column(String(8))
@@ -292,6 +330,8 @@ def init_db() -> None:
     migrate_coef_semantics()
 
 
-def get_session() -> Iterator[Session]:
+def get_session(request: Request) -> Iterator[Session]:
     with SessionLocal() as s:
+        from .auth import scope_session
+        scope_session(s, request.state.user)
         yield s

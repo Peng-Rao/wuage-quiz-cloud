@@ -11,7 +11,10 @@ export async function request<T>(method: string, path: string, body?: unknown): 
   })
   if (!res.ok) {
     const err = await res.json().catch(() => null)
-    throw new Error(err?.message ?? `请求失败（HTTP ${res.status}）`)
+    if (res.status === 401 && !path.startsWith("/api/auth/") && window.location.pathname !== "/login") {
+      window.location.replace("/login")
+    }
+    throw Object.assign(new Error(err?.message ?? `请求失败（HTTP ${res.status}）`), { status: res.status })
   }
   if (res.status === 204) return undefined as T
   return res.json() as Promise<T>

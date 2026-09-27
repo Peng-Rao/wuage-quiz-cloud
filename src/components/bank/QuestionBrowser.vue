@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useAuthStore } from '@/stores/auth'
+const auth = useAuthStore()
 import { computed, reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { TYPE_ORDER } from '@/data/mock'
@@ -223,7 +225,7 @@ function resetFilters() {
         v-for="(q, i) in result.items" :key="q.id" :q="q" :no="(page - 1) * PAGE_SIZE + i + 1"
         :show-answer="showAns(q.id)" :in-basket="basket.has(q.id)"
         @toggle-answer="ansOpen[q.id] = !showAns(q.id)" @toggle-basket="basket.toggle(fromBank(q))"
-        @similar="openSimilar(q, (page - 1) * PAGE_SIZE + i + 1)"
+        :can-similar="auth.isStaff" @similar="openSimilar(q, (page - 1) * PAGE_SIZE + i + 1)"
       />
     </div>
 
@@ -231,7 +233,7 @@ function resetFilters() {
     <div v-else-if="loading && !result.items.length" class="card empty">加载中…</div>
     <div v-else-if="!result.items.length" class="card empty">
       没有符合条件的题目，试试调整目录或筛选条件。<br>
-      <span class="small">题库中的题来自「试卷解析」核对后保存的校本题目，<RouterLink to="/upload">去上传试卷</RouterLink>。</span>
+      <span v-if="auth.isStaff" class="small">题库中的题来自「试卷解析」核对后保存的校本题目，<RouterLink to="/upload">去上传试卷</RouterLink>。</span>
     </div>
 
     <nav v-if="pageCount > 1" class="pager" aria-label="分页">

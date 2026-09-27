@@ -14,6 +14,7 @@ from .fixtures import EXPECTED, make_exam_pdf
 @pytest.fixture(scope="module")
 def client():
     with TestClient(app) as c:
+        assert c.post("/api/auth/login", json={"username": "test-admin", "password": "test-password-123"}).status_code == 200
         yield c
 
 

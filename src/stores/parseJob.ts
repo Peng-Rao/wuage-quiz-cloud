@@ -1,3 +1,4 @@
+import { useAuthStore } from './auth'
 import { defineStore } from 'pinia'
 import { computed, reactive, ref } from 'vue'
 import {
@@ -74,7 +75,7 @@ export const useParseJobStore = defineStore('parseJob', () => {
   async function loadRecent() {
     const [r, o] = await Promise.all([
       parseApi.listRecent().catch(() => []),
-      parseApi.getUsageOverview(OVERVIEW_DAYS).catch(() => null),
+      useAuthStore().isAdmin ? parseApi.getUsageOverview(OVERVIEW_DAYS).catch(() => null) : Promise.resolve(null),
     ])
     recent.value = r
     usageOverview.value = o

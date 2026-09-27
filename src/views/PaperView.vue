@@ -1,6 +1,10 @@
 <script setup lang="ts">
 import { computed, reactive, ref } from 'vue'
+import { request } from '@/api/request'
 import { storeToRefs } from 'pinia'
+import AiCompose from '@/components/bank/AiCompose.vue'
+import { useAuthStore } from '@/stores/auth'
+const auth = useAuthStore()
 import { CN_NUM } from '@/data/mock'
 import type { QuestionType } from '@/api/parse'
 import { useAppStore } from '@/stores/app'
@@ -36,8 +40,13 @@ const sections = computed(() => {
   })
 })
 
-function exportPdf() {
-  window.print()
+async function validateBasket() {
+  await request('POST', '/api/basket/validate', { ids: basket.items.map(item => item.q.id) })
+}
+async function exportPdf() {
+  exportError.value = ''
+  try { await validateBasket(); window.print() }
+  catch (e) { exportError.value = (e as Error).message }
 }
 
 /** 导出 .docx：公式为 Word 原生公式，题目配图嵌入文档（生成器按需加载） */
@@ -48,6 +57,7 @@ async function downloadWord() {
   exporting.value = true
   exportError.value = ''
   try {
+    await validateBasket()
     const { buildDocx } = await import('@/utils/docx')
     const blob = await buildDocx({
       secret: '绝密★启用前', title: TITLE, subtitle: subjectTitle.value,
@@ -109,6 +119,7 @@ function focusRow(id: string) {
 
 <template>
   <main class="paper container">
+    <AiCompose v-if="auth.isStaff" class="no-print" />
     <aside class="card structure sticky-side no-print">
       <div class="struct-head">
         <span class="card-title">试卷结构</span>
