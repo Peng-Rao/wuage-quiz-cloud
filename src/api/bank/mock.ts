@@ -250,4 +250,8 @@ export const mockBankApi: BankApi = {
     SEEDS.splice(i, 1)
     for (let j = QS.length - 1; j >= 0; j--) if (QS[j].paperId === id) QS.splice(j, 1)
   },
+  async compose() {
+    await sleep(300)
+    throw new Error('AI 组卷需要连接后端：请用 npm run dev:api 启动（演示数据题量太少，无法组卷）')
+  },
 }

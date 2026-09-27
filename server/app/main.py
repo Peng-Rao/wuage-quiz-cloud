@@ -6,7 +6,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 
-from .api import auth, review, bank, batches, eval, files, jobs, knowledge, questions, similar, usage
+from .api import auth, bank, batches, compose, review, eval, files, jobs, knowledge, questions, similar, usage
 from .auth import admin, current_user, staff
 from .config import get_settings
 from .db import SessionLocal, init_db
@@ -78,6 +78,7 @@ app.include_router(similar.router, dependencies=[Depends(staff)])
 app.include_router(knowledge.router, dependencies=[Depends(current_user)])
 app.include_router(eval.router, dependencies=[Depends(admin)])
 app.include_router(bank.router, dependencies=[Depends(current_user)])
+app.include_router(compose.router, dependencies=[Depends(staff)])
 
 
 # ---------------- 前端页面（生产部署） ----------------

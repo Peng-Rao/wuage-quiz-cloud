@@ -26,6 +26,7 @@ const NAV = computed(() => [
   { to: '/chapter', label: '章节选题' },
   { to: '/knowledge', label: '知识点选题' },
   { to: '/papers', label: '试卷选题' },
+  ...(auth.isStaff ? [{ to: '/compose', label: 'AI 组卷' }] : []),
   { to: '/paper', label: '试卷编辑' },
   ...(auth.isStaff ? [{ to: '/upload', label: '试卷解析' }] : []),
   ...(auth.isAdmin ? [{ to: '/users', label: '账号管理' }] : []),

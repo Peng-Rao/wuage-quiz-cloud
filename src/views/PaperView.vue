@@ -2,9 +2,6 @@
 import { computed, reactive, ref } from 'vue'
 import { request } from '@/api/request'
 import { storeToRefs } from 'pinia'
-import AiCompose from '@/components/bank/AiCompose.vue'
-import { useAuthStore } from '@/stores/auth'
-const auth = useAuthStore()
 import { CN_NUM } from '@/data/mock'
 import type { QuestionType } from '@/api/parse'
 import { useAppStore } from '@/stores/app'
@@ -119,7 +116,6 @@ function focusRow(id: string) {
 
 <template>
   <main class="paper container">
-    <AiCompose v-if="auth.isStaff" class="no-print" />
     <aside class="card structure sticky-side no-print">
       <div class="struct-head">
         <span class="card-title">试卷结构</span>

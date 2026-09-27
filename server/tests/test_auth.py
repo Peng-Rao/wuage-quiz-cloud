@@ -111,7 +111,7 @@ def test_member_scope_every_surface(accounts, data):
     assert c.get(f"/api/files/jobs/{data['math']}/pages/1.png").status_code == 403
     assert c.get(f"/api/files/jobs/{data['chem']}/pages/1.png").status_code == 404
     for path, body in [('/api/uploads', {}), ('/api/parse-jobs', {}), ('/api/similar/search', {}),
-                       ('/api/papers/compose', {}), ('/api/bank/review', {}), ('/api/users', {})]:
+                       ('/api/compose', {}), ('/api/bank/review', {}), ('/api/users', {})]:
         assert c.post(path, json=body).status_code == 403
     assert c.delete(f"/api/papers/{data['math']}").status_code == 403
     assert c.get(f"/api/parse-jobs/{data['math']}").status_code == 403
@@ -135,7 +135,7 @@ def test_leader_scope_and_review(accounts, data):
     assert c.post('/api/bank/review', json=payload).status_code == 200
     assert member.get('/api/bank/questions').json()['total'] == 1
     assert c.post('/api/bank/review', json={**payload, 'ownerId': accounts['admin'].id}).status_code == 403
-    assert c.post('/api/papers/compose', json={'subject': '化学', 'stage': '高中'}).status_code == 403
+    assert c.post('/api/compose', json={'subject': '化学', 'stage': '高中', 'messages': [{'role': 'user', 'content': '出卷'}]}).status_code == 403
 
 
 def test_admin_account_changes_revoke_sessions(accounts):
@@ -184,30 +184,18 @@ def test_export_rechecks_revoked_review(accounts, data):
     assert member.post('/api/basket/validate', json=body).status_code == 403
 
 
-def test_ai_compose_validates_output_and_scope(accounts, data, monkeypatch):
-    from app.api import review
-    from app.config import Settings
-    settings = Settings(llm_base_url='https://test.invalid', llm_api_key='test', llm_model='test')
-    monkeypatch.setattr(review, 'get_settings', lambda: settings)
-    captured = []
-    async def choose(system, payload, settings, **kwargs):
-        import json
-        candidates = json.loads(payload)['questions']
-        assert all(q['stem'] != '化学机密' for q in candidates)
-        captured.extend(candidates)
-        return {'ids': [candidates[0]['id']]}
-    monkeypatch.setattr(review, 'chat_json', choose)
+def test_ai_compose_is_staff_only_and_scoped(accounts, data):
+    body = {'stage': '高中', 'subject': '数学', 'total': 20, 'messages': [{'role': 'user', 'content': '公开给本人'}]}
+    assert sign_in(accounts['member']).post('/api/compose', json=body).status_code == 403
     leader = sign_in(accounts['leader'])
-    body = {'subject': '数学', 'stage': '高中', 'count': 1, 'difficulty': '适中'}
-    result = leader.post('/api/papers/compose', json=body)
-    assert result.status_code == 200 and result.json()['total'] == 1
-    assert captured
-    async def invalid(*args, **kwargs):
-        return {'ids': ['unauthorized-id']}
-    monkeypatch.setattr(review, 'chat_json', invalid)
-    assert leader.post('/api/papers/compose', json=body).status_code == 502
-    assert sign_in(accounts['member']).post('/api/papers/compose', json=body).status_code == 403
-
+    result = leader.post('/api/compose', json=body)
+    assert result.status_code == 200, result.text
+    # 共用的测试库中其他用例也造过同名知识点的题，这里只检查重点知识点确实选到了题
+    assert [(f['name'], f['count'] > 0) for f in result.json()['focus']] == [('公开给本人', True)]
+    # 组长不能为其他学科组卷；管理员不受学科限制
+    chem = {**body, 'subject': '化学'}
+    assert leader.post('/api/compose', json=chem).status_code == 403
+    assert sign_in(accounts['admin']).post('/api/compose', json=chem).status_code == 200
 
 def test_leader_upload_parse_commit_and_filtered_job_counts(accounts, data):
     from app.db import ParseBatch, ParseJob

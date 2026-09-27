@@ -156,6 +156,46 @@ export interface PaperQuery {
   offset?: number
 }
 
+/** AI 组卷（Demo） */
+export interface ComposeMessage {
+  role: 'user' | 'assistant'
+  content: string
+}
+
+export interface ComposeRequest {
+  stage: string
+  subject: string
+  /** 老师当前的设置；对话中要求改变时以返回结果为准 */
+  total: number
+  difficulty: number
+  /** 完整对话，最后一条为本次的要求 */
+  messages: ComposeMessage[]
+}
+
+export interface ComposeSection {
+  type: QuestionType
+  score: number
+  items: { question: BankQuestion; score: number }[]
+}
+
+export interface ComposeResult {
+  /** 给老师的组卷说明 */
+  reply: string
+  title: string
+  total: number
+  /** 目标平均难度 */
+  difficulty: number
+  /** 实际平均难度（按分值加权） */
+  actualDifficulty: number
+  sections: ComposeSection[]
+  /** 重点知识点及选入的题数 */
+  focus: { name: string; path: string | null; weight: number; count: number }[]
+  /** 题库不足等提示 */
+  gaps: string[]
+  /** 需求是否由大模型理解；否则为按关键词匹配 */
+  ai: boolean
+}
+
 export interface BankApi {
   listQuestions(query: BankQuery): Promise<Page<BankQuestion>>
   /** 选题「更多」筛选的可选值 */
@@ -170,4 +210,6 @@ export interface BankApi {
   getPaper(paperId: string): Promise<PaperDetail>
   /** 移出试卷库：删除该卷已入库的题，原卷草稿题恢复为未保存，可在试卷解析中重新保存 */
   removePaper(paperId: string): Promise<void>
+  /** AI 组卷：按学生情况与要求从题库选题并赋分；多轮修改时传入完整对话，整份试卷重新生成 */
+  compose(req: ComposeRequest): Promise<ComposeResult>
 }
