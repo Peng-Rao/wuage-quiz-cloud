@@ -1,7 +1,10 @@
 <script setup lang="ts">
-import { reactive, ref, watch } from 'vue'
+import { nextTick, reactive, ref, watch } from 'vue'
 import { QUESTION_TYPES, parseApi, type DraftQuestion, type DraftQuestionPatch, type KnowledgeNodeHit, type QuestionType } from '@/api/parse'
 import ModalDialog from '@/components/ModalDialog.vue'
+import MathText from '@/components/MathText.vue'
+import FormulaEditor from '@/components/FormulaEditor.vue'
+import { MATH_RE, mathAt } from '@/utils/math'
 
 const props = defineProps<{ q: DraftQuestion | null; saving: boolean; jobId: string }>()
 const open = defineModel<boolean>({ required: true })
@@ -41,6 +44,40 @@ function pickHit(h: KnowledgeNodeHit) {
   hits.value = []
 }
 
+// ---------- 公式 ----------
+
+type MathField = 'stem' | 'options' | 'answer' | 'analysis'
+const inputs: Partial<Record<MathField, HTMLTextAreaElement | HTMLInputElement>> = {}
+const setInput = (f: MathField) => (el: unknown) => { if (el) inputs[f] = el as HTMLTextAreaElement }
+const hasMath = (t: string) => new RegExp(MATH_RE.source).test(t)
+
+const formulaOpen = ref(false)
+const formulaTex = ref('')
+/** 本次插入（或替换）的位置 */
+let target: { field: MathField; start: number; end: number } | null = null
+
+/** 光标在已有公式内时修改该公式，否则在光标处（替换选中文字）插入新公式 */
+function openFormula(field: MathField) {
+  const el = inputs[field]
+  const text = form[field]
+  const start = el?.selectionStart ?? text.length, end = el?.selectionEnd ?? text.length
+  const hit = mathAt(text, start)
+  target = hit ? { field, start: hit.start, end: hit.end } : { field, start, end }
+  formulaTex.value = hit?.tex ?? ''
+  formulaOpen.value = true
+}
+
+async function insertFormula(tex: string) {
+  if (!target) return
+  const { field, start, end } = target
+  const piece = `$${tex}$`
+  form[field] = form[field].slice(0, start) + piece + form[field].slice(end)
+  await nextTick()
+  const el = inputs[field]
+  el?.focus()
+  el?.setSelectionRange(start + piece.length, start + piece.length)
+}
+
 /** 按「、」等分隔解析知识点，去重 */
 function parseKps() {
   const names = [...new Set(form.kps.split(SPLIT).map(s => s.trim()).filter(Boolean))]
@@ -76,22 +113,31 @@ function save() {
           <input v-model.number="form.score" type="number" min="0" step="1">
         </label>
       </div>
-      <label class="field">
-        <span>题干</span>
-        <textarea v-model="form.stem" rows="5" class="serif" required />
-      </label>
-      <label v-if="CHOICE.includes(form.type)" class="field">
-        <span>选项 <em>每行一个，不含「A．」前缀</em></span>
-        <textarea v-model="form.options" rows="4" class="serif" />
-      </label>
-      <label class="field">
-        <span>答案</span>
-        <input v-model="form.answer" class="serif">
-      </label>
-      <label class="field">
-        <span>解析</span>
-        <textarea v-model="form.analysis" rows="3" class="serif" />
-      </label>
+      <div class="field">
+        <span class="label-row"><label for="eq-stem">题干</label><button type="button" class="fx" title="插入或修改公式" @click="openFormula('stem')">∑ 公式</button></span>
+        <textarea id="eq-stem" :ref="setInput('stem')" v-model="form.stem" rows="5" class="serif" required />
+        <div v-if="hasMath(form.stem)" class="pv serif"><MathText :text="form.stem" /></div>
+      </div>
+      <div v-if="CHOICE.includes(form.type)" class="field">
+        <span class="label-row">
+          <label for="eq-options">选项 <em>每行一个，不含「A．」前缀</em></label>
+          <button type="button" class="fx" title="插入或修改公式" @click="openFormula('options')">∑ 公式</button>
+        </span>
+        <textarea id="eq-options" :ref="setInput('options')" v-model="form.options" rows="4" class="serif" />
+        <div v-if="hasMath(form.options)" class="pv serif options">
+          <span v-for="(o, i) in form.options.split('\n').filter((x) => x.trim())" :key="i">{{ 'ABCDEFGH'[i] }}．<MathText :text="o" /></span>
+        </div>
+      </div>
+      <div class="field">
+        <span class="label-row"><label for="eq-answer">答案</label><button type="button" class="fx" title="插入或修改公式" @click="openFormula('answer')">∑ 公式</button></span>
+        <input id="eq-answer" :ref="setInput('answer')" v-model="form.answer" class="serif">
+        <div v-if="hasMath(form.answer)" class="pv serif"><MathText :text="form.answer" /></div>
+      </div>
+      <div class="field">
+        <span class="label-row"><label for="eq-analysis">解析</label><button type="button" class="fx" title="插入或修改公式" @click="openFormula('analysis')">∑ 公式</button></span>
+        <textarea id="eq-analysis" :ref="setInput('analysis')" v-model="form.analysis" rows="3" class="serif" />
+        <div v-if="hasMath(form.analysis)" class="pv serif"><MathText :text="form.analysis" /></div>
+      </div>
       <label class="field">
         <span>知识点 <em>多个用「、」分隔</em></span>
         <input v-model="form.kps" placeholder="如：集合的基本运算、一元二次不等式" @input="onKpInput">
@@ -99,7 +145,7 @@ function save() {
           <li v-for="h in hits" :key="h.id"><button type="button" @click="pickHit(h)"><b>{{ h.name }}</b><span>{{ h.path }}</span></button></li>
         </ul>
       </label>
-      <p class="tip">保存后该题视为已人工核对，置信度提示将消失。公式编辑器将在后续版本提供。</p>
+      <p class="tip">公式以 $…$ 包裹的 LaTeX 保存；把光标放在公式内再点「∑ 公式」可修改该公式。保存后该题视为已人工核对，置信度提示将消失。</p>
     </form>
     <template #footer>
       <button type="button" class="btn" @click="open = false">取消</button>
@@ -108,6 +154,7 @@ function save() {
       </button>
     </template>
   </ModalDialog>
+  <FormulaEditor v-model="formulaOpen" :latex="formulaTex" :editing="!!formulaTex" @insert="insertFormula" />
 </template>
 
 <style scoped>
@@ -127,7 +174,15 @@ function save() {
 .hits button:hover { background: var(--c-primary-soft); }
 .hits b { font-weight: 500; color: var(--c-ink); font-size: 13px; }
 .hits span { font-size: 11px; color: var(--c-text-4); }
-.tip { margin: 0; font-size: 12px; color: var(--c-text-4); }
+.label-row { display: flex; align-items: center; justify-content: space-between; }
+.fx {
+  border: 1px solid var(--c-border); background: #fff; border-radius: var(--r-sm); padding: 2px 8px;
+  font-size: 12px; color: var(--c-primary);
+}
+.fx:hover { border-color: var(--c-primary); background: var(--c-primary-soft); }
+.pv { padding: 8px 12px; background: var(--c-paper); border-radius: var(--r-sm); font-size: 14.5px; line-height: 1.9; color: var(--c-ink); }
+.pv.options { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 2px 16px; }
+.tip { margin: 0; font-size: 12px; color: var(--c-text-4); line-height: 1.6; }
 .save { height: 38px; font-size: 14px; padding: 0 20px; }
 .save:disabled { opacity: .6; cursor: not-allowed; }
 </style>

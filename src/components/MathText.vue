@@ -2,23 +2,18 @@
 import { computed } from 'vue'
 import katex from 'katex'
 import 'katex/dist/katex.min.css'
+import { splitMath } from '@/utils/math'
 
 /** 渲染夹带公式的文本：$...$ 为行内公式，$$...$$ 为独立公式（MinerU 输出格式） */
 const props = defineProps<{ text: string }>()
-
-const MATH = /(\$\$[\s\S]+?\$\$|\$[^$\n]+?\$)/g
 
 const escapeHtml = (s: string) =>
   s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!)
 
 const html = computed(() =>
-  props.text.split(MATH).map((part, i) => {
-    // split 带捕获组时，奇数位是公式
-    if (i % 2 === 0) return escapeHtml(part)
-    const display = part.startsWith('$$')
-    const tex = part.slice(display ? 2 : 1, display ? -2 : -1)
-    return katex.renderToString(tex, { throwOnError: false, displayMode: display, output: 'html' })
-  }).join(''),
+  splitMath(props.text).map((s) => (s.math
+    ? katex.renderToString(s.text, { throwOnError: false, displayMode: s.display, output: 'html' })
+    : escapeHtml(s.text))).join(''),
 )
 </script>
 
