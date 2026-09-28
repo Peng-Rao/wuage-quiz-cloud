@@ -82,7 +82,8 @@ docker compose up -d --build        # 访问 http://localhost:8000
 docker compose exec app python -m app.create_admin admin   # 首次部署：创建管理员
 ```
 
-compose 包含两个服务：`app`（页面与接口）和 `db`（PostgreSQL 17）。数据库端口不对外开放；正式部署前在仓库根目录新建 `.env`，
+compose 包含四个服务：`app`（页面与接口）、`worker`（执行解析、生成答案等后台任务）、`db`（PostgreSQL 17）、`redis`（任务队列）。
+数据库与 Redis 端口不对外开放；正式部署前在仓库根目录新建 `.env`，
 设置 `POSTGRES_PASSWORD=<只含字母、数字、-、_ 的强密码>`（首次启动时生效，之后修改需同时在数据库中改密码）。
 改用已有的外部 PostgreSQL 时，在根目录 `.env` 中设置 `DATABASE_URL=postgresql+psycopg://…`，`db` 服务可不用。
 
@@ -97,7 +98,12 @@ docker run -d -p 8000:8000 --env-file server/.env -v fg-quiz-data:/data fg-quiz-
 - 数据：数据库在卷 `fg-quiz-pg`，上传文件和页面图在卷 `fg-quiz-data`（`/data`），重建容器不会丢失；`docker compose down -v` 会删除数据卷。
 - 备份：`docker compose exec db pg_dump -U fg_quiz fg_quiz > backup.sql`，另备份 `fg-quiz-data` 卷中的文件。
 - 单独 `docker run` 镜像时没有 `db` 服务：设置 `DATABASE_URL` 连接已有的 PostgreSQL，不设置则使用 `/data/app.db`（SQLite，适合试用）。
-- 进程：任务队列在进程内，只能运行 1 个服务进程；并发解析份数用 `WORKER_CONCURRENCY` 调整。多实例部署需先把队列换成 Redis、存储换成对象存储。
+- 批量处理：任务放在 Redis 队列中，由 `worker` 执行。增加 Worker 即可同时解析更多试卷：
+  `docker compose up -d --scale worker=3`，总并发 = Worker 数 × `WORKER_CONCURRENCY`（默认 2）。
+  同一任务不会重复执行；Worker 崩溃或被强制停止时，其手上的任务约 2 分钟后由其他 Worker 接手重做，正常停止时立即交还。
+  `GET /api/health` 的 `worker` 字段显示在线 Worker 数、排队和执行中的任务数。
+- 上传文件与页面图保存在本机的 `fg-quiz-data` 卷中，`app` 与各 `worker` 共用，因此所有容器需在同一台机器上；
+  跨机器部署需先把存储换成对象存储。
 - 服务以非 root 用户（uid 10001）运行，自带健康检查（`GET /api/health`）。
 
 ### 从 SQLite 迁移到 PostgreSQL

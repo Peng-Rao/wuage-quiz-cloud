@@ -47,7 +47,7 @@ jobs:
       - run: uv run --frozen pytest -q
 
   backend-pg:
-    name: 后端（pytest · PostgreSQL）
+    name: 后端（pytest · PostgreSQL + Redis）
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -60,11 +60,18 @@ jobs:
         ports: ["5432:5432"]
         options: >-
           --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 3s --health-retries 20
+      redis:
+        image: redis:8-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 3s --health-retries 20
     defaults:
       run:
         working-directory: server
     env:
       TEST_DATABASE_URL: postgresql+psycopg://postgres:postgres@127.0.0.1:5432/fg_test
+      # 任务队列测试连接真实 Redis（默认用 fakeredis）
+      TEST_REDIS_URL: redis://127.0.0.1:6379/15
     steps:
       - uses: actions/checkout@v5
       - uses: astral-sh/setup-uv@v6

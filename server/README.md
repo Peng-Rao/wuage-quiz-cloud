@@ -12,6 +12,13 @@ uv run python -m app.create_admin admin  # 首次创建管理员，交互输入�
 uv run uvicorn app.main:app --port 8000 --reload
 ```
 
+默认任务在网页服务进程内执行。使用 Redis 任务队列时，在 `.env` 中设置 `REDIS_URL`（可用 `docker compose up -d redis`
+启动的 Redis：`redis://localhost:6380/0`），再另开终端启动 Worker，可启动多个：
+
+```bash
+uv run python -m app.worker
+```
+
 前端连接本服务（Vite 把 `/api` 代理到 8000 端口）：
 
 ```bash
@@ -43,7 +50,10 @@ npm run dev:api
 | `MINERU_MODEL_VERSION` | `vlm`（默认，公式更准）或 `pipeline` |
 | `LLM_BASE_URL` / `LLM_API_KEY` / `LLM_MODEL` | OpenAI 兼容接口，三项齐全才启用；未配置时只用规则拆题 |
 | `LLM_EXTRA_BODY` | 附加到请求体的厂商参数（JSON），如 `{"enable_thinking": false}` |
-| `WORKER_CONCURRENCY` | 同时解析的试卷数，批量上传时其余排队，默认 2 |
+| `WORKER_CONCURRENCY` | 每个进程同时执行的任务数（解析、生成答案等），其余排队，默认 2 |
+| `REDIS_URL` | 任务队列，如 `redis://localhost:6379/0`。配置后网页服务只负责入队，由 `python -m app.worker` 启动的独立进程执行（可运行多个）；未配置时在网页服务进程内执行 |
+| `REDIS_PREFIX` | Redis 键前缀，多套环境共用一个 Redis 时区分，默认 `fg-quiz` |
+| `RUN_WORKER` | 配置了 Redis 时网页服务进程也执行任务（单容器部署），默认 false |
 | `EMBEDDING_MODEL` | 相似题语义检索的向量模型（如 `text-embedding-v4`），留空则只用字面相似度 |
 | `EMBEDDING_BASE_URL` / `EMBEDDING_API_KEY` | 向量接口地址与 Key，留空沿用 `LLM_BASE_URL` / `LLM_API_KEY` |
 | `ANSWER_CONCURRENCY` | AI 生成答案时同时进行的请求数，默认 3 |
@@ -74,7 +84,7 @@ npm run dev:api
 | `app/pipeline/segment.py` | 大题标题 / 题号 / 选项 / 分值 / 卷末答案的规则切分；大模型分组校验与置信度 |
 | `app/pipeline/classify.py` | 试卷分类 |
 | `app/pipeline/llm.py` | OpenAI 兼容 `/chat/completions` 客户端（JSON 输出） |
-| `app/worker.py` | 进程内队列，重启后恢复未完成任务 |
+| `app/worker.py` | 任务队列：未配置 Redis 时为进程内队列；配置后为 Redis Streams 消费组（去重、续约、失联接手、启动时补排），`python -m app.worker` 启动独立 Worker |
 | `app/storage.py` | 对象存储抽象，当前为本地磁盘 |
 
 ### 知识树、难度模型与评测（P2）
@@ -112,7 +122,7 @@ npm run dev:api
 ### 相似题与批量解析
 
 - `app/similar.py`：字面 + 可选语义相似度；解析时查重，核对页与 `/api/similar/search` 查询相似题。
-- `app/api/batches.py`：批量上传，每份试卷一个任务，由 worker 按 `WORKER_CONCURRENCY` 并发处理；支持取消与重试。
+- `app/api/batches.py`：批量上传，每份试卷一个任务，由 worker 并发处理（Worker 数 × `WORKER_CONCURRENCY`）；支持取消与重试。
 
 ### AI 生成答案
 

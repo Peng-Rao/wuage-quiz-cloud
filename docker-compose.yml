@@ -1,5 +1,25 @@
 # docker compose up -d --build 后访问 http://localhost:8000
-# 数据库为 PostgreSQL（db 服务）；上传文件、页面图保存在应用的 /data 卷中
+# app 提供页面与接口；worker 从 Redis 任务队列中取出解析、生成答案等任务执行；db 为 PostgreSQL，redis 为任务队列。
+# 批量解析时增加 Worker：docker compose up -d --scale worker=3（每个 Worker 同时执行 WORKER_CONCURRENCY 个任务）
+# 上传文件、页面图保存在 /data 卷中，由 app 与各 worker 共用
+
+# app 与 worker 共用的配置
+x-backend: &backend
+  image: fg-quiz-cloud:latest
+  # MinerU、大模型等配置（见 server/.env.example）；文件不存在时只以规则 / 轻量解析运行
+  env_file:
+    - path: server/.env
+      required: false
+  environment:
+    # 默认连接 db 服务（覆盖 server/.env 中的 DATABASE_URL）；容器间通信不走 SSL，
+    # 地址中的 sslmode 优先于 server/.env 里可能存在的 PGSSLMODE 等 libpq 变量。
+    # 改用外部 PostgreSQL / Redis 时，在仓库根目录的 .env 中设置 DATABASE_URL / REDIS_URL
+    DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://fg_quiz:${POSTGRES_PASSWORD:-fg-quiz-local}@db:5432/fg_quiz?sslmode=disable}
+    REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+  volumes:
+    - fg-quiz-data:/data   # 上传文件、页面图；旧版本的 SQLite 数据库（app.db）也在这里，迁移见 README
+  restart: unless-stopped
+
 services:
   db:
     image: postgres:17-alpine
@@ -22,27 +42,51 @@ services:
       retries: 20
     restart: unless-stopped
 
+  redis:
+    image: redis:8-alpine
+    # AOF 持久化：Redis 重启后队列中的任务不丢
+    command: ["redis-server", "--appendonly", "yes"]
+    # 同样只绑定本机，供本地开发连接
+    ports:
+      - "127.0.0.1:6380:6379"
+    volumes:
+      - fg-quiz-redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
   app:
+    <<: *backend
     build: .
-    image: fg-quiz-cloud:latest
     ports:
       - "8000:8000"
-    # MinerU、大模型等配置（见 server/.env.example）；文件不存在时只以规则 / 轻量解析运行
-    env_file:
-      - path: server/.env
-        required: false
-    environment:
-      # 默认连接 db 服务（覆盖 server/.env 中的 DATABASE_URL）；容器间通信不走 SSL，
-      # 地址中的 sslmode 优先于 server/.env 里可能存在的 PGSSLMODE 等 libpq 变量。
-      # 改用外部 PostgreSQL 时，在仓库根目录的 .env 中设置 DATABASE_URL
-      DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://fg_quiz:${POSTGRES_PASSWORD:-fg-quiz-local}@db:5432/fg_quiz?sslmode=disable}
     depends_on:
       db:
         condition: service_healthy
-    volumes:
-      - fg-quiz-data:/data   # 上传文件、页面图；旧版本的 SQLite 数据库（app.db）也在这里，迁移见 README
-    restart: unless-stopped
+      redis:
+        condition: service_healthy
+
+  worker:
+    <<: *backend
+    command: ["python", "-m", "app.worker"]
+    # 等 app 完成数据库初始化后再启动
+    depends_on:
+      app:
+        condition: service_healthy
+    # 镜像自带的健康检查访问 8000 端口，Worker 不监听端口：改为检查本容器 Worker 的存活标记
+    healthcheck:
+      test: ["CMD", "python", "-m", "app.worker", "--check"]
+      interval: 30s
+      timeout: 10s
+      start_period: 30s
+      retries: 3
+    # 停止时先把手上的任务交还给其他 Worker
+    stop_grace_period: 30s
 
 volumes:
   fg-quiz-data:
   fg-quiz-pg:
+  fg-quiz-redis:

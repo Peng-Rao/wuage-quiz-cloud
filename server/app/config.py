@@ -48,8 +48,13 @@ class Settings(BaseSettings):
     embedding_api_key: str = ""
     embedding_batch: int = 10
 
-    # 同时解析的试卷数（批量上传时其余排队）
+    # 每个进程同时执行的任务数（解析、生成答案等；批量上传时其余排队）
     worker_concurrency: int = 2
+    # 任务队列：配置 REDIS_URL 后由独立 Worker 进程（python -m app.worker）执行任务，可运行多个；
+    # 未配置时在网页服务进程内执行。RUN_WORKER=true 时网页服务进程也执行任务（单容器部署）
+    redis_url: str = ""
+    redis_prefix: str = "fg-quiz"
+    run_worker: bool = False
 
     # AI 生成答案时同时进行的请求数
     answer_concurrency: int = 3

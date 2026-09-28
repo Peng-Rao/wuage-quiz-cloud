@@ -64,7 +64,8 @@ async def validation_error(_: Request, exc: RequestValidationError) -> JSONRespo
 @app.get("/api/health")
 def health() -> dict:
     s = get_settings()
-    return {"ok": True, "parsers": s.parser_chain, "mineru": bool(s.mineru_token), "llm": s.llm_enabled}
+    return {"ok": True, "parsers": s.parser_chain, "mineru": bool(s.mineru_token), "llm": s.llm_enabled,
+            "worker": worker.info()}
 
 
 app.include_router(auth.router)
