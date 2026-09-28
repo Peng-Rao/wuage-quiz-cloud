@@ -17,7 +17,7 @@ x-backend: &backend
     DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://fg_quiz:${POSTGRES_PASSWORD:-fg-quiz-local}@db:5432/fg_quiz?sslmode=disable}
     REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
   volumes:
-    - fg-quiz-data:/data   # 上传文件、页面图；旧版本的 SQLite 数据库（app.db）也在这里，迁移见 README
+    - fg-quiz-data:/data   # 上传文件、页面图
   restart: unless-stopped
 
 services:

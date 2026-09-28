@@ -4,7 +4,7 @@
 #   docker buildx build --platform linux/amd64 -t fg-quiz-cloud --load .   # 指定架构
 #   docker compose up -d --build                                      # 推荐：连同 PostgreSQL 一起启动（见 docker-compose.yml）
 #   docker run -p 8000:8000 --env-file server/.env -v fg-quiz-data:/data fg-quiz-cloud
-#     单独运行时连接 DATABASE_URL 指定的数据库；未设置则使用 /data/app.db（SQLite）
+#     单独运行时须用 DATABASE_URL 指定 PostgreSQL；未设置 REDIS_URL 时任务在本进程内执行
 
 # ---------- 前端构建 ----------
 # 产物是纯静态文件、与 CPU 架构无关：固定在构建机的原生架构上运行，交叉构建时不走模拟器

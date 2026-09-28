@@ -3,7 +3,7 @@ import time
 
 import httpx
 import pytest
-from sqlalchemy import create_engine, select, text
+from sqlalchemy import select, text
 
 from app.config import get_settings
 from app.db import AiUsage, DraftQuestion, SessionLocal, add_missing_columns
@@ -33,8 +33,8 @@ def test_normalize_notes():
     assert _normalize(q("填空题"), {"answer": "3；4", "analysis": "略"}) == ("3；4", "略", None)
 
 
-def test_migration_adds_new_nullable_columns(tmp_path):
-    eng = create_engine(f"sqlite:///{tmp_path / 'old.db'}")
+def test_migration_adds_new_nullable_columns(scratch_engine):
+    eng = scratch_engine
     with eng.begin() as c:  # 模拟升级前的旧表结构
         c.execute(text("CREATE TABLE draft_question (id VARCHAR(48) PRIMARY KEY, answer TEXT)"))
     added = add_missing_columns(eng)
@@ -123,12 +123,16 @@ def test_generate_answers_requires_llm(client, parsed):  # noqa: F811
     assert r.status_code == 400 and "未配置大模型" in r.json()["message"]
 
 
-def test_coef_semantics_migrated_once(tmp_path):
+def test_coef_semantics_migrated_once(scratch_engine):
     from app.db import Base, migrate_coef_semantics
-    eng = create_engine(f"sqlite:///{tmp_path / 'coef.db'}")
+    eng = scratch_engine
     Base.metadata.create_all(eng)
     from sqlalchemy.orm import Session
+    from app.db import ParseJob
     with Session(eng) as s:
+        s.add(ParseJob(id="j1", school_id="demo", file_name="t.pdf", file_count=1, file_size=1, file_type="pdf",
+                       file_keys=[], options={}, status="done", progress=100, stages=[], warnings=[]))
+        s.flush()
         s.add(DraftQuestion(id="q1", job_id="j1", no=1, type="单选题", score=5, page=1, stem="题干", options=[],
                             knowledge_points=[], coef=0.86, confidence=0.9, block_ids=[], regions=[], images=[]))
         s.commit()

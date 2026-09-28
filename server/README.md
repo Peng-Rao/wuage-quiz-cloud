@@ -5,6 +5,7 @@ FastAPI 实现的试卷解析后端，接口契约见 [docs/ai-parse-api.md](../
 ## 启动
 
 ```bash
+docker compose up -d db     # PostgreSQL（在仓库根目录执行；本机 5433 端口，DATABASE_URL 默认即连接它）
 cd server
 uv sync
 cp .env.example .env        # 填写 MINERU_TOKEN、LLM_*（可先不填）
@@ -60,7 +61,7 @@ npm run dev:api
 | `LLM_PRICES` | 成本估算单价，按模型名，元 / 百万 tokens：`{"qwen-plus": {"input": 0.8, "output": 2, "cached_input": 0.16}}` |
 | `MINERU_PRICE_PER_PAGE` | MinerU 单价，元 / 页 |
 | `CURRENCY` | 金额前缀，默认 `¥` |
-| `DATABASE_URL` | 默认 `data/app.db`（SQLite）；生产使用 PostgreSQL：`postgresql+psycopg://user:pass@host:5432/db`，从 SQLite 迁移见 `python -m app.migrate_to_pg` |
+| `DATABASE_URL` | PostgreSQL，如 `postgresql+psycopg://user:pass@host:5432/db`；默认连接 docker compose 中的数据库（本机 5433 端口） |
 | `SESSION_HOURS` | 会话有效期，默认 12 小时 |
 | `COOKIE_SECURE` | HTTPS 部署设为 true，本地 HTTP 开发为 false |
 
@@ -149,11 +150,9 @@ npm run dev:api
 uv run pytest
 ```
 
-默认在临时 SQLite 上运行；在 PostgreSQL 上运行时指定一个专用的空库（其中已有的表会被清空重建，CI 两种都会跑）：
-
-```bash
-TEST_DATABASE_URL=postgresql+psycopg://postgres@127.0.0.1:5432/fg_test uv run pytest
-```
+需要 PostgreSQL：默认使用 docker compose 中数据库服务器上的 `fg_quiz_test` 库（不存在时自动创建，先 `docker compose up -d db`），
+不影响开发用的 `fg_quiz` 库。也可用 `TEST_DATABASE_URL` 指定；测试会清空重建库中的表，库名须以 `_test` 结尾。
+任务队列测试默认用 fakeredis，设置 `TEST_REDIS_URL` 时连接真实 Redis（CI 两者都连真实服务）。
 
 测试不访问外部服务：MinerU 与大模型通过 respx / MockTransport 模拟，端到端测试使用生成的电子版试卷（`tests/fixtures.py`）。
 

@@ -97,7 +97,7 @@ docker run -d -p 8000:8000 --env-file server/.env -v fg-quiz-data:/data fg-quiz-
 - 配置：MinerU、大模型、单价等通过环境变量提供，见 `server/.env.example`；compose 默认读取 `server/.env`（不存在时只用规则拆题与轻量解析）。Key 不会打进镜像。
 - 数据：数据库在卷 `fg-quiz-pg`，上传文件和页面图在卷 `fg-quiz-data`（`/data`），重建容器不会丢失；`docker compose down -v` 会删除数据卷。
 - 备份：`docker compose exec db pg_dump -U fg_quiz fg_quiz > backup.sql`，另备份 `fg-quiz-data` 卷中的文件。
-- 单独 `docker run` 镜像时没有 `db` 服务：设置 `DATABASE_URL` 连接已有的 PostgreSQL，不设置则使用 `/data/app.db`（SQLite，适合试用）。
+- 单独 `docker run` 镜像时没有 `db`、`redis` 服务：须设置 `DATABASE_URL` 连接已有的 PostgreSQL；不设置 `REDIS_URL` 时任务在网页服务进程内执行。
 - 批量处理：任务放在 Redis 队列中，由 `worker` 执行。增加 Worker 即可同时解析更多试卷：
   `docker compose up -d --scale worker=3`，总并发 = Worker 数 × `WORKER_CONCURRENCY`（默认 2）。
   同一任务不会重复执行；Worker 崩溃或被强制停止时，其手上的任务约 2 分钟后由其他 Worker 接手重做，正常停止时立即交还。
@@ -105,21 +105,6 @@ docker run -d -p 8000:8000 --env-file server/.env -v fg-quiz-data:/data fg-quiz-
 - 上传文件与页面图保存在本机的 `fg-quiz-data` 卷中，`app` 与各 `worker` 共用，因此所有容器需在同一台机器上；
   跨机器部署需先把存储换成对象存储。
 - 服务以非 root 用户（uid 10001）运行，自带健康检查（`GET /api/health`）。
-
-### 从 SQLite 迁移到 PostgreSQL
-
-早期版本的数据库是 `/data/app.db`（SQLite）。升级后先只启动数据库、导入数据，再启动应用：
-
-```bash
-docker compose stop app                                    # 旧版本在运行时先停止
-docker compose up -d --build db
-docker compose run --rm --no-deps app python -m app.migrate_to_pg    # 读取数据卷中的 /data/app.db
-docker compose up -d
-```
-
-- 目标库已有数据时会拒绝执行（例如应用已在新库上启动过、自动写入了内置知识树），确认用 SQLite 的数据覆盖时加 `--replace`。
-- 在一个事务中复制全部表，失败时目标库不变；`app.db` 不会被修改或删除，确认无误后可自行删除。
-- 本地开发同理：`DATABASE_URL=postgresql+psycopg://… uv run python -m app.migrate_to_pg data/app.db`。
 
 ### 不同芯片架构
 

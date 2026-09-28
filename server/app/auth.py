@@ -40,7 +40,7 @@ def check_origin(request: Request) -> None:
 
 
 def as_utc(d: datetime) -> datetime:
-    """SQLite 读出的是不带时区的 UTC 时间；PostgreSQL 读出的是带时区（数据库会话时区）的时间。"""
+    """换算为 UTC；不带时区的时间按 UTC 处理。"""
     return d.replace(tzinfo=timezone.utc) if d.tzinfo is None else d.astimezone(timezone.utc)
 
 

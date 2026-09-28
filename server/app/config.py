@@ -17,7 +17,8 @@ class Settings(BaseSettings):
     data_dir: Path = SERVER_ROOT / "data"
     # 构建好的前端目录（npm run build:api 的 dist）；设置后由本服务直接托管页面，Docker 镜像中为 /app/web
     static_dir: Path | None = None
-    database_url: str = ""  # 留空时使用 data_dir/app.db（SQLite）
+    # PostgreSQL；默认连接 docker compose 中的数据库（本机 5433 端口）
+    database_url: str = "postgresql+psycopg://fg_quiz:fg-quiz-local@127.0.0.1:5433/fg_quiz?sslmode=disable"
     cors_origins: list[str] = ["http://localhost:5173", "http://localhost:5174"]
     max_file_mb: int = 50
     session_hours: int = 12
@@ -73,7 +74,7 @@ class Settings(BaseSettings):
 
     @property
     def db_url(self) -> str:
-        return self.database_url or f"sqlite:///{self.data_dir / 'app.db'}"
+        return self.database_url
 
     @property
     def llm_enabled(self) -> bool:

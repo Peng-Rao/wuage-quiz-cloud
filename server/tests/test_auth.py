@@ -225,3 +225,11 @@ def test_leader_upload_parse_commit_and_filtered_job_counts(accounts, data):
         result = running.post(f"/api/parse-jobs/{job['id']}/commit", json={'questionIds': [q['id'] for q in questions], 'force': True})
         assert result.status_code == 200 and result.json()['savedCount'] == len(questions)
         assert running.get(f"/api/papers/{job['id']}").status_code == 200
+
+
+def test_as_utc():
+    from datetime import datetime, timedelta, timezone
+    from app.auth import as_utc
+    t0 = datetime(2026, 9, 1, 8, 30, tzinfo=timezone.utc)
+    assert as_utc(datetime(2026, 9, 1, 8, 30)) == t0
+    assert as_utc(datetime(2026, 9, 1, 16, 30, tzinfo=timezone(timedelta(hours=8)))) == t0
