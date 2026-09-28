@@ -10,7 +10,7 @@ from app.config import Settings
 from app.pipeline.files import images_to_pdf, normalize, pdf_page_count, validate_kinds
 from app.pipeline.parsers.base import ParserFailed, ParserUnavailable, SourceFile
 from app.pipeline.parsers.lite import LiteParser
-from app.pipeline.parsers.mineru_cloud import MinerUCloudParser, unescape_markdown
+from app.pipeline.parsers.mineru_cloud import MinerUCloudParser, blocks_from_content_list, unescape_markdown
 from app.pipeline.parsers.router import AllParsersFailed, parse_with_fallback
 
 from .fixtures import make_exam_pdf, make_scanned_pdf
@@ -200,3 +200,15 @@ def test_lite_scripts_and_linear_math():
 def test_mineru_markdown_escapes_restored_outside_math():
     assert unescape_markdown(r"则底边长为 \_\_\_\_ cm") == "则底边长为 ____ cm"
     assert unescape_markdown(r"\* 号 $a\_b$ 与 $$x\_1$$") == r"* 号 $a\_b$ 与 $$x\_1$$"
+
+
+def test_mineru_content_list_blank_lines_unescaped():
+    items = [
+        {"type": "text", "text": r"12. 用一条长 $18\ \mathrm{cm}$ 的细绳，则底边长为 \_\_\_\_ cm", "page_idx": 7},
+        {"type": "list", "list_items": [r"(1) 甲 \_\_\_", r"(2) 乙 \_\_\_"], "page_idx": 7},
+        {"type": "equation", "text": r"$$a\_1$$", "page_idx": 7},
+    ]
+    text, lst, eq = (b.content for b in blocks_from_content_list(items, lambda _: None))
+    assert text == r"12. 用一条长 $18\ \mathrm{cm}$ 的细绳，则底边长为 ____ cm"
+    assert lst == "(1) 甲 ___\n(2) 乙 ___"
+    assert eq == r"$$a\_1$$"  # 独立公式块原样保留
