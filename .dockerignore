@@ -18,7 +18,6 @@ server/.env
 .DS_Store
 docs
 outputs
-福格云上题库前端设计方案
 server/tests
 server/scripts
 create_xm_doc.py
