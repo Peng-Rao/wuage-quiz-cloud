@@ -30,7 +30,7 @@ jobs:
       - run: npm run build:api
 
   backend:
-    name: 后端（pytest · PostgreSQL + Redis）
+    name: 后端（Ruff + pytest · PostgreSQL + Redis）
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -64,6 +64,8 @@ jobs:
           cache-dependency-glob: server/uv.lock
       # --frozen：uv.lock 与 pyproject.toml 不一致时直接失败
       - run: uv sync --frozen
+      # 规则见 pyproject.toml [tool.ruff]；github 格式在 PR 中逐行标注
+      - run: uv run --frozen ruff check --output-format=github .
       - run: uv run --frozen pytest -q
 
   docker:

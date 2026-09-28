@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
-from ..db import ParseJob, get_session
+from ..db import get_session
 from ..knowledge_tree import resolve_kps
 from ..schemas import DraftQuestionOut, DraftQuestionPatch, SourceImage
 from ..services import (

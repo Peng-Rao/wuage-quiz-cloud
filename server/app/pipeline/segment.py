@@ -96,7 +96,7 @@ def units_from_blocks(blocks: list[Block], ids: list[str]) -> list[Unit]:
 def join_lines(lines: list[str]) -> str:
     """拼接行文本：中文之间不加空格，小问标记前换行，其余补一个空格。"""
     out = ""
-    for line in (l.strip() for l in lines):
+    for line in (raw.strip() for raw in lines):
         if not line:
             continue
         if not out:
@@ -263,8 +263,8 @@ def parse_answer_section(units: list[Unit]) -> dict[int, tuple[str | None, str |
                 start, end = int(m.group(1)), int(m.group(2))
                 letters = re.findall(r"[A-H]", m.group(3))
                 if end - start + 1 == len(letters):
-                    for i, l in enumerate(letters):
-                        result[start + i] = (l, None, [u.id])
+                    for i, letter in enumerate(letters):
+                        result[start + i] = (letter, None, [u.id])
             continue
         m = Q_START_RE.match(u.text)
         if m:

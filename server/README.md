@@ -1,5 +1,10 @@
 # 福格云上题库 · 解析服务（P1）
 
+[![CI](https://github.com/Peng-Rao/wuage-quiz-cloud/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Peng-Rao/wuage-quiz-cloud/actions/workflows/ci.yml)
+![Python](https://img.shields.io/badge/python-%E2%89%A53.11-3776AB?logo=python&logoColor=white)
+[![uv](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/uv/main/assets/badge/v0.json)](https://github.com/astral-sh/uv)
+[![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
+
 FastAPI 实现的试卷解析后端，接口契约见 [docs/ai-parse-api.md](../docs/ai-parse-api.md)。
 
 ## 启动
@@ -147,6 +152,7 @@ npm run dev:api
 ## 测试
 
 ```bash
+uv run ruff check .   # 代码检查，规则见 pyproject.toml [tool.ruff]；--fix 自动修复
 uv run pytest
 ```
 

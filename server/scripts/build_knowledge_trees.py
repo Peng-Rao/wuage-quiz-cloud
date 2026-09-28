@@ -200,8 +200,8 @@ def count(nodes: list[dict]) -> tuple[int, int]:
         total += 1
         kids = n.get("children") or []
         if kids:
-            t, l = count(kids)
-            total, leaves = total + t, leaves + l
+            t, lf = count(kids)
+            total, leaves = total + t, leaves + lf
         else:
             leaves += 1
     return total, leaves

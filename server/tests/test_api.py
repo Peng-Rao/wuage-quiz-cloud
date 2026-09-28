@@ -75,7 +75,7 @@ def test_questions_and_source(client, parsed):
 def test_sse_stream_emits_final_snapshot(client, parsed):
     with client.stream("GET", f"/api/parse-jobs/{parsed['id']}/events") as r:
         assert r.headers["content-type"].startswith("text/event-stream")
-        lines = [l for l in r.iter_lines() if l.startswith("data: ")]
+        lines = [line for line in r.iter_lines() if line.startswith("data: ")]
     assert json.loads(lines[-1][6:])["status"] == "done"
 
 

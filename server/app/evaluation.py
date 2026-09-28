@@ -195,7 +195,6 @@ def _pred(s: Session, job_id: str) -> tuple[dict[str, Any], list[dict[str, Any]]
 
 
 async def run_eval(run_id: str) -> None:
-    settings = get_settings()
     with SessionLocal() as s:
         run = s.get(EvalRun, run_id)
         if run is None:
