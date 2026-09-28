@@ -7,6 +7,7 @@ import type { QuestionType } from '@/api/parse'
 import { useAppStore } from '@/stores/app'
 import { useBasketStore } from '@/stores/basket'
 import MathText from '@/components/MathText.vue'
+import { plainText } from '@/utils/math'
 import ToggleSwitch from '@/components/ToggleSwitch.vue'
 
 const basket = useBasketStore()
@@ -89,7 +90,8 @@ function genCard() {
 
 // ---------- 结构编辑：题序与分值 ----------
 
-const brief = (stem: string) => stem.replace(/\$+/g, '').replace(/\s+/g, ' ').trim()
+/** 结构行摘要：独立公式转行内、压成一行，交给 MathText 渲染（行高受限，放不下独立公式） */
+const brief = (stem: string) => stem.replace(/\$\$([\s\S]+?)\$\$/g, (_, tex: string) => `$${tex}$`).replace(/\s+/g, ' ').trim()
 const num = (e: Event) => (e.target as HTMLInputElement).valueAsNumber
 
 /** 同一大题内拖动排序 */
@@ -150,7 +152,7 @@ function focusRow(id: string) {
             >
               <span class="grip" aria-hidden="true">⋮⋮</span>
               <span class="row-no">{{ it.no }}</span>
-              <span class="row-stem" :title="brief(it.q.stem)">{{ brief(it.q.stem) }}</span>
+              <span class="row-stem" :title="plainText(it.q.stem)"><MathText :text="brief(it.q.stem)" /></span>
               <input
                 class="row-score" type="number" min="0" max="200" step="0.5" :value="it.score"
                 :aria-label="`第 ${it.no} 题分值`" @change="basket.setScore(it.q.id, num($event))"
