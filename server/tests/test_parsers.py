@@ -10,7 +10,7 @@ from app.config import Settings
 from app.pipeline.files import images_to_pdf, normalize, pdf_page_count, validate_kinds
 from app.pipeline.parsers.base import ParserFailed, ParserUnavailable, SourceFile
 from app.pipeline.parsers.lite import LiteParser
-from app.pipeline.parsers.mineru_cloud import MinerUCloudParser
+from app.pipeline.parsers.mineru_cloud import MinerUCloudParser, unescape_markdown
 from app.pipeline.parsers.router import AllParsersFailed, parse_with_fallback
 
 from .fixtures import make_exam_pdf, make_scanned_pdf
@@ -195,3 +195,8 @@ def test_lite_scripts_and_linear_math():
     # 填空横线、已含 LaTeX 的文字不处理
     assert linear_math("____ 与 A_B") == "____ 与 A_B"
     assert linear_math("已知 $x^2 = 4$") == "已知 $x^2 = 4$"
+
+
+def test_mineru_markdown_escapes_restored_outside_math():
+    assert unescape_markdown(r"则底边长为 \_\_\_\_ cm") == "则底边长为 ____ cm"
+    assert unescape_markdown(r"\* 号 $a\_b$ 与 $$x\_1$$") == r"* 号 $a\_b$ 与 $$x\_1$$"

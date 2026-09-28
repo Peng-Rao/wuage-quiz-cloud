@@ -8,6 +8,7 @@
 import asyncio
 import io
 import json
+import re
 import time
 import uuid
 import zipfile
@@ -24,6 +25,16 @@ from .base import ParserFailed, ParserUnavailable, ProgressFn, SourceFile
 
 # 页眉、页脚、页码、边注等不参与拆题
 _SKIP_TYPES = {"header", "footer", "page_number", "aside_text", "page_footnote", "discarded"}
+
+
+# MinerU 输出 Markdown，填空横线等会被转义成 \_；只还原公式外的部分，公式内的 \_ 是合法 LaTeX
+_MATH_RE = re.compile(r"(\$\$[\s\S]+?\$\$|\$[^$\n]+?\$)")
+_MD_ESCAPE_RE = re.compile(r"\\([_*#`~|<>\[\]])")
+
+
+def unescape_markdown(text: str) -> str:
+    parts = _MATH_RE.split(text)
+    return "".join(p if i % 2 else _MD_ESCAPE_RE.sub(r"\1", p) for i, p in enumerate(parts))
 
 
 def _norm_bbox(b: Any) -> tuple[float, float, float, float]:
@@ -52,7 +63,7 @@ def blocks_from_content_list(items: list[dict[str, Any]], read_image) -> list[Bl
         image: bytes | None = None
         ext = "png"
         if t == "text":
-            content = it.get("text", "")
+            content = unescape_markdown(it.get("text", ""))
             btype = "title" if it.get("text_level") else "text"
         elif t == "equation":
             btype, content = "equation", it.get("text", "")
@@ -63,7 +74,7 @@ def blocks_from_content_list(items: list[dict[str, Any]], read_image) -> list[Bl
             btype = "table"
             content = it.get("table_body", "") or _join(it.get("table_caption"))
         elif t == "list":
-            content = _join(it.get("list_items"))
+            content = unescape_markdown(_join(it.get("list_items")))
         elif t == "code":
             content = it.get("code_body", "")
         else:

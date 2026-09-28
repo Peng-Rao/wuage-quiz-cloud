@@ -9,10 +9,13 @@ export interface TextSegment {
   display: boolean
 }
 
+/** MinerU 输出 Markdown，填空横线等被转义成 \_；公式外的转义还原成原字符（公式内的 \_ 是合法 LaTeX） */
+const MD_ESCAPE_RE = /\\([_*#`~|<>[\]])/g
+
 export function splitMath(text: string): TextSegment[] {
   // split 带捕获组时，奇数位是公式
   return text.split(MATH_RE).map((part, i) => {
-    if (i % 2 === 0) return { text: part, math: false, display: false }
+    if (i % 2 === 0) return { text: part.replace(MD_ESCAPE_RE, '$1'), math: false, display: false }
     const display = part.startsWith('$$')
     return { text: part.slice(display ? 2 : 1, display ? -2 : -1), math: true, display }
   }).filter((s) => s.text !== '')
