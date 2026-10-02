@@ -140,6 +140,49 @@ def cos_store(monkeypatch):
     return store
 
 
+class Flaky:
+    """前 n 次调用抛出网络错误，之后交给真实替身。"""
+
+    def __init__(self, inner: FakeCos, failures: int, error: Exception):
+        self.inner, self.left, self.error, self.calls = inner, failures, error, 0
+
+    def __getattr__(self, name):  # noqa: ANN001, ANN204
+        target = getattr(self.inner, name)
+
+        def call(*a, **kw):  # noqa: ANN002, ANN003, ANN202
+            self.calls += 1
+            if self.left > 0 and name != "get_presigned_url":
+                self.left -= 1
+                raise self.error
+            return target(*a, **kw)
+
+        return call
+
+
+def test_cos_retries_network_errors(cos_store, monkeypatch):
+    from qcloud_cos.cos_exception import CosClientError, CosServiceError
+
+    monkeypatch.setattr(storage.time, "sleep", lambda _: None)
+    cos_store.put("jobs/j/a.png", b"png")
+    # 读取超时两次后成功（默认最多 3 次）
+    flaky = Flaky(cos_store.client, 2, CosClientError("Read timed out. (read timeout=30)"))
+    monkeypatch.setattr(cos_store, "client", flaky)
+    assert cos_store.get("jobs/j/a.png") == b"png" and flaky.calls == 3
+    flaky.left = 2
+    cos_store.put("jobs/j/b.png", b"b")
+    assert cos_store.size("jobs/j/b.png") == 1
+    # 一直失败：重试用尽后抛出
+    flaky.left = 99
+    with pytest.raises(CosClientError):
+        cos_store.get("jobs/j/a.png")
+    # COS 返回的业务错误（如 404）不重试
+    flaky.left, flaky.calls = 5, 0
+    flaky.error = CosServiceError("GET", "<Error><Code>NoSuchKey</Code></Error>", 404)
+    with pytest.raises(CosServiceError):
+        cos_store.get("jobs/j/missing.png")
+    assert flaky.calls == 1
+
+
 def test_cos_store_roundtrip_and_prefix(cos_store):
     cos_store.put("jobs/j1/blocks/b1.jpg", b"img")
     assert cos_store.client.objects == {"env/test/jobs/j1/blocks/b1.jpg": b"img"}
