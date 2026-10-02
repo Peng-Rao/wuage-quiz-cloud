@@ -111,13 +111,14 @@ def clean_prices():
 
 
 def settings(**kw) -> Settings:  # noqa: ANN003
-    return get_settings().model_copy(update={"llm_models": ["qwen3.7-flash", "glm-5.3", "unknown-model"],
-                                             "vision_models": [], "llm_prices": {}, **kw})
+    return get_settings().model_copy(update={"llm_model": "qwen3.7-flash", "vision_model": "glm-5.3",
+                                             "llm_prices": {}, **kw})
 
 
 def test_refresh_saves_history_only_on_change(clean_prices):
     s = settings()
     t0 = datetime(2026, 10, 1, tzinfo=timezone.utc)
+    usage.record("llm", "segment", "unknown-model", prompt_tokens=1)  # 历史调用过的模型也需要单价
     lines = refresh(s, httpx.Client(transport=Pages()), now=t0)
     assert any(line.startswith("unknown-model：未找到单价") for line in lines)
     with SessionLocal() as db:
