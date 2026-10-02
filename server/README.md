@@ -9,29 +9,21 @@ FastAPI 实现的试卷解析后端，接口契约见 [docs/ai-parse-api.md](../
 
 ## 启动
 
+本地开发与 Docker 部署的完整步骤见 [部署指南](../docs/deployment.md)。简要步骤：
+
 ```bash
-docker compose up -d db     # PostgreSQL（在仓库根目录执行；本机 5433 端口，DATABASE_URL 默认即连接它）
+docker compose up -d db redis   # 在仓库根目录执行；PostgreSQL 本机 5433、Redis 本机 6380
 cd server
 uv sync
-cp .env.example .env        # 填写 MINERU_TOKEN、LLM_*（可先不填）
+cp .env.example .env            # 填写 MINERU_TOKEN、LLM_*（可先不填）
 uv run python -m app.create_admin admin  # 首次创建管理员，交互输入密码
 uv run uvicorn app.main:app --port 8000 --reload
 ```
 
-默认任务在网页服务进程内执行。使用 Redis 任务队列时，在 `.env` 中设置 `REDIS_URL`（可用 `docker compose up -d redis`
-启动的 Redis：`redis://localhost:6380/0`），再另开终端启动 Worker，可启动多个：
+默认任务在网页服务进程内执行。在 `.env` 中设置 `REDIS_URL=redis://localhost:6380/0` 后改由独立 Worker 执行，
+另开终端启动（可启动多个）：`uv run python -m app.worker`。
 
-```bash
-uv run python -m app.worker
-```
-
-前端连接本服务（Vite 把 `/api` 代理到 8000 端口）：
-
-```bash
-npm run dev:api
-```
-
-`GET /api/health` 可查看当前启用了哪些引擎：`{"mineru": true, "llm": true, ...}`。
+`GET /api/health` 可查看当前启用了哪些引擎与在线 Worker：`{"mineru": true, "llm": true, "worker": {...}, ...}`。
 
 ## 认证和权限
 
@@ -69,6 +61,13 @@ npm run dev:api
 | `DATABASE_URL` | PostgreSQL，如 `postgresql+psycopg://user:pass@host:5432/db`；默认连接 docker compose 中的数据库（本机 5433 端口） |
 | `SESSION_HOURS` | 会话有效期，默认 12 小时 |
 | `COOKIE_SECURE` | HTTPS 部署设为 true，本地 HTTP 开发为 false |
+| `CORS_ORIGINS` | 允许跨源访问的前端来源（JSON 数组），默认 `["http://localhost:5173","http://localhost:5174"]`；同源部署无需修改 |
+| `MAX_FILE_MB` | 上传文件大小上限，默认 50 |
+| `PAGE_DPI` | 页面图渲染分辨率，默认 110 |
+| `DATA_DIR` | 本地存储的数据目录，默认 `server/data`（镜像内为 `/data`） |
+| `STORAGE_BACKEND` | 文件存储：`local`（默认）、`cos`、`oss`，对应配置见 `.env.example` 与[部署指南](../docs/deployment.md#对象存储腾讯云-cos--阿里云-oss) |
+| `VISION_MODEL` | 看图模型，AI 生成答案时含配图的题改用该模型，见[部署指南](../docs/deployment.md#大模型看图) |
+| `AUTO_COMMIT` | 解析完成后自动入库确定的题，默认 true；阈值等见 `.env.example` |
 
 ## 流水线
 
@@ -91,7 +90,7 @@ npm run dev:api
 | `app/pipeline/classify.py` | 试卷分类 |
 | `app/pipeline/llm.py` | OpenAI 兼容 `/chat/completions` 客户端（JSON 输出） |
 | `app/worker.py` | 任务队列：未配置 Redis 时为进程内队列；配置后为 Redis Streams 消费组（去重、续约、失联接手、启动时补排），`python -m app.worker` 启动独立 Worker |
-| `app/storage.py` | 对象存储抽象，当前为本地磁盘 |
+| `app/storage.py` | 文件存储：本地磁盘、腾讯云 COS、阿里云 OSS |
 
 ### 知识树、难度模型与评测（P2）
 
@@ -184,7 +183,5 @@ uv run pytest
 - 难度模型尚无学生作答数据，校准依赖老师调整过难度的评测样本。
 - 难度系数含义已改为「越高越难」，启动时会把旧数据一次性换算为 1 − 旧值（`app_meta.coef_semantics`）。
 - 本地 MinerU（`mineru_local`）：P3；Word 在未配置 MinerU 时无法解析（需要 LibreOffice 转换，P3）。
-- 队列为进程内实现，多实例部署需换成 Redis + 独立 Worker；存储需换成 OSS / S3 预签名直传。
-- 未接入账号体系，所有数据归属 `demo` 学校。
 - 大题标题后、第一题前的材料（如阅读材料）当前被视为标题说明而不归入题目，语文 / 英语试卷需在 P2 处理。
 - 轻量引擎按坐标排序，双栏试卷的阅读顺序可能错乱；双栏试卷请使用 MinerU。

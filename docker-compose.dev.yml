@@ -1,0 +1,43 @@
+# 开发模式：在 docker-compose.yml 基础上叠加，代码修改后自动重载
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
+# 前端访问 http://localhost:5173（Vite 热更新，/api 代理到 app）；
+# 8000 端口仍是镜像中构建的旧页面，只用于接口。
+# server/app 挂载进容器：app 由 uvicorn --reload 重载，worker 由 watchfiles 重启。
+# 修改 pyproject.toml / uv.lock 后需重新构建（加 --build）；修改 package.json 后重启 web 服务。
+
+# app 与 worker 共用：只读挂载后端代码；不写 __pycache__，避免在宿主机目录中留下容器用户的文件
+x-backend-dev: &backend-dev
+  environment:
+    PYTHONDONTWRITEBYTECODE: "1"
+  volumes:
+    - ./server/app:/app/server/app:ro
+
+services:
+  app:
+    <<: *backend-dev
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers",
+              "--reload", "--reload-dir", "app"]
+
+  worker:
+    <<: *backend-dev
+    # 只监听 .py 文件；重启时先发 SIGINT，Worker 把手上的任务交还队列后退出
+    command: ["watchfiles", "--filter", "python", "--sigint-timeout", "30", "python -m app.worker", "app"]
+
+  web:
+    image: node:24-slim
+    working_dir: /web
+    # node_modules 用独立的卷：宿主机（macOS）安装的原生依赖不能在 Linux 容器中使用
+    command: ["sh", "-c", "npm install --no-audit --no-fund && npm run dev -- --host 0.0.0.0"]
+    environment:
+      API_PROXY_TARGET: http://app:8000
+    volumes:
+      - .:/web
+      - fg-quiz-web-modules:/web/node_modules
+    ports:
+      - "5173:5173"
+    depends_on:
+      app:
+        condition: service_healthy
+
+volumes:
+  fg-quiz-web-modules:

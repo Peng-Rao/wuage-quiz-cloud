@@ -10,27 +10,53 @@
 ![Redis](https://img.shields.io/badge/Redis-8-DC382D?logo=redis&logoColor=white)
 ![Docker Compose](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white)
 
-技术栈：Vue 3 + TypeScript + Vite + Vue Router + Pinia。
+校本题库与试卷解析系统：上传试卷后自动拆题、标注知识点与难度、生成答案，老师审核入库后用于选题、组卷和导出 Word / PDF。
+
+技术栈：前端 Vue 3 + TypeScript + Vite + Vue Router + Pinia；后端 FastAPI（`server/`）+ PostgreSQL + Redis。
+
+## 快速开始
+
+完整步骤、配置说明、备份升级与常见问题见 **[部署指南](docs/deployment.md)**。
+
+### Docker 部署（推荐）
 
 ```bash
-npm install
-npm run dev      # http://localhost:5173；需同时启动 server 后端
-npm run build    # 类型检查 + 生产构建
+cp server/.env.example server/.env                          # 可选：填写 MinerU、大模型等配置
+docker compose up -d --build                                # 访问 http://localhost:8000
+docker compose exec app python -m app.create_admin admin    # 首次：创建管理员
 ```
+
+正式环境还需在仓库根目录 `.env` 中设置 `POSTGRES_PASSWORD`，HTTPS 部署设置 `COOKIE_SECURE=true`，详见[部署指南 · Docker 部署](docs/deployment.md#docker-部署)。
+
+### 本地开发
+
+```bash
+docker compose up -d db redis          # PostgreSQL（本机 5433）与 Redis（本机 6380）
+
+cd server
+uv sync
+cp .env.example .env                   # 可选：填写 MinerU、大模型等配置
+uv run python -m app.create_admin admin
+uv run uvicorn app.main:app --port 8000 --reload
+
+# 另开终端，在仓库根目录
+npm install
+npm run dev                            # http://localhost:5173，/api 代理到 8000
+```
+
+详见[部署指南 · 本地开发部署](docs/deployment.md#本地开发部署)。
+
+也可以全部在 Docker 中开发，代码修改后自动重载（前端访问 http://localhost:5173）：
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
+```
+
+详见[部署指南 · Docker 开发模式](docs/deployment.md#docker-开发模式)。
 
 ## 登录与三级权限
 
-首次使用先在服务端创建管理员（没有默认账号或密码）：
-
-```bash
-cd server
-uv sync
-uv run python -m app.create_admin admin
-uv run uvicorn app.main:app --port 8000 --reload
-```
-
-Docker 部署后执行 `docker compose exec app python -m app.create_admin admin`。
-密码交互输入，不写入代码或命令历史。前端访问 `/login` 登录；管理员在 `/users` 创建账号、分配学科、修改角色、停用账号或重置密码。修改账号后，其已有会话立即失效。
+系统没有默认账号或密码，首次使用先用 `create_admin` 创建管理员（见「快速开始」），密码交互输入，不写入代码或命令历史。前端访问 `/login` 登录；管理员在 `/users` 创建账号、分配学科、修改角色、停用账号或重置密码。修改账号后，其已有会话立即失效。
 
 | 角色 | 可用功能 | 数据范围 |
 | --- | --- | --- |
@@ -65,11 +91,11 @@ AI 组卷位于 `/compose`（仅管理员、组长），见下方「目前是演
 - `src/api/` 接口层：`parse/` 试卷解析、`bank/` 校本题库与试卷库，统一连接后端；mock 文件仅保留为参考，不作为登录后的数据源
 - `src/stores/` Pinia：学段学科、试题篮（题目快照、题序、分值，仅当前页面内存保存）
 - `src/components/` 顶栏、页脚、开关、难度分布条
-- `src/views/` 四个页面
+- `src/views/` 页面
 
 ## 目前是演示实现的部分
 
-- `npm run dev` 与 `npm run dev:api` 均连接真实后端，所有题库接口需要登录。
+- `npm run dev` 与 `npm run dev:api` 等价，均连接真实后端，所有题库接口需要登录。
 - 章节选题使用厦门市小学、初中、高中现用版本的教材目录（`server/app/data/chapters/`，由 `server/scripts/crawl_textbooks.py`
   从国家中小学智慧教育平台抓取）：每节对应若干知识点，按题目已标注的知识点归入章节。「最热」「分类（典型题、压轴题等）」「解题方法」暂无数据支持。
 - 首页展示授权范围内的真实试卷和当前试题篮；试卷编辑页的标题、考试时间为固定文案。
@@ -77,81 +103,17 @@ AI 组卷位于 `/compose`（仅管理员、组长），见下方「目前是演
 - 「下载 Word」在浏览器中生成 `.docx`（`src/utils/docx.ts`）：公式转换为 Word 原生公式（LaTeX → KaTeX MathML → OMML，`src/utils/omml.ts`），
   可在 Word 中直接编辑；题目配图嵌入文档；KaTeX 无法解析的公式保留原文。装订线以装订边距（gutter）表示。
 - 「导出 PDF」调用浏览器打印（已写好打印样式）。
-- AI 组卷为 Demo（方案见 `docs/ai-paper-assembly.md`）：需 `npm run dev:api` 连接后端，演示数据模式下不可用。
+- AI 组卷为 Demo（方案见 `docs/ai-paper-assembly.md`）：
   大模型只负责理解需求（每次生成调用 1 次，按知识点编号选择重点、给出各题型题量与难度），选题与赋分由程序完成（`server/app/compose.py`），
   题目全部来自题库、总分准确；未配置大模型时按关键词匹配知识点。只做了一个学科的效果验证；学生情况不保存，刷新页面后对话清空；
   题库中的题需已标注知识点才能侧重具体知识点。加入试题篮后试卷标题仍为试卷编辑页的固定文案。
 - 收藏、纠错、智能补题、编辑题目等按钮暂未接功能。
 
-## Docker 部署
+## 文档
 
-前端页面与解析服务（`server/`）打包为一个镜像，服务同时提供页面和 `/api`。
-
-```bash
-docker compose up -d --build        # 访问 http://localhost:8000
-docker compose exec app python -m app.create_admin admin   # 首次部署：创建管理员
-```
-
-compose 包含四个服务：`app`（页面与接口）、`worker`（执行解析、生成答案等后台任务）、`db`（PostgreSQL 17）、`redis`（任务队列）。
-数据库与 Redis 端口不对外开放；正式部署前在仓库根目录新建 `.env`，
-设置 `POSTGRES_PASSWORD=<只含字母、数字、-、_ 的强密码>`（首次启动时生效，之后修改需同时在数据库中改密码）。
-改用已有的外部 PostgreSQL 时，在根目录 `.env` 中设置 `DATABASE_URL=postgresql+psycopg://…`，`db` 服务可不用。
-
-或直接使用镜像：
-
-```bash
-docker build -t fg-quiz-cloud .
-docker run -d -p 8000:8000 --env-file server/.env -v fg-quiz-data:/data fg-quiz-cloud
-```
-
-- 配置：MinerU、大模型、单价等通过环境变量提供，见 `server/.env.example`；compose 默认读取 `server/.env`（不存在时只用规则拆题与轻量解析）。Key 不会打进镜像。
-- 数据：数据库在卷 `fg-quiz-pg`，上传文件和页面图在卷 `fg-quiz-data`（`/data`），重建容器不会丢失；`docker compose down -v` 会删除数据卷。
-- 备份：`docker compose exec db pg_dump -U fg_quiz fg_quiz > backup.sql`，另备份 `fg-quiz-data` 卷中的文件。
-- 单独 `docker run` 镜像时没有 `db`、`redis` 服务：须设置 `DATABASE_URL` 连接已有的 PostgreSQL；不设置 `REDIS_URL` 时任务在网页服务进程内执行。
-- 批量处理：任务放在 Redis 队列中，由 `worker` 执行。增加 Worker 即可同时解析更多试卷：
-  `docker compose up -d --scale worker=3`，总并发 = Worker 数 × `WORKER_CONCURRENCY`（默认 2）。
-  同一任务不会重复执行；Worker 崩溃或被强制停止时，其手上的任务约 2 分钟后由其他 Worker 接手重做，正常停止时立即交还。
-  `GET /api/health` 的 `worker` 字段显示在线 Worker 数、排队和执行中的任务数。
-- 默认（`STORAGE_BACKEND=local`）上传文件与页面图保存在本机的 `fg-quiz-data` 卷中，`app` 与各 `worker` 共用，
-  因此所有容器需在同一台机器上；跨机器部署改用对象存储（腾讯云 COS 或阿里云 OSS），见下方「对象存储」。
-
-### 对象存储（腾讯云 COS / 阿里云 OSS）
-
-在 `server/.env` 中设置 `STORAGE_BACKEND=cos` 及 `COS_*` 配置（阿里云为 `STORAGE_BACKEND=oss` 及 `OSS_*`，见 `server/.env.example`）后，上传的试卷、页面图、题目配图都存入对象存储：
-
-- 浏览器用预签名地址直传对象存储（不经过本服务）；页面上的配图仍请求 `/api/files/…`，校验登录与题目权限后跳转到 10 分钟有效的签名地址。存储桶保持**私有读写**。
-- 存储桶需配置跨域（CORS）规则：来源 `*`，方法 `GET`、`PUT`、`HEAD`，允许头 `*`，暴露头 `ETag`。
-  下载 Word 时浏览器经重定向读取配图，跨域跳转后的来源为 `null`，因此来源须为 `*`；访问仍受签名保护。
-- 已有本地文件先上传：`uv run python -m app.migrate_storage --to cos`（Docker：`docker compose exec app python -m app.migrate_storage --to cos`），再切换配置并重启。
-- 腾讯云 COS：存储桶名称带 APPID（如 `fg-quiz-1250000000`），地域如 `ap-guangzhou`；默认域名在同地域腾讯云服务器上自动走内网，无需额外配置。
-  密钥建议使用只授权该存储桶读写的 CAM 子用户。
-- 阿里云 OSS：与本服务同地域的 ECS 可把 `OSS_ENDPOINT` 设为内网地址（不收流量费），同时设置公网的 `OSS_PUBLIC_ENDPOINT` 供签名地址使用。
-
-### 大模型看图
-
-设置 `VISION_MODEL`（如通义千问 `qwen3-vl-plus`）后，AI 生成答案时含配图的题改用看图模型，并按顺序附上题目配图（每题最多 `VISION_MAX_IMAGES` 张）。
-使用对象存储时传图片签名地址，由模型服务下载；本地存储时以 base64 内嵌。未设置时大模型看不到图片，含图题的答案会标注「AI 未看到图片」。
-看图模型的用量按模型名单独统计，单价在 `LLM_PRICES` 中按模型名配置。
-- 服务以非 root 用户（uid 10001）运行，自带健康检查（`GET /api/health`）。
-
-### 不同芯片架构
-
-镜像支持 `linux/amd64`（常见 x86 服务器、Intel / AMD 电脑）与 `linux/arm64`（Apple 芯片、鲲鹏、树莓派等 ARM 服务器）。
-`docker build` 只构建**本机架构**；在 Mac（Apple 芯片）上构建的镜像不能直接在 x86 服务器上运行，需要指定目标架构：
-
-```bash
-# 只构建 x86 服务器用的镜像
-docker buildx build --platform linux/amd64 -t fg-quiz-cloud:amd64 --load .
-
-# 同时构建两种架构，推送到镜像仓库后，各机器拉取时自动选择对应架构
-docker buildx build --platform linux/amd64,linux/arm64 -t <仓库地址>/fg-quiz-cloud:<版本> --push .
-```
-
-没有镜像仓库时，可以导出为文件拷贝到服务器：
-
-```bash
-docker save --platform linux/amd64 fg-quiz-cloud:amd64 -o fg-quiz-cloud-amd64.tar   # 约 90 MB（压缩前 370 MB）
-docker load -i fg-quiz-cloud-amd64.tar                                              # 在服务器上执行
-```
-
-前端构建阶段固定在构建机的原生架构上运行（产物与架构无关），交叉构建只有 Python 依赖安装一步经过模拟器，通常在一分钟内完成。
+| 文档 | 内容 |
+| --- | --- |
+| [docs/deployment.md](docs/deployment.md) | 本地开发部署、Docker 开发模式（自动重载）、Docker 部署、HTTPS、备份与升级、对象存储、多架构镜像、常见问题 |
+| [server/README.md](server/README.md) | 后端配置项、解析流水线、认证与权限接口、测试 |
+| [docs/ai-parse-api.md](docs/ai-parse-api.md) | 试卷解析接口契约 |
+| [docs/ai-paper-assembly.md](docs/ai-paper-assembly.md) | AI 组卷方案 |
