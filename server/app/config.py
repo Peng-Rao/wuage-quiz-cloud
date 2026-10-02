@@ -129,6 +129,17 @@ class Settings(BaseSettings):
     mineru_price_per_page: float | None = None
     currency: str = "¥"
 
+    # 在线单价：Worker 每隔 PRICE_REFRESH_HOURS 小时（0 为不抓取）从百炼官方定价页抓取，页面上没有的模型用 OpenRouter 补充，
+    # 写入 model_price；每次调用按当时的单价计算定价成本写入 ai_usage。LLM_PRICES 手动配置的单价优先
+    price_refresh_hours: int = 24
+    price_sources: list[Literal["aliyun", "openrouter"]] = ["aliyun", "openrouter"]
+    # 百炼定价页中按地域、部署范围选取单价，与 LLM_BASE_URL 所在工作空间一致
+    price_region: str = "Singapore"
+    price_scope: str = "International"
+    # 缓存命中的输入 token 按输入单价的比例计费（百炼隐式缓存为 20%），可按模型覆盖
+    llm_cache_hit_ratio: float = 0.2
+    llm_model_cache_ratio: dict[str, float] = {"deepseek-v4.1-flash": 0.1}
+
     # 页面渲染分辨率（查看原图）
     page_dpi: int = 110
 

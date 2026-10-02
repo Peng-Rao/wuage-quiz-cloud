@@ -16,7 +16,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .config import Settings, get_settings
-from .db import AiUsage, DraftQuestion, ParseJob, SessionLocal
+from .db import AiUsage, DraftQuestion, ParseJob, SessionLocal, utcnow
 from .schemas import DailyUsage, UsageCall, UsageOverview, UsageSummary
 
 log = logging.getLogger(__name__)
@@ -41,19 +41,42 @@ def record(
     try:
         with SessionLocal() as s:
             job = s.get(ParseJob, job_id) if job_id else None
-            s.add(AiUsage(
+            u = AiUsage(
                 job_id=job_id, school_id=job.school_id if job else "demo", provider=provider, purpose=purpose,
                 model=model, prompt_tokens=prompt_tokens, completion_tokens=completion_tokens,
                 reasoning_tokens=reasoning_tokens, cached_tokens=cached_tokens, pages=pages,
-                duration_ms=duration_ms, estimated=estimated, status=status,
-            ))
+                duration_ms=duration_ms, estimated=estimated, status=status, created_at=utcnow(),
+            )
+            try:
+                # 按调用时的单价计算定价成本；计价失败不影响记录用量
+                from .pricing import price_usage
+
+                price_usage(s, u)
+            except Exception:  # noqa: BLE001
+                log.exception("计算 AI 调用成本失败")
+            s.add(u)
             s.commit()
     except Exception:  # noqa: BLE001
         log.exception("记录 AI 用量失败")
 
 
 def cost_of(u: AiUsage, settings: Settings) -> float | None:
-    """单次调用的估算费用；未配置单价时返回 None。"""
+    """单次调用的费用：记录时按当时单价算好的成本（ai_usage.cost）；早期没有记录成本的调用按配置单价估算。"""
+    if u.cost is not None:
+        return u.cost
+    return _config_cost(u, settings)
+
+
+def currency_of(u: AiUsage, settings: Settings) -> str:
+    """成本的货币代码：已记录的按单价货币，按配置单价估算的为 CURRENCY。"""
+    if u.cost is not None and u.currency:
+        return u.currency
+    from .pricing import CODES
+
+    return CODES.get(settings.currency, settings.currency)
+
+
+def _config_cost(u: AiUsage, settings: Settings) -> float | None:
     if u.provider == "mineru":
         return None if settings.mineru_price_per_page is None else u.pages * settings.mineru_price_per_page
     price = settings.llm_prices.get(u.model)
@@ -69,7 +92,17 @@ def summarize(rows: Iterable[AiUsage], settings: Settings | None = None) -> Usag
     settings = settings or get_settings()
     rows = list(rows)
     llm = [r for r in rows if r.provider == "llm"]
+    from .pricing import SYMBOLS
+
     costs = [(r, cost_of(r, settings)) for r in rows]
+    by_currency: dict[str, float] = {}
+    for r, c in costs:
+        if c is not None:
+            code = currency_of(r, settings)
+            by_currency[code] = by_currency.get(code, 0.0) + c
+    # 多种货币时以金额最大的为准，其他货币的成本列入 costs_by_currency、不计入 cost
+    main = max(by_currency, key=by_currency.get) if by_currency else _default_currency(settings)
+    costs = [(r, c if c is not None and currency_of(r, settings) == main else None) for r, c in costs]
     unpriced = sorted({(r.model if r.provider == "llm" else "MinerU") for r, c in costs if c is None})
     llm_cost = sum(c for r, c in costs if c is not None and r.provider == "llm")
     mineru_cost = sum(c for r, c in costs if c is not None and r.provider == "mineru")
@@ -91,8 +124,15 @@ def summarize(rows: Iterable[AiUsage], settings: Settings | None = None) -> Usag
         mineru_cost=round(mineru_cost, 6) if any(c is not None and r.provider == "mineru" for r, c in costs) else None,
         priced=not unpriced,
         unpriced_models=unpriced,
-        currency=settings.currency,
+        currency=SYMBOLS.get(main, main),
+        costs_by_currency={k: round(v, 6) for k, v in by_currency.items()},
     )
+
+
+def _default_currency(settings: Settings) -> str:
+    from .pricing import CODES
+
+    return CODES.get(settings.currency, settings.currency)
 
 
 def job_rows(s: Session, job_id: str) -> list[AiUsage]:
@@ -102,7 +142,7 @@ def job_rows(s: Session, job_id: str) -> list[AiUsage]:
 def calls_out(rows: list[AiUsage], settings: Settings | None = None) -> list[UsageCall]:
     settings = settings or get_settings()
     return [
-        UsageCall.model_validate(r).model_copy(update={"cost": cost_of(r, settings)})
+        UsageCall.model_validate(r).model_copy(update={"cost": cost_of(r, settings), "currency": currency_of(r, settings)})
         for r in rows
     ]
 

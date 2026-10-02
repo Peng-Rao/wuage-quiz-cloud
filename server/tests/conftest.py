@@ -52,6 +52,8 @@ os.environ.update({
     "LLM_BUDGET_SINCE": "2000-01-01T00:00:00Z",
     # 原有用例测试人工入库；自动入库的用例单独开启
     "AUTO_COMMIT": "false",
+    # 测试不访问网络抓取单价
+    "PRICE_REFRESH_HOURS": "0",
     "PARSER_CHAIN": '["mineru_cloud","lite"]',
     "LLM_PRICES": "{}",
 })

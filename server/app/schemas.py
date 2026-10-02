@@ -1,7 +1,7 @@
 """接口数据结构，与前端 src/api/parse/types.ts 一一对应（JSON 字段为 camelCase）。"""
 
 from datetime import datetime, timezone
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
@@ -71,6 +71,23 @@ class UsageSummary(Model):
     priced: bool = True
     unpriced_models: list[str] = []
     currency: str = "¥"
+    # 各货币的成本合计（货币代码 → 金额）；cost 只包含 currency 对应的货币
+    costs_by_currency: dict[str, float] = {}
+
+
+class ModelPriceOut(Model):
+    """模型单价：tiers 为阶梯单价（每百万 token；MinerU 为每页），input_offpeak / output_offpeak 为闲时价。"""
+
+    id: int
+    provider: Literal["llm", "mineru"]
+    model: str
+    source: str
+    currency: str
+    tiers: list[dict[str, Any]]
+    cache_ratio: float | None = None
+    notes: str | None = None
+    fetched_at: UtcDatetime
+    checked_at: UtcDatetime
 
 
 class UsageCall(Model):
@@ -87,6 +104,8 @@ class UsageCall(Model):
     estimated: bool
     status: Literal["ok", "error"]
     cost: float | None = None
+    # 成本的货币代码（USD / CNY）
+    currency: str | None = None
     created_at: UtcDatetime
 
 
