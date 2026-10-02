@@ -135,35 +135,37 @@ def read_usage(job_id: str, s: Session = Depends(get_session)) -> JobUsage:
 
 @router.get("/{job_id}/events")
 async def job_events(job_id: str, request: Request) -> StreamingResponse:
-    user = current_user(request)
-    with SessionLocal() as s:
-        scope_session(s, user)
-        get_job(s, job_id)
+    def snapshot() -> tuple[str, str]:
+        with SessionLocal() as s:
+            scope_session(s, current_user(request))
+            job = get_job(s, job_id)
+            return job_out(s, job).model_dump_json(by_alias=True), job.status
+
+    initial = await asyncio.to_thread(snapshot)
 
     async def stream():
         last = None
         idle = 0.0
+        current = initial
         while not await request.is_disconnected():
-            with SessionLocal() as s:
-                try:
-                    scope_session(s, current_user(request))
-                except HTTPException:
-                    return
-                job = s.get(ParseJob, job_id)
-                if job is None:
-                    return
-                payload = job_out(s, job).model_dump_json(by_alias=True)
-                status = job.status
+            payload, status = current
             if payload != last:
                 last, idle = payload, 0.0
                 yield f"data: {payload}\n\n"
             elif idle >= 15:
                 idle = 0.0
                 yield ": keep-alive\n\n"
-            if status in ("done", "failed"):
+            if status in ("done", "failed", "cancelled"):
                 return
-            await asyncio.sleep(0.5)
-            idle += 0.5
+            interval = 5.0 if status == "queued" else 2.0
+            await asyncio.sleep(interval)
+            idle += interval
+            if await request.is_disconnected():
+                return
+            try:
+                current = await asyncio.to_thread(snapshot)
+            except HTTPException:  # 会话失效、权限撤回或任务被删除
+                return
 
     return StreamingResponse(stream(), media_type="text/event-stream",
                              headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})

@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, defer
 
 from .bank import bank_out
 from .config import get_settings
@@ -267,11 +267,14 @@ def _conversation(messages: list[ComposeMessage]) -> str:
 
 
 async def compose(s: Session, school_id: str, req: ComposeRequest) -> ComposeResult:
-    questions = list(s.scalars(select(BankQuestion).where(
+    # 候选只需要题干、题型、难度和知识点；大字段只为最终选中的题读取。
+    questions = list(s.execute(select(
+        BankQuestion.id, BankQuestion.stem, BankQuestion.type, BankQuestion.coef, BankQuestion.knowledge_points,
+    ).where(
         BankQuestion.school_id == school_id,
         BankQuestion.meta["stage"].as_string() == req.stage,
         BankQuestion.meta["subject"].as_string() == req.subject,
-    ).order_by(BankQuestion.id)))
+    ).order_by(BankQuestion.id).execution_options(yield_per=200)))
     if not questions:
         raise ValueError(f"题库中还没有{req.stage}{req.subject}的题目，请先在「试卷解析」中上传试卷并入库")
     available = Counter(q.type for q in questions)
@@ -316,6 +319,11 @@ async def compose(s: Session, school_id: str, req: ComposeRequest) -> ComposeRes
         total = 0
 
     all_items = [q for _, qs in sel.sections for q in qs]
+    selected_ids = [q.id for q in all_items]
+    selected = {q.id: q for q in s.scalars(select(BankQuestion).where(BankQuestion.id.in_(selected_ids))
+                                          .options(defer(BankQuestion.embedding)))} if selected_ids else {}
+    if len(selected) != len(selected_ids):
+        raise ValueError("题库内容已变更，请重新组卷")
     focus = [
         ComposeFocus(name=k.split(PATH_SEP)[-1], path=k if PATH_SEP in k else None, weight=w,
                      count=sum(1 for q in all_items if _matches(q, k)))
@@ -324,7 +332,7 @@ async def compose(s: Session, school_id: str, req: ComposeRequest) -> ComposeRes
     return ComposeResult(
         reply=bp.reply or "已按要求组卷。", title=bp.title, total=total, difficulty=bp.difficulty, actual_difficulty=actual,
         sections=[ComposeSection(type=t, score=sum(scores[q.id] for q in qs),
-                                 items=[ComposeItem(question=bank_out(q), score=scores[q.id]) for q in qs])
+                                 items=[ComposeItem(question=bank_out(selected[q.id]), score=scores[q.id]) for q in qs])
                   for t, qs in sel.sections],
         focus=focus, gaps=gaps, ai=bp.ai,
     )

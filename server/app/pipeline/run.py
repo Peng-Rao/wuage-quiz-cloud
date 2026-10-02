@@ -88,6 +88,7 @@ def _meta_note(meta: dict) -> str:
 
 # 同时上传的文件数（对象存储为网络请求，逐个上传较慢）
 PUT_CONCURRENCY = 8
+PAGE_BATCH = 4
 
 
 async def put_all(store: ObjectStore, items: list[tuple[str, bytes]]) -> None:
@@ -121,6 +122,7 @@ async def run_job(job_id: str) -> None:
     ctx.stage("ocr", "running")
     files = [(f["name"], await asyncio.to_thread(store.get, f["key"])) for f in files_info]
     src = await asyncio.to_thread(normalize, files)
+    del files  # 图片合成 PDF 后，不再保留整组原图。
 
     async def on_progress(frac: float) -> None:
         ctx.progress("ocr", frac * 0.9)
@@ -156,8 +158,12 @@ async def run_job(job_id: str) -> None:
         if doc.pdf:
             if "解析结果不含原始 PDF，无法查看原图" in warnings:
                 warnings.remove("解析结果不含原始 PDF，无法查看原图")
-            pages = await asyncio.to_thread(render_pages, doc.pdf, settings.page_dpi)
-            await put_all(store, [(f"jobs/{job_id}/pages/{i}.png", png) for i, png in enumerate(pages, 1)])
+            pdf_pages = await asyncio.to_thread(pdf_page_count, doc.pdf)
+            for start in range(0, pdf_pages, PAGE_BATCH):
+                pages = await asyncio.to_thread(render_pages, doc.pdf, settings.page_dpi, start, start + PAGE_BATCH)
+                await put_all(store, [(f"jobs/{job_id}/pages/{i}.png", png)
+                                      for i, png in enumerate(pages, start + 1)])
+                del pages  # 每批上传完释放 PNG，避免后续渲染时保留上一批。
         elif "解析结果不含原始 PDF，无法查看原图" not in warnings:
             warnings.append("解析结果不含原始 PDF，无法查看原图")
         ctx.update(parser=parser, page_count=page_count)
