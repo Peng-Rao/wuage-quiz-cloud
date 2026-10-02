@@ -5,6 +5,7 @@ from ..db import ParseJob, get_session
 from ..schemas import SimilarQuestion, SimilarSearchRequest
 from ..services import current_school, get_question, question_source
 from ..similar import DUPLICATE_SCORE, Match, embed, question_text, search
+from ..usage import attribute, job_subject
 
 router = APIRouter()
 
@@ -32,6 +33,7 @@ async def similar_to_draft(
 ) -> list[SimilarQuestion]:
     """与该草稿题相似的题：校本题库，以及（scope=all）其他试卷中尚未入库的题。"""
     q = get_question(s, qid)
+    attribute(s.info["user"].id, job_subject(s.get(ParseJob, q.job_id)))
     vector = q.embedding
     if vector is None:
         got = await embed([question_text(q.stem, q.options)], purpose="similar")
@@ -44,6 +46,7 @@ async def similar_to_draft(
 @router.post("/api/similar/search", response_model=list[SimilarQuestion])
 async def search_similar(req: SimilarSearchRequest, s: Session = Depends(get_session)) -> list[SimilarQuestion]:
     """按文本搜索相似题（如录入一道题、拍照识别后查询）。"""
+    attribute(s.info["user"].id)
     got = await embed([req.text], purpose="similar")
     matches = search(s, current_school(), req.text, vector=got[0] if got else None, qtype=req.type,
                      scope=req.scope, limit=req.limit)

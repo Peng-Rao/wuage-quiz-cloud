@@ -139,6 +139,88 @@ class UsageOverview(Model):
     daily: list[DailyUsage]
 
 
+class CostBreakdown(Model):
+    """成本分析中的一个分组（用途 / 模型 / 账号 / 学科）。cost 只含主货币，unpriced_calls 为缺单价或其他货币的调用数。"""
+
+    key: str
+    label: str
+    provider: str | None = None
+    calls: int = 0
+    errors: int = 0
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    cached_tokens: int = 0
+    pages: int = 0
+    duration_ms: int = 0
+    jobs: int = 0
+    cost: float = 0.0
+    unpriced_calls: int = 0
+
+
+class CostDay(Model):
+    date: str  # 北京时间日期
+    calls: int
+    jobs: int
+    total_tokens: int
+    pages: int
+    llm_cost: float
+    mineru_cost: float
+    cost: float
+
+
+class CostHour(Model):
+    hour: int  # 北京时间 0–23
+    calls: int
+    cost: float
+    peak: bool  # 计费来源在工作日该小时是否为高峰价
+
+
+class CostJob(Model):
+    id: str
+    file_name: str
+    status: str
+    owner: str | None = None
+    subject: str | None = None
+    pages: int | None = None
+    questions: int = 0
+    calls: int = 0
+    total_tokens: int = 0
+    cost: float = 0.0
+    created_at: UtcDatetime
+
+
+class CostAnalysis(Model):
+    """管理员成本分析：start、end 为北京时间日期（含首尾）。金额均为 summary.currency 对应的货币。"""
+
+    start: str
+    end: str
+    days: int
+    summary: UsageSummary
+    # 上一个等长周期的费用，用于环比；货币不同或无单价时为 null
+    previous_cost: float | None
+    previous_start: str
+    previous_end: str
+    avg_daily_cost: float | None
+    projected_monthly_cost: float | None  # 按区间日均 × 30 估算
+    jobs: int  # 区间内完成的解析任务
+    pages: int
+    questions: int
+    cost_per_job: float | None
+    cost_per_page: float | None
+    cost_per_question: float | None
+    error_cost: float  # 失败调用的费用（失败请求多数仍计费）
+    cache_hit_rate: float | None  # 缓存命中 tokens / 输入 tokens
+    peak_cost_share: float | None  # 高峰时段调用的费用占比
+    billing_source: str
+    daily: list[CostDay]
+    hourly: list[CostHour]
+    by_purpose: list[CostBreakdown]
+    by_model: list[CostBreakdown]
+    by_user: list[CostBreakdown]
+    by_subject: list[CostBreakdown]
+    top_jobs: list[CostJob]
+
+
 class AnswerTask(Model):
     """AI 生成答案任务的进度。"""
 

@@ -151,6 +151,9 @@ class AiUsage(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     job_id: Mapped[str | None] = mapped_column(String(32), index=True, nullable=True)
     school_id: Mapped[str] = mapped_column(String(64), index=True)
+    # 发起调用的账号与学科：解析任务内的调用取任务的上传者与学科，组卷 / 查相似题取当前账号；用于成本分析
+    user_id: Mapped[str | None] = mapped_column(String(32), index=True, nullable=True)
+    subject: Mapped[str | None] = mapped_column(String(16), nullable=True)
     provider: Mapped[str] = mapped_column(String(16))  # llm / mineru
     purpose: Mapped[str] = mapped_column(String(16))   # classify / segment / parse
     model: Mapped[str] = mapped_column(String(64))

@@ -6,6 +6,7 @@ export const router = createRouter({
   routes: [
     { path: '/login', name: 'login', component: () => import('./views/LoginView.vue'), meta: { title: '登录', public: true } },
     { path: '/users', component: () => import('./views/UsersView.vue'), meta: { title: '账号管理', admin: true } },
+    { path: '/usage', name: 'usage', component: () => import('./views/CostView.vue'), meta: { title: 'AI 成本', admin: true } },
     { path: '/', name: 'home', component: () => import('./views/HomeView.vue'), meta: { title: '首页' } },
     { path: '/chapter', name: 'chapter', component: () => import('./views/ChapterPickView.vue'), meta: { title: '章节选题' } },
     { path: '/knowledge', name: 'knowledge-pick', component: () => import('./views/KnowledgePickView.vue'), meta: { title: '知识点选题' } },
