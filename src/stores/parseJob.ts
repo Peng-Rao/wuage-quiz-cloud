@@ -1,4 +1,3 @@
-import { useAuthStore } from './auth'
 import { defineStore } from 'pinia'
 import { computed, reactive, ref } from 'vue'
 import {
@@ -16,7 +15,6 @@ import {
   type RecentUpload,
   type SimilarQuestion,
   type SourceImage,
-  type UsageOverview,
 } from '@/api/parse'
 
 export type ParsePhase = 'idle' | 'uploading' | 'parsing' | 'done' | 'failed'
@@ -35,8 +33,6 @@ export const useParseJobStore = defineStore('parseJob', () => {
   const busy = ref(new Set<string>())
   const savedCount = ref(0)
   const usage = ref<JobUsage | null>(null)
-  const usageOverview = ref<UsageOverview | null>(null)
-  const OVERVIEW_DAYS = 30
 
   // 任务列表（批量后台解析）
   const jobList = ref<JobListItem[]>([])
@@ -78,12 +74,7 @@ export const useParseJobStore = defineStore('parseJob', () => {
   })
 
   async function loadRecent() {
-    const [r, o] = await Promise.all([
-      parseApi.listRecent().catch(() => []),
-      useAuthStore().isAdmin ? parseApi.getUsageOverview(OVERVIEW_DAYS).catch(() => null) : Promise.resolve(null),
-    ])
-    recent.value = r
-    usageOverview.value = o
+    recent.value = await parseApi.listRecent().catch(() => [])
   }
 
   async function loadUsage() {
@@ -467,7 +458,7 @@ export const useParseJobStore = defineStore('parseJob', () => {
 
   return {
     phase, options, uploadPct, overallPct, job, questions, selected, recent, error, busy, savedCount, commitResult,
-    usage, usageOverview, OVERVIEW_DAYS, loadUsage,
+    usage, loadUsage,
     jobList, jobsTotal, jobsActive, jobsLoading, openingJob, batchUploading, batchPct, notice,
     refreshJobs, watchJobs, openJob, backToList, retryJob, cancelJob, getSimilar, markEvalSample,
     missingAnswerCount, answerTask, answering, isAnswering, generateAnswers,

@@ -17,7 +17,6 @@ import ParsedQuestionCard from '@/components/parse/ParsedQuestionCard.vue'
 import EditQuestionDialog from '@/components/parse/EditQuestionDialog.vue'
 import SourceImageDialog from '@/components/parse/SourceImageDialog.vue'
 import UsageCard from '@/components/parse/UsageCard.vue'
-import CostOverviewCard from '@/components/parse/CostOverviewCard.vue'
 import JobListPanel from '@/components/parse/JobListPanel.vue'
 import SimilarDialog from '@/components/parse/SimilarDialog.vue'
 import ModalDialog from '@/components/ModalDialog.vue'
@@ -25,7 +24,7 @@ import LoadingState from '@/components/LoadingState.vue'
 
 const auth = useAuthStore()
 const store = useParseJobStore()
-const { phase, job, questions, selected, error, busy, options, usage, usageOverview, jobList, notice, commitResult } = storeToRefs(store)
+const { phase, job, questions, selected, error, busy, options, usage, jobList, notice, commitResult } = storeToRefs(store)
 const basket = useBasketStore()
 const route = useRoute()
 const router = useRouter()
@@ -252,7 +251,6 @@ async function forceCommit() {
           :jobs="jobList" :total="store.jobsTotal" :active="store.jobsActive" :busy="busy" :loading="store.jobsLoading"
           @open="openJob" @retry="store.retryJob" @cancel="store.cancelJob"
         />
-        <CostOverviewCard v-if="auth.isAdmin" :overview="usageOverview" />
       </div>
     </div>
 
