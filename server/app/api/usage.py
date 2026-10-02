@@ -1,9 +1,11 @@
-from fastapi import APIRouter, Depends, Query
+from datetime import date, timedelta
+
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from ..db import ModelPrice, get_session
-from ..schemas import ModelPriceOut, UsageOverview
+from ..schemas import CostAnalysis, ModelPriceOut, UsageOverview
 from ..services import current_school
 from ..usage import overview
 
@@ -14,6 +16,21 @@ router = APIRouter(prefix="/api/usage")
 def usage_summary(days: int = Query(30, ge=1, le=365), s: Session = Depends(get_session)) -> UsageOverview:
     """近 N 天 AI 用量与平均成本（每份试卷 / 每页 / 每题），用于估算后续费用。"""
     return overview(s, current_school(), days)
+
+
+@router.get("/analysis", response_model=CostAnalysis)
+def usage_analysis(start: date | None = None, end: date | None = None,
+                   s: Session = Depends(get_session)) -> CostAnalysis:
+    """成本分析：start、end 为北京时间日期（含首尾），默认近 30 天；与上一个等长周期对比。"""
+    from ..cost_analysis import analyze, today
+
+    end = end or today()
+    start = start or end - timedelta(days=29)
+    if start > end:
+        raise HTTPException(422, "开始日期不能晚于结束日期")
+    if (end - start).days >= 366:
+        raise HTTPException(422, "日期区间不能超过 366 天")
+    return analyze(s, current_school(), start, end)
 
 
 @router.get("/prices", response_model=list[ModelPriceOut])

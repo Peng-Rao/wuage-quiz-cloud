@@ -6,6 +6,21 @@ export const PURPOSE_LABELS: Record<string, string> = {
   segment: '拆题',
   answer: 'AI 解答',
   compose: 'AI 组卷',
+  knowledge: '知识点标注',
+  difficulty: '难度评估',
+  similar: '相似题检索',
+}
+
+export const SOURCE_LABELS: Record<string, string> = {
+  tencent: '腾讯云 TokenHub',
+  aliyun: '阿里云百炼',
+  openrouter: 'OpenRouter',
+  manual: '手动配置',
+}
+
+/** 0.1234 → 12.3% */
+export function formatPercent(v: number | null | undefined, digits = 1): string {
+  return v == null ? '—' : (v * 100).toFixed(digits) + '%'
 }
 
 /** 12345 → 1.2 万；小于 1 万原样显示 */

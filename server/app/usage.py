@@ -22,6 +22,18 @@ from .schemas import DailyUsage, UsageCall, UsageOverview, UsageSummary
 log = logging.getLogger(__name__)
 
 current_job: ContextVar[str | None] = ContextVar("current_job", default=None)
+# 不属于解析任务的调用（AI 组卷、查相似题）由接口设置发起账号与学科：(user_id, subject)
+current_actor: ContextVar[tuple[str | None, str | None]] = ContextVar("current_actor", default=(None, None))
+
+
+def attribute(user_id: str | None, subject: str | None = None) -> None:
+    """把当前请求中后续的 AI 调用计到该账号（与学科）名下。须在 async 接口中、调用大模型之前设置。"""
+    current_actor.set((user_id, subject or None))
+
+
+def job_subject(job: ParseJob | None) -> str | None:
+    """解析任务的学科：识别出的试卷学科优先，其次上传时选择的学科（与数据权限的判定一致）。"""
+    return ((job.meta or {}).get("subject") or job.subject_scope or None) if job else None
 
 _CJK = re.compile(r"[　-〿一-鿿＀-￯]")
 
@@ -41,8 +53,10 @@ def record(
     try:
         with SessionLocal() as s:
             job = s.get(ParseJob, job_id) if job_id else None
+            user_id, subject = (job.owner_id, job_subject(job)) if job else current_actor.get()
             u = AiUsage(
-                job_id=job_id, school_id=job.school_id if job else "demo", provider=provider, purpose=purpose,
+                job_id=job_id, school_id=job.school_id if job else "demo", user_id=user_id, subject=subject,
+                provider=provider, purpose=purpose,
                 model=model, prompt_tokens=prompt_tokens, completion_tokens=completion_tokens,
                 reasoning_tokens=reasoning_tokens, cached_tokens=cached_tokens, pages=pages,
                 duration_ms=duration_ms, estimated=estimated, status=status, created_at=utcnow(),

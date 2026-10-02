@@ -27,6 +27,7 @@ const note = computed(() => (o.value?.summary.calls ? pricingNote(o.value.summar
       </dl>
       <p v-if="note" class="note">{{ note }}</p>
     </template>
+    <RouterLink to="/usage" class="more">查看成本分析 →</RouterLink>
   </div>
 </template>
 
@@ -42,4 +43,5 @@ const note = computed(() => (o.value?.summary.calls ? pricingNote(o.value.summar
 .stats dt { font-size: 12px; color: var(--c-text-3); }
 .stats dd { margin: 0; font-size: 13.5px; font-weight: 600; font-variant-numeric: tabular-nums; }
 .note { margin: 0; font-size: 12px; color: var(--c-text-3); line-height: 1.6; }
+.more { font-size: 13px; align-self: flex-start; }
 </style>

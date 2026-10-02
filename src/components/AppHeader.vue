@@ -29,7 +29,7 @@ const NAV = computed(() => [
   ...(auth.isStaff ? [{ to: '/compose', label: 'AI 组卷' }] : []),
   { to: '/paper', label: '试卷编辑' },
   ...(auth.isStaff ? [{ to: '/upload', label: '试卷解析' }] : []),
-  ...(auth.isAdmin ? [{ to: '/users', label: '账号管理' }] : []),
+  ...(auth.isAdmin ? [{ to: '/usage', label: 'AI 成本' }, { to: '/users', label: '账号管理' }] : []),
 ])
 
 const open = ref(false)
