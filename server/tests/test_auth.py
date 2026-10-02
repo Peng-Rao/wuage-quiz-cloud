@@ -94,6 +94,10 @@ def test_member_scope_every_surface(accounts, data):
     got = c.get('/api/bank/questions').json()
     assert got['total'] == 1 and [q['id'] for q in got['items']] == data['questions'][:1]
     assert c.get('/api/bank/questions?offset=1').json()['items'] == []
+    # 分批扫描的复杂筛选与数据库分页一样，计数和结果都必须受权限限制。
+    filtered = c.get('/api/bank/questions', params={'q': '权限题', 'nodeId': data['nodes'][0]}).json()
+    assert filtered['total'] == 1 and [q['id'] for q in filtered['items']] == data['questions'][:1]
+    assert c.get('/api/bank/questions', params={'q': '权限题', 'offset': 1}).json()['items'] == []
     papers = c.get('/api/papers').json()
     assert papers['total'] == 1 and papers['items'][0]['questionCount'] == 1
     detail = c.get(f"/api/papers/{data['math']}").json()

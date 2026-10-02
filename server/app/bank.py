@@ -1,7 +1,7 @@
 """校本题库检索（章节 / 知识点选题）与试卷库。
 
 - 知识点筛选按节点 id 或路径匹配：内置知识树更新后节点 id 会重建，路径不变，已入库题的知识点仍能归入节点。
-- 学段、学科、题型、难度在数据库中筛选；知识点、试卷类型、年份、关键词在内存中筛选。
+- 学段、学科、年级、题型、难度在数据库中筛选和分页；知识点、试卷类型、年份、关键词分批扫描。
   单校题量达到数万后，应改为「题目—知识点」关联表并全部在数据库中筛选。
 - 试卷库中的一份试卷 = 同一份原卷（解析任务）入库的题，分类信息取自解析任务。
 """
@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from sqlalchemy import func, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, defer
 
 from .db import BankQuestion, DraftQuestion, KnowledgeNode, KnowledgeTree, ParseJob
 from .chapters import book as chapter_book, chapter_node, kps_match
@@ -25,11 +25,12 @@ from .schemas import (
 )
 from .services import question_source
 from .similar import DUPLICATE_SCORE, normalize, question_text, search
-from .storage import get_store
+from .storage import LocalStore, get_store
 
 # 与前端 coefToDiff 一致：≤ 0.3 容易，≤ 0.6 适中，其余较难
 DIFF_RANGES: dict[str, tuple[float | None, float | None]] = {"容易": (None, 0.3), "适中": (0.3, 0.6), "较难": (0.6, None)}
 SORTS = ("default", "latest", "easy", "hard")
+SCAN_BATCH = 200
 _YEAR = re.compile(r"(?<!\d)((?:19|20)\d{2})(?!\d)")
 
 
@@ -85,7 +86,7 @@ def knowledge_counts(s: Session, school_id: str, tree: KnowledgeTree) -> dict[st
         BankQuestion.school_id == school_id,
         BankQuestion.meta["stage"].as_string() == tree.stage,
         BankQuestion.meta["subject"].as_string() == tree.subject,
-    ))
+    ).execution_options(yield_per=SCAN_BATCH))
     counts: Counter[str] = Counter()
     for (kps,) in rows:
         hit: set[str] = set()
@@ -110,7 +111,7 @@ def chapter_counts(s: Session, school_id: str, book_id: str) -> dict[str, int] |
         BankQuestion.school_id == school_id,
         BankQuestion.meta["stage"].as_string() == version["stage"],
         BankQuestion.meta["subject"].as_string() == version["subject"],
-    ))
+    ).execution_options(yield_per=SCAN_BATCH))
     counts: Counter[str] = Counter()
     for (kps,) in rows:
         counts.update(n.id for n in nodes if n is not None and kps_match(kps, n.knowledge))
@@ -127,7 +128,7 @@ def question_facets(s: Session, school_id: str, stage: str | None, subject: str 
     regions: Counter[str] = Counter()
     grades: Counter[str] = Counter()
     years: Counter[str] = Counter()
-    for (m,) in s.execute(stmt):
+    for (m,) in s.execute(stmt.execution_options(yield_per=SCAN_BATCH)):
         m = m or {}
         if p := province(m.get("region") or ""):
             regions[p] += 1
@@ -189,12 +190,19 @@ def search_questions(s: Session, school_id: str, f: BankFilter, sort: str = "def
         stmt = stmt.where(BankQuestion.type == f.type)
     if f.paper_id:
         stmt = stmt.where(BankQuestion.source_job_id == f.paper_id)
+    if f.grade:
+        stmt = stmt.where(BankQuestion.meta["grade"].as_string() == f.grade)
     if f.diff in DIFF_RANGES:
         lo, hi = DIFF_RANGES[f.diff]
         if lo is not None:
             stmt = stmt.where(BankQuestion.coef > lo)
         if hi is not None:
             stmt = stmt.where(BankQuestion.coef <= hi)
+
+    needs_scan = bool(f.node_ids or f.chapter_id or f.paper_types or f.region or f.term or f.year or normalize(f.q or ""))
+    total = 0
+    if not needs_scan:
+        total = s.scalar(select(func.count()).select_from(stmt.subquery())) or 0
 
     if sort == "latest":
         stmt = stmt.order_by(BankQuestion.created_at.desc(), BankQuestion.source_no)
@@ -209,7 +217,7 @@ def search_questions(s: Session, school_id: str, f: BankFilter, sort: str = "def
     chapter = chapter_node(f.chapter_id) if f.chapter_id else None
     kw = normalize(f.q or "")
 
-    def keep(b: BankQuestion) -> bool:
+    def keep(b: Any) -> bool:
         m = b.meta or {}
         if f.node_ids and not any(kp_in_subtree(b.knowledge_points, *sub) for sub in subs):
             return False
@@ -218,8 +226,6 @@ def search_questions(s: Session, school_id: str, f: BankFilter, sort: str = "def
         if f.paper_types and not any(t in _paper_type(m) + (m.get("title") or "") for t in f.paper_types):
             return False
         if f.region and province(m.get("region") or "") != f.region:
-            return False
-        if f.grade and (m.get("grade") or "") != f.grade:
             return False
         if f.term and term_of(m) != f.term:
             return False
@@ -232,8 +238,25 @@ def search_questions(s: Session, school_id: str, f: BankFilter, sort: str = "def
                 return False
         return True
 
-    rows = [b for b in s.scalars(stmt) if keep(b)]
-    return rows[offset:offset + limit], len(rows)
+    # 普通查询交给数据库分页；复杂筛选只扫描必要字段，不加载答案、解析、图片或向量。
+    if not needs_scan:
+        return list(s.scalars(stmt.options(defer(BankQuestion.embedding)).limit(limit).offset(offset))), total
+    scan = stmt.with_only_columns(
+        BankQuestion.id, BankQuestion.meta, BankQuestion.knowledge_points,
+        BankQuestion.stem, BankQuestion.options, BankQuestion.source_file_name,
+    ).execution_options(yield_per=SCAN_BATCH)
+    ids: list[str] = []
+    total = 0
+    for b in s.execute(scan):
+        if keep(b):
+            if offset <= total < offset + limit:
+                ids.append(b.id)
+            total += 1
+    if not ids:
+        return [], total
+    page = {b.id: b for b in s.scalars(select(BankQuestion).where(BankQuestion.id.in_(ids))
+                                      .options(defer(BankQuestion.embedding)))}
+    return [page[i] for i in ids if i in page], total
 
 
 def bank_out(b: BankQuestion) -> BankQuestionOut:
@@ -359,7 +382,12 @@ def compute_file_hash(keys: list[str]) -> str:
     store = get_store()
     outer = hashlib.sha256()
     for key in keys:
-        outer.update(hashlib.sha256(store.get(key)).digest())
+        if isinstance(store, LocalStore):
+            with store.path(key).open("rb") as f:
+                digest = hashlib.file_digest(f, "sha256").digest()
+        else:
+            digest = hashlib.sha256(store.get(key)).digest()
+        outer.update(digest)
     return outer.hexdigest()
 
 

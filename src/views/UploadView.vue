@@ -45,7 +45,8 @@ function syncFromRoute() {
 onMounted(() => {
   store.loadRecent()
   store.watchJobs(true)
-  syncFromRoute()
+  if (routeJob()) store.openJob(routeJob()) // 返回页面时恢复订阅并同步后台最新状态。
+  else syncFromRoute()
 })
 onBeforeUnmount(() => store.watchJobs(false))
 watch(() => route.query.job, syncFromRoute)

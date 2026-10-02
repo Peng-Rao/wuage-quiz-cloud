@@ -10,6 +10,7 @@ P1 为全量比对，适合万题以内的校本题库；题量更大时换成 p
 """
 
 import logging
+import heapq
 import math
 import re
 import time
@@ -21,7 +22,7 @@ from typing import Any
 
 import httpx
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, defer
 
 from . import usage as usage_log
 from .config import Settings, get_settings
@@ -36,6 +37,9 @@ MIN_SCORE = 0.3
 # 语义余弦校准区间：低于下限视为不相关，高于上限视为同一道题
 SEMANTIC_RANGE = (0.6, 0.95)
 SEMANTIC_WEIGHT = 0.5
+SCAN_BATCH = 200
+FEATURE_CACHE_SIZE = 256
+FEATURE_CACHE_MAX_CHARS = 2000
 
 _LATEX_CMD = re.compile(r"\\[a-zA-Z]+")
 _BLANK = re.compile(r"_{2,}|＿+|—{2,}|（\s*）|\(\s*\)")
@@ -58,7 +62,6 @@ def question_text(stem: str, options: list[str] | None = None) -> str:
     return stem + "".join(options or [])
 
 
-@lru_cache(maxsize=20000)
 def _features(norm: str) -> tuple[Counter, float]:
     grams = Counter(norm[i:i + 2] for i in range(len(norm) - 1))
     grams.update(norm[i:i + 3] for i in range(len(norm) - 2))
@@ -67,10 +70,22 @@ def _features(norm: str) -> tuple[Counter, float]:
     return grams, math.sqrt(sum(v * v for v in grams.values()))
 
 
+_cached_features = lru_cache(maxsize=FEATURE_CACHE_SIZE)(_features)
+
+
+def _text_features(text: str) -> tuple[Counter, float]:
+    norm = normalize(text)
+    # 长题只用于本次计算，避免单个缓存条目无限变大。
+    return _cached_features(norm) if len(norm) <= FEATURE_CACHE_MAX_CHARS else _features(norm)
+
+
 def lexical(a: str, b: str) -> float:
     """两段题目文本的字面相似度 0–1。"""
-    fa, na = _features(normalize(a))
-    fb, nb = _features(normalize(b))
+    return _feature_similarity(_text_features(a), _text_features(b))
+
+
+def _feature_similarity(a: tuple[Counter, float], b: tuple[Counter, float]) -> float:
+    (fa, na), (fb, nb) = a, b
     if not na or not nb:
         return 0.0
     if len(fa) > len(fb):
@@ -146,22 +161,30 @@ class Match:
     row: Any
 
 
-def _candidates(s: Session, school_id: str, *, qtype: str | None, exclude_job: str | None, scope: str):
+def _candidates(s: Session, school_id: str, *, qtype: str | None, exclude_job: str | None, scope: str,
+                with_vectors: bool):
     bank = select(BankQuestion).where(BankQuestion.school_id == school_id)
     if qtype:
         bank = bank.where(BankQuestion.type == qtype)
-    rows: list[tuple[str, Any]] = [("bank", b) for b in s.scalars(bank)]
+    def rows(stmt, cls):
+        columns = [cls.id, cls.stem, cls.options]
+        if with_vectors:
+            columns += [cls.embedding, cls.embedding_model]
+        return s.execute(stmt.with_only_columns(*columns).execution_options(yield_per=SCAN_BATCH))
+
+    for b in rows(bank, BankQuestion):
+        yield "bank", b
     if scope == "all":
         # 其他试卷中尚未入库的草稿题：用于发现同一份试卷被重复上传
-        saved = {b.source_draft_id for _, b in rows}
+        saved = bank.where(BankQuestion.source_draft_id == DraftQuestion.id).exists()
         drafts = (select(DraftQuestion).join(ParseJob, ParseJob.id == DraftQuestion.job_id)
-                  .where(ParseJob.school_id == school_id, ParseJob.status == "done", ParseJob.kind.is_(None)))
+                  .where(ParseJob.school_id == school_id, ParseJob.status == "done", ParseJob.kind.is_(None), ~saved))
         if exclude_job:
             drafts = drafts.where(DraftQuestion.job_id != exclude_job)
         if qtype:
             drafts = drafts.where(DraftQuestion.type == qtype)
-        rows += [("draft", d) for d in s.scalars(drafts) if d.id not in saved]
-    return rows
+        for d in rows(drafts, DraftQuestion):
+            yield "draft", d
 
 
 def search(
@@ -170,19 +193,38 @@ def search(
     min_score: float = MIN_SCORE, model: str | None = None,
 ) -> list[Match]:
     model = model or get_settings().embedding_model
-    matches: list[Match] = []
-    for kind, row in _candidates(s, school_id, qtype=qtype, exclude_job=exclude_job, scope=scope):
+    if limit <= 0:
+        return []
+    query_features = _text_features(text)
+    # 只保留前 limit 个结果；同分时维持原候选顺序。
+    best: list[tuple[float, int, Match]] = []
+    for index, (kind, row) in enumerate(_candidates(
+        s, school_id, qtype=qtype, exclude_job=exclude_job, scope=scope, with_vectors=bool(vector),
+    )):
         if exclude_ids and row.id in exclude_ids:
             continue
-        lex = lexical(text, question_text(row.stem, row.options))
+        lex = _feature_similarity(query_features, _text_features(question_text(row.stem, row.options)))
         sem = None
         if vector and row.embedding and row.embedding_model == model:
             sem = cosine(vector, row.embedding)
         score = combine(lex, sem)
         if score >= min_score:
-            matches.append(Match(kind, row.id, round(score, 4), round(lex, 4), None if sem is None else round(sem, 4), row))
-    matches.sort(key=lambda m: m.score, reverse=True)
-    return matches[:limit]
+            match = Match(kind, row.id, round(score, 4), round(lex, 4), None if sem is None else round(sem, 4), row)
+            item = (match.score, -index, match)
+            if len(best) < limit:
+                heapq.heappush(best, item)
+            elif item[:2] > best[0][:2]:
+                heapq.heapreplace(best, item)
+    matches = [item[2] for item in sorted(best, key=lambda item: item[:2], reverse=True)]
+    # 只有最终命中的题才加载展示字段，避免全库答案、解析等进入内存。
+    for kind, cls in (("bank", BankQuestion), ("draft", DraftQuestion)):
+        ids = [m.id for m in matches if m.kind == kind]
+        if ids:
+            found = {r.id: r for r in s.scalars(select(cls).where(cls.id.in_(ids)).options(defer(cls.embedding)))}
+            for m in matches:
+                if m.kind == kind:
+                    m.row = found.get(m.id)
+    return [m for m in matches if m.row is not None]
 
 
 async def dedupe_job(s: Session, job_id: str, settings: Settings | None = None) -> int:

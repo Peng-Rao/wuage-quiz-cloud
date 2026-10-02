@@ -31,11 +31,12 @@ def validate_kinds(names: list[str]) -> str:
 
 def images_to_pdf(images: list[tuple[str, bytes]]) -> bytes:
     """多张拍照图按顺序合成一份 PDF，每张图一页。"""
-    out = pymupdf.open()
-    for name, data in images:
-        img = pymupdf.open(stream=data, filetype=Path(name).suffix.lstrip(".").lower() or "png")
-        out.insert_pdf(pymupdf.open("pdf", img.convert_to_pdf()))
-    return out.tobytes()
+    with pymupdf.open() as out:
+        for name, data in images:
+            with pymupdf.open(stream=data, filetype=Path(name).suffix.lstrip(".").lower() or "png") as img:
+                with pymupdf.open("pdf", img.convert_to_pdf()) as page:
+                    out.insert_pdf(page)
+        return out.tobytes()
 
 
 def normalize(files: list[tuple[str, bytes]]) -> SourceFile:
@@ -48,9 +49,11 @@ def normalize(files: list[tuple[str, bytes]]) -> SourceFile:
 
 
 def pdf_page_count(data: bytes) -> int:
-    return pymupdf.open(stream=data, filetype="pdf").page_count
+    with pymupdf.open(stream=data, filetype="pdf") as doc:
+        return doc.page_count
 
 
-def render_pages(pdf: bytes, dpi: int) -> list[bytes]:
-    doc = pymupdf.open(stream=pdf, filetype="pdf")
-    return [page.get_pixmap(dpi=dpi).tobytes("png") for page in doc]
+def render_pages(pdf: bytes, dpi: int, start: int, stop: int) -> list[bytes]:
+    """只渲染 [start, stop) 页；文档在本次调用线程中打开并关闭。"""
+    with pymupdf.open(stream=pdf, filetype="pdf") as doc:
+        return [doc[i].get_pixmap(dpi=dpi).tobytes("png") for i in range(start, min(stop, doc.page_count))]

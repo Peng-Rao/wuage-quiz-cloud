@@ -1,5 +1,9 @@
 """上传签名与文件读取。本地存储时上传和读取都经过这里；使用对象存储（OSS / COS）时浏览器直传，读取校验权限后重定向到签名地址。"""
 
+import os
+import uuid
+
+import anyio
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -40,20 +44,33 @@ async def put_file(key: str, request: Request, user: User = Depends(staff), s: S
     if not isinstance(store, LocalStore):
         raise HTTPException(404, "请使用上传凭证中的地址直传对象存储")
     try:
-        exists = store.exists(key)
+        path = store.path(key)
     except ValueError as e:
         raise HTTPException(400, str(e)) from e
-    if exists:
+    if path.exists():
         raise HTTPException(409, "文件已上传")
     limit = get_settings().max_file_mb * 1024 * 1024
-    data = bytearray()
-    async for chunk in request.stream():
-        data += chunk
-        if len(data) > limit:
-            raise HTTPException(413, f"单个文件不超过 {get_settings().max_file_mb} MB")
-    if not data:
-        raise HTTPException(400, "文件为空")
-    store.put(key, bytes(data))
+    await anyio.to_thread.run_sync(lambda: path.parent.mkdir(parents=True, exist_ok=True))
+    tmp = path.with_name(f".{path.name}.{uuid.uuid4().hex}.part")
+    size = 0
+    try:
+        async with await anyio.open_file(tmp, "xb") as f:
+            async for chunk in request.stream():
+                size += len(chunk)
+                if size > limit:
+                    raise HTTPException(413, f"单个文件不超过 {get_settings().max_file_mb} MB")
+                await f.write(chunk)
+        if not size:
+            raise HTTPException(400, "文件为空")
+        # 完整上传后原子发布；并发使用同一凭证时也不能覆盖已完成的文件。
+        try:
+            await anyio.to_thread.run_sync(os.link, tmp, path)
+        except FileExistsError as e:
+            raise HTTPException(409, "文件已上传") from e
+    finally:
+        # 断连、超限与取消均清理临时文件，取消作用域下也完成清理。
+        with anyio.CancelScope(shield=True):
+            await anyio.to_thread.run_sync(lambda: tmp.unlink(missing_ok=True))
     return Response(status_code=204)
 
 

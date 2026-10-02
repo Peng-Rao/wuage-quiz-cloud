@@ -9,6 +9,7 @@ const calibration = ref<DifficultyCalibration | null>(null)
 const error = ref('')
 const notice = ref('')
 let timer: ReturnType<typeof setTimeout> | null = null
+let disposed = false
 
 async function load() {
   const [s, r, c] = await Promise.all([
@@ -16,6 +17,7 @@ async function load() {
     parseApi.listEvalRuns().catch(() => []),
     parseApi.getCalibration().catch(() => null),
   ])
+  if (disposed) return
   samples.value = s
   runs.value = r
   calibration.value = c
@@ -23,14 +25,19 @@ async function load() {
   poll()
 }
 onMounted(load)
-onBeforeUnmount(() => timer && clearTimeout(timer))
+onBeforeUnmount(() => {
+  disposed = true
+  if (timer) clearTimeout(timer)
+})
 
 function poll() {
   if (timer) clearTimeout(timer)
+  if (disposed) return
   const run = current.value
   if (!run || !['queued', 'running'].includes(run.status)) return
   timer = setTimeout(async () => {
     const next = await parseApi.getEvalRun(run.id).catch(() => null)
+    if (disposed) return
     if (next && current.value?.id === run.id) {
       current.value = next
       runs.value = runs.value.map((r) => (r.id === next.id ? next : r))

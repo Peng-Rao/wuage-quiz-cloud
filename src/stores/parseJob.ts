@@ -54,6 +54,8 @@ export const useParseJobStore = defineStore('parseJob', () => {
   let answerTimer: ReturnType<typeof setTimeout> | null = null
   let jobsTimer: ReturnType<typeof setTimeout> | null = null
   let watchingJobs = false
+  let jobsRequest: Promise<void> | null = null
+  let pollSeq = 0
 
   const isLow = (q: DraftQuestion) => q.confidence < REVIEW_CONFIDENCE
   const reviewCount = computed(() => questions.value.filter(isLow).length)
@@ -93,19 +95,26 @@ export const useParseJobStore = defineStore('parseJob', () => {
 
   const JOBS_PAGE = 20
 
-  async function refreshJobs() {
+  function refreshJobs(): Promise<void> {
+    if (jobsRequest) return jobsRequest
+    if (jobsTimer) clearTimeout(jobsTimer)
+    jobsTimer = null
     jobsLoading.value = true
-    try {
-      const page = await parseApi.listJobs({ limit: JOBS_PAGE })
-      jobList.value = page.items
-      jobsTotal.value = page.total
-      jobsActive.value = page.active
-    } catch {
-      // 列表刷新失败不打断当前操作，下次轮询重试
-    } finally {
-      jobsLoading.value = false
-    }
-    scheduleJobs()
+    jobsRequest = Promise.resolve().then(async () => {
+      try {
+        const page = await parseApi.listJobs({ limit: JOBS_PAGE })
+        jobList.value = page.items
+        jobsTotal.value = page.total
+        jobsActive.value = page.active
+      } catch {
+        // 列表刷新失败不打断当前操作，下次轮询重试
+      } finally {
+        jobsLoading.value = false
+        jobsRequest = null
+        scheduleJobs()
+      }
+    })
+    return jobsRequest
   }
 
   /** 有排队或解析中的任务时，每 2 秒刷新列表 */
@@ -118,8 +127,14 @@ export const useParseJobStore = defineStore('parseJob', () => {
   /** 页面挂载时开启列表轮询，离开时关闭 */
   function watchJobs(on: boolean) {
     watchingJobs = on
-    if (on) refreshJobs()
-    else scheduleJobs()
+    if (on) {
+      refreshJobs()
+    } else {
+      openSeq++
+      openingJob.value = null
+      stop()
+      scheduleJobs()
+    }
   }
 
   /** 多份 PDF / Word：批量后台解析；其余（单份、或同一份试卷的多张图片）：单份解析 */
@@ -221,7 +236,7 @@ export const useParseJobStore = defineStore('parseJob', () => {
       return
     }
     phase.value = 'parsing'
-    unsubscribe = parseApi.subscribe(job.value.id, onJobEvent)
+    if (watchingJobs) unsubscribe = parseApi.subscribe(job.value.id, onJobEvent)
   }
 
   async function onJobEvent(next: ParseJob) {
@@ -256,6 +271,7 @@ export const useParseJobStore = defineStore('parseJob', () => {
   }
 
   function stop() {
+    pollSeq++
     unsubscribe?.()
     unsubscribe = null
     if (answerTimer) clearTimeout(answerTimer)
@@ -267,22 +283,36 @@ export const useParseJobStore = defineStore('parseJob', () => {
   /** AI 补标知识点：后台执行，轮询 knowledge 阶段直到结束后刷新题目 */
   async function tagKnowledge() {
     if (!job.value) return
+    const jobId = job.value.id, seq = pollSeq
     await withBusy('knowledge', async () => {
-      job.value = await parseApi.tagKnowledge(job.value!.id)
+      const next = await parseApi.tagKnowledge(jobId)
+      if (seq !== pollSeq || job.value?.id !== jobId) return
+      job.value = next
       pollKnowledge()
     })
   }
 
   function pollKnowledge() {
     if (knowledgeTimer) clearTimeout(knowledgeTimer)
+    const seq = pollSeq, jobId = job.value?.id
+    if (!jobId) return
     knowledgeTimer = setTimeout(async () => {
-      if (!job.value) return
-      const jobId = job.value.id
+      knowledgeTimer = null
+      if (seq !== pollSeq || job.value?.id !== jobId) return
       const next = await parseApi.getJob(jobId).catch(() => null)
-      if (!next || job.value?.id !== jobId) return pollKnowledge()
+      if (seq !== pollSeq || job.value?.id !== jobId) return
+      if (!next) return pollKnowledge()
       job.value = next
       if (knowledgeRunning.value) return pollKnowledge()
-      applyQuestions(await parseApi.listQuestions(jobId))
+      let list: DraftQuestion[]
+      try {
+        list = await parseApi.listQuestions(jobId)
+      } catch {
+        if (seq === pollSeq && job.value?.id === jobId) pollKnowledge()
+        return
+      }
+      if (seq !== pollSeq || job.value?.id !== jobId) return
+      applyQuestions(list)
       const st = next.stages.find((s) => s.stage === 'knowledge')
       if (st?.status === 'failed') error.value = st.note ?? '知识点标注失败'
       loadUsage()
@@ -292,10 +322,12 @@ export const useParseJobStore = defineStore('parseJob', () => {
   /** 发起 AI 生成答案；默认补全所有缺答案的题 */
   async function generateAnswers(opts: GenerateAnswersOptions = {}) {
     if (!job.value) return
+    const jobId = job.value.id, seq = pollSeq
     error.value = ''
     const key = opts.questionIds?.length === 1 ? opts.questionIds[0] : 'answers'
     await withBusy(key, async () => {
-      const task = await parseApi.generateAnswers(job.value!.id, opts)
+      const task = await parseApi.generateAnswers(jobId, opts)
+      if (seq !== pollSeq || job.value?.id !== jobId) return
       job.value = { ...job.value!, answerTask: task }
       pollAnswers(task.done + task.failed)
     })
@@ -304,22 +336,34 @@ export const useParseJobStore = defineStore('parseJob', () => {
   /** 轮询生成进度：每有题目完成就刷新题目列表，答案逐题出现 */
   function pollAnswers(lastFinished: number) {
     if (answerTimer) clearTimeout(answerTimer)
+    const seq = pollSeq, jobId = job.value?.id
+    if (!jobId) return
     answerTimer = setTimeout(async () => {
-      if (!job.value) return
-      const jobId = job.value.id
+      answerTimer = null
+      if (seq !== pollSeq || job.value?.id !== jobId) return
       let next: ParseJob
       try {
         next = await parseApi.getJob(jobId)
       } catch {
-        pollAnswers(lastFinished)
+        if (seq === pollSeq && job.value?.id === jobId) pollAnswers(lastFinished)
         return
       }
-      if (job.value?.id !== jobId) return
+      if (seq !== pollSeq || job.value?.id !== jobId) return
       job.value = next
       const task = next.answerTask
       const finished = task ? task.done + task.failed : 0
       const running = !!task && ['queued', 'running'].includes(task.status)
-      if (finished !== lastFinished || !running) applyQuestions(await parseApi.listQuestions(jobId))
+      if (finished !== lastFinished || !running) {
+        let list: DraftQuestion[]
+        try {
+          list = await parseApi.listQuestions(jobId)
+        } catch {
+          if (seq === pollSeq && job.value?.id === jobId) pollAnswers(lastFinished)
+          return
+        }
+        if (seq !== pollSeq || job.value?.id !== jobId) return
+        applyQuestions(list)
+      }
       if (running) pollAnswers(finished)
       else {
         if (task?.status === 'failed' || task?.error) error.value = task.error ?? 'AI 生成答案失败'
