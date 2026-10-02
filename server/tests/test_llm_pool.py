@@ -77,11 +77,14 @@ async def test_invalid_key_and_generic_errors_do_not_switch(monkeypatch):
 
 async def test_per_model_extra_body(monkeypatch):
     seen = mock(monkeypatch, {"a": [(200, "{}")], "b": [(200, "{}")]})
-    s = settings(llm_models=["a", "b"], llm_model_extra_body={"b": {"enable_thinking": True, "top_p": None}})
+    s = settings(llm_models=["a", "b"], llm_extra_body={"enable_thinking": False, "top_p": 0.9},
+                 llm_model_extra_body={"b": {"enable_thinking": True, "top_p": None, "response_format": None}})
     await llm.chat_json("sys", "u", s)
     llm._cooldown["a"] = (1e18, "测试")
     await llm.chat_json("sys", "u", s)
-    assert seen[0]["enable_thinking"] is False and seen[1]["enable_thinking"] is True and "top_p" not in seen[1]
+    assert seen[0]["enable_thinking"] is False and seen[0]["response_format"] == {"type": "json_object"}
+    # null 删除参数：包括内置的 response_format（思考模式下不支持 JSON 输出模式的模型）
+    assert seen[1]["enable_thinking"] is True and "top_p" not in seen[1] and "response_format" not in seen[1]
 
 
 async def test_budget_skips_model(monkeypatch):
