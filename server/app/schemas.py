@@ -85,7 +85,11 @@ class ModelPriceOut(Model):
     currency: str
     tiers: list[dict[str, Any]]
     cache_ratio: float | None = None
+    # 峰谷时段（北京时间）：{"ranges": [[开始, 结束)], "weekdays_only": bool}；为空表示不分峰谷
+    peak: dict[str, Any] | None = None
     notes: str | None = None
+    # 是否用于计算成本（手动配置或当前调用平台的单价），其余为参考
+    billing: bool = False
     fetched_at: UtcDatetime
     checked_at: UtcDatetime
 

@@ -116,11 +116,17 @@ class Settings(BaseSettings):
     mineru_price_per_page: float | None = None
     currency: str = "¥"
 
-    # 在线单价：Worker 每隔 PRICE_REFRESH_HOURS 小时（0 为不抓取）从百炼官方定价页抓取，页面上没有的模型用 OpenRouter 补充，
-    # 写入 model_price；每次调用按当时的单价计算定价成本写入 ai_usage。LLM_PRICES 手动配置的单价优先
+    # 在线单价：每隔 PRICE_REFRESH_HOURS 小时（0 为不抓取）抓取各来源单价写入 model_price；
+    # 每次调用按当时计费来源的单价计算定价成本写入 ai_usage。LLM_PRICES 手动配置的单价优先
     price_refresh_hours: int = 24
-    price_sources: list[Literal["aliyun", "openrouter"]] = ["aliyun", "openrouter"]
-    # 百炼定价页中按地域、部署范围选取单价，与 LLM_BASE_URL 所在工作空间一致
+    # 抓取的来源：tencent 腾讯云 TokenHub 模型价格文档（元），aliyun 百炼定价页（美元），openrouter 列表价（美元）。
+    # 各来源的单价都存入数据库；计算成本只用计费来源（及 LLM_PRICES 手动单价），其余作为参考
+    price_sources: list[Literal["tencent", "aliyun", "openrouter"]] = ["tencent", "aliyun", "openrouter"]
+    # 计费来源：auto 按 LLM_BASE_URL 判断（tokenhub.tencentmaas.com → tencent，阿里云百炼 → aliyun，其他 → openrouter）
+    price_billing_source: Literal["auto", "tencent", "aliyun", "openrouter"] = "auto"
+    # TokenHub 价格文档中的地域（广州 / 新加坡）
+    price_tencent_region: str = "广州"
+    # 百炼定价页中按地域、部署范围选取单价
     price_region: str = "Singapore"
     price_scope: str = "International"
     # 缓存命中的输入 token 按输入单价的比例计费（百炼隐式缓存为 20%），可按模型覆盖
