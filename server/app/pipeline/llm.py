@@ -7,6 +7,7 @@
 import json
 import logging
 import re
+import ssl
 import time
 from dataclasses import dataclass
 from typing import Any
@@ -267,7 +268,8 @@ async def _call(model: str, base_url: str, api_key: str, body: dict[str, Any], p
                 if "Key" in str(e):
                     raise
                 last = e
-            except (httpx.HTTPError, KeyError, IndexError, json.JSONDecodeError) as e:
+            # 跨境链路偶发 TLS 中断时，流式读取可能直接抛出未被 httpx 包装的 ssl.SSLError，同样重试
+            except (httpx.HTTPError, ssl.SSLError, KeyError, IndexError, json.JSONDecodeError) as e:
                 last = e
             # 请求已发出即可能计费，失败也记一笔
             _log_usage(model, purpose, prompt_text, content, used, started, "error")

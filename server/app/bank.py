@@ -8,6 +8,7 @@
 
 import hashlib
 import re
+import uuid
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from typing import Any
@@ -19,7 +20,8 @@ from .db import BankQuestion, DraftQuestion, KnowledgeNode, KnowledgeTree, Parse
 from .chapters import book as chapter_book, chapter_node, kps_match
 from .knowledge_tree import PATH_SEP
 from .schemas import (
-    BankQuestionOut, DuplicatePaper, FacetCount, PaperDetail, PaperFacets, PaperMeta, PaperPage, PaperSummary,
+    BankQuestionOut, CommitResult, CommitSkip, DuplicatePaper, FacetCount, PaperDetail, PaperFacets, PaperMeta,
+    PaperPage, PaperSummary,
 )
 from .services import question_source
 from .similar import DUPLICATE_SCORE, normalize, question_text, search
@@ -435,3 +437,104 @@ def remove_paper(s: Session, school_id: str, paper_id: str) -> int:
     for d in s.scalars(select(DraftQuestion).where(DraftQuestion.job_id == paper_id, DraftQuestion.status == "saved")):
         d.status = "draft"
     return len(rows)
+
+
+# ---------------- 入库 ----------------
+
+def commit_questions(s: Session, job: ParseJob, qs: list[DraftQuestion], owner_id: str | None,
+                     force: bool = False) -> CommitResult:
+    """草稿题保存到校本题库（人工入库与自动入库共用）。未 force 时跳过与其他试卷已入库题目重复的题；
+    整份试卷已在试卷库中时不保存，返回 duplicate_paper。调用方负责提交事务。"""
+    skipped: list[CommitSkip] = []
+    if not force:
+        check = check_duplicates(s, job, qs)
+        if check.paper is not None:
+            return CommitResult(saved_count=0, duplicate_paper=check.paper)
+        for q in qs:
+            if q.id in check.questions:
+                b, score = check.questions[q.id]
+                src = question_source(b.meta, b.source_file_name, b.source_no, b.source_page)
+                skipped.append(CommitSkip(question_id=q.id, no=q.no, duplicate_of=b.id, score=score, source=src.label))
+        qs = [q for q in qs if q.id not in check.questions]
+    wanted = {q.id for q in qs}
+    existing = {b.source_draft_id: b for b in s.scalars(
+        select(BankQuestion).where(BankQuestion.source_draft_id.in_(wanted)))} if wanted else {}
+    for q in qs:
+        b = existing.get(q.id) or BankQuestion(id="k" + uuid.uuid4().hex[:20], school_id=job.school_id,
+                                               source_job_id=job.id, source_draft_id=q.id)
+        b.type, b.score, b.stem, b.options = q.type, q.score, q.stem, q.options
+        b.answer, b.analysis, b.knowledge_points, b.coef = q.answer, q.analysis, q.knowledge_points, q.coef
+        # Recommitting updates invalidates the previous review/assignment.
+        b.owner_id = b.owner_id or owner_id
+        b.reviewed_at, b.reviewed_by = None, None
+        b.answer_source = q.answer_source
+        b.embedding, b.embedding_model = q.embedding, q.embedding_model
+        b.source_file_name, b.source_no, b.source_page = job.file_name, q.no, q.page
+        b.images, b.meta = q.images, job.meta
+        s.add(b)
+        q.status = "saved"
+    # 同卷先前入库的题也换成最新的试卷分类
+    sync_meta(s, job)
+    return CommitResult(saved_count=len(qs), saved_ids=[q.id for q in qs], skipped=skipped)
+
+
+def review_reasons(q: DraftQuestion, min_confidence: float, require_answer: bool) -> list[str]:
+    """需要人工审核的原因；为空表示可自动入库。"""
+    reasons = []
+    if q.confidence < min_confidence:
+        reasons.append("置信度低")
+    if not (q.stem or "").strip():
+        reasons.append("题干为空")
+    texts = [q.stem or "", q.answer or "", q.analysis or ""] + [str(o) for o in (q.options or [])]
+    if any("[公式]" in x for x in texts):
+        reasons.append("公式未识别")
+    if require_answer and not (q.answer or "").strip():
+        reasons.append("缺少答案")
+    if q.answer_note:
+        reasons.append("答案待确认")
+    if q.duplicate_of:
+        reasons.append("疑似重复")
+    return reasons
+
+
+@dataclass
+class AutoCommitResult:
+    saved: int = 0
+    # 原因 → 题数（同一题可能有多个原因）
+    pending: Counter = field(default_factory=Counter)
+    pending_count: int = 0
+    duplicate_paper: bool = False
+
+    def note(self) -> str:
+        if self.duplicate_paper:
+            return "整份试卷已在试卷库中，未自动入库"
+        s = f"自动入库 {self.saved} 道"
+        if self.pending_count:
+            s += f"，{self.pending_count} 道待人工审核（" + "、".join(f"{k} {v}" for k, v in self.pending.most_common()) + "）"
+        return s
+
+
+def auto_commit(s: Session, job: ParseJob, min_confidence: float, require_answer: bool) -> AutoCommitResult:
+    """解析完成后：确定的题直接入库，不确定的留作草稿由人工审核。调用方负责提交事务。"""
+    res = AutoCommitResult()
+    ready = []
+    for q in s.scalars(select(DraftQuestion).where(DraftQuestion.job_id == job.id, DraftQuestion.status == "draft")
+                       .order_by(DraftQuestion.no)):
+        reasons = review_reasons(q, min_confidence, require_answer)
+        if reasons:
+            res.pending.update(reasons)
+            res.pending_count += 1
+        else:
+            ready.append(q)
+    if not ready:
+        return res
+    out = commit_questions(s, job, ready, job.owner_id)
+    if out.duplicate_paper is not None:
+        res.duplicate_paper = True
+        res.pending_count += len(ready)
+        return res
+    res.saved = out.saved_count
+    if out.skipped:
+        res.pending["与题库重复"] += len(out.skipped)
+        res.pending_count += len(out.skipped)
+    return res

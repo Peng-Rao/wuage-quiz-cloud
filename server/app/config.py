@@ -108,6 +108,13 @@ class Settings(BaseSettings):
     redis_prefix: str = "fg-quiz"
     run_worker: bool = False
 
+    # 自动入库：解析完成后，确定的题直接存入校本题库，只有不确定的题留给人工审核。
+    # 不确定：置信度低于 AUTO_COMMIT_MIN_CONFIDENCE、题干为空、公式未识别、缺少答案（AUTO_COMMIT_REQUIRE_ANSWER）、
+    # AI 答案待确认、疑似重复，或整份试卷已在试卷库中。入库后分配给教师的审核（/api/bank/review）不变
+    auto_commit: bool = True
+    auto_commit_min_confidence: float = 0.8
+    auto_commit_require_answer: bool = True
+
     # AI 生成答案时同时进行的请求数
     answer_concurrency: int = 3
     #  单次拆题请求最多发送的版面单元数，超过则只用规则结果
