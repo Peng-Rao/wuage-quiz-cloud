@@ -5,12 +5,12 @@ from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import Field, field_validator
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, update
 from sqlalchemy.exc import IntegrityError
 
 from ..auth import COOKIE, admin, check_origin, current_user, hash_password, staff, token_hash, verify_password
 from ..config import get_settings
-from ..db import LoginSession, LoginThrottle, SessionLocal, User, utcnow
+from ..db import BankQuestion, LoginSession, LoginThrottle, ParseJob, SessionLocal, UploadOwner, User, utcnow
 from ..pipeline.classify import ALL_SUBJECTS
 from ..schemas import Model
 
@@ -148,10 +148,23 @@ def create_user(body: UserCreate, _: User = Depends(admin)):
         return out(user)
 
 
+def lock_admin_actor(s, actor_id):
+    # Serialize admin changes in a fixed order, then recheck authorization inside the transaction.
+    # The request dependency may have authenticated an admin who was just deleted or demoted.
+    list(s.scalars(select(User).where(User.role == "admin").order_by(User.id).with_for_update()))
+    actor = s.get(User, actor_id)
+    if not actor or not actor.active:
+        raise HTTPException(401, "请先登录或重新登录")
+    if actor.role != "admin":
+        raise HTTPException(403, "仅管理员可使用此功能")
+    return actor
+
+
 @router.put("/users/{user_id}", response_model=UserOut)
 def update_user(user_id: str, body: UserWrite, actor: User = Depends(admin)):
     validate_write(body)
     with SessionLocal() as s:
+        actor = lock_admin_actor(s, actor.id)
         user = s.get(User, user_id)
         if not user:
             raise HTTPException(404, "用户不存在")
@@ -164,3 +177,21 @@ def update_user(user_id: str, body: UserWrite, actor: User = Depends(admin)):
         s.execute(delete(LoginSession).where(LoginSession.user_id == user.id))
         s.commit()
         return out(user)
+
+
+@router.delete("/users/{user_id}", status_code=204)
+def delete_user(user_id: str, actor: User = Depends(admin)):
+    if actor.id == user_id:
+        raise HTTPException(400, "不能删除自己的管理员账号")
+    with SessionLocal() as s:
+        lock_admin_actor(s, actor.id)
+        user = s.get(User, user_id)
+        if not user:
+            raise HTTPException(404, "用户不存在")
+        s.execute(delete(LoginSession).where(LoginSession.user_id == user_id))
+        s.execute(delete(UploadOwner).where(UploadOwner.user_id == user_id))
+        # Preserve shared papers, questions and review history; remove personal ownership.
+        s.execute(update(ParseJob).where(ParseJob.owner_id == user_id).values(owner_id=None))
+        s.execute(update(BankQuestion).where(BankQuestion.owner_id == user_id).values(owner_id=None))
+        s.delete(user)
+        s.commit()
