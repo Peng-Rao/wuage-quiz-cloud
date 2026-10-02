@@ -9,6 +9,7 @@ import { parseApi, type SimilarQuestion } from '@/api/parse'
 import { fromBank, useBasketStore } from '@/stores/basket'
 import QuestionCard from './QuestionCard.vue'
 import SimilarDialog from '@/components/parse/SimilarDialog.vue'
+import LoadingState from '@/components/LoadingState.vue'
 
 /** 选题结果区（章节选题、知识点选题共用）：场景 / 题型 / 难度 / 更多筛选，排序、结果内搜索、题目列表与分页 */
 const props = defineProps<{
@@ -150,7 +151,7 @@ function resetFilters() {
 </script>
 
 <template>
-  <div class="qb">
+  <div class="qb" :aria-busy="loading">
     <div class="card filters">
       <div class="row">
         <span class="label">场景</span>
@@ -214,12 +215,13 @@ function resetFilters() {
         <input v-model="kwInput" placeholder="在结果中搜索" aria-label="在结果中搜索" @blur="keyword = kwInput.trim()">
       </form>
       <button class="tool" @click="toggleAllAns">{{ allAns ? '收起全部详情' : '展开全部详情' }}</button>
-      <button class="tool" :disabled="!result.items.length || pageAllIn" @click="basket.addMany(result.items.map(fromBank))">
+      <button class="tool" :disabled="loading || !result.items.length || pageAllIn" @click="basket.addMany(result.items.map(fromBank))">
         {{ pageAllIn ? '本页已全部加入' : '本页全部加入' }}
       </button>
       <span class="total">共计 <b>{{ result.total }}</b> 道试题</span>
     </div>
 
+    <LoadingState v-if="loading && result.items.length" compact label="正在更新题目…" />
     <div class="list" :class="{ dim: loading }">
       <QuestionCard
         v-for="(q, i) in result.items" :key="q.id" :q="q" :no="(page - 1) * PAGE_SIZE + i + 1"
@@ -230,7 +232,7 @@ function resetFilters() {
     </div>
 
     <div v-if="error" class="card empty err">加载失败：{{ error }} <button class="btn-link is-primary" @click="load">重试</button></div>
-    <div v-else-if="loading && !result.items.length" class="card empty">加载中…</div>
+    <LoadingState v-else-if="loading && !result.items.length" class="card" label="正在加载题目…" detail="正在获取题干、答案与解析" :rows="3" />
     <div v-else-if="!result.items.length" class="card empty">
       没有符合条件的题目，试试调整目录或筛选条件。<br>
       <span v-if="auth.isStaff" class="small">题库中的题来自「试卷解析」核对后保存的校本题目，<RouterLink to="/upload">去上传试卷</RouterLink>。</span>

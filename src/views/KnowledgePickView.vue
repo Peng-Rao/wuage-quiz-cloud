@@ -7,6 +7,7 @@ import { useAppStore } from '@/stores/app'
 import QuestionBrowser from '@/components/bank/QuestionBrowser.vue'
 import TreeNav, { type TreeItem } from '@/components/bank/TreeNav.vue'
 import BasketFloat from '@/components/bank/BasketFloat.vue'
+import LoadingState from '@/components/LoadingState.vue'
 
 const { stage, subject } = storeToRefs(useAppStore())
 
@@ -16,41 +17,50 @@ const tree = ref<KnowledgeTreeDetail | null>(null)
 const counts = ref<Record<string, number>>({})
 const error = ref('')
 const loaded = ref(false)
+let treesSeq = 0
 
 /** 当前学段学科的知识树：正式导入的优先于内置，其次最新导入的（与后端 pick_tree 一致） */
 async function loadTrees() {
+  const seq = ++treesSeq
   loaded.value = false
   error.value = ''
+  treeId.value = null
+  tree.value = null
   try {
-    trees.value = (await parseApi.listTrees())
+    const next = await parseApi.listTrees()
+    if (seq !== treesSeq) return
+    trees.value = next
       .filter((t) => t.stage === stage.value && t.subject === subject.value)
       .sort((a, b) => Number(a.builtin) - Number(b.builtin) || b.createdAt.localeCompare(a.createdAt))
   } catch (e) {
+    if (seq !== treesSeq) return
     trees.value = []
     error.value = (e as Error).message
   }
   const next = trees.value[0]?.id ?? null
-  // 知识树未变时 treeId 的监听不会触发
-  if (next === treeId.value) loaded.value = true
   treeId.value = next
   if (!next) loaded.value = true
 }
 watch([stage, subject], loadTrees, { immediate: true })
 
-watch(treeId, async (id) => {
+watch(treeId, async (id, _, onCleanup) => {
+  let active = true
+  onCleanup(() => { active = false })
   selected.value = []
   tree.value = null
   counts.value = {}
   if (!id) return
+  loaded.value = false
+  error.value = ''
   try {
     const [t, c] = await Promise.all([parseApi.getTree(id), bankApi.knowledgeCounts(id)])
-    if (treeId.value !== id) return // 已切换到其他知识树
+    if (!active) return
     tree.value = t
     counts.value = c
   } catch (e) {
-    if (treeId.value === id) error.value = (e as Error).message
+    if (active) error.value = (e as Error).message
   } finally {
-    if (treeId.value === id) loaded.value = true
+    if (active) loaded.value = true
   }
 })
 
@@ -109,7 +119,7 @@ const current = computed(() => {
 
         <div class="tree">
           <p v-if="error" class="tip err">{{ error }}</p>
-          <p v-else-if="!loaded" class="tip">加载中…</p>
+          <LoadingState v-else-if="!loaded" label="正在加载知识体系…" detail="正在获取知识点与题量统计" />
           <p v-else-if="!trees.length" class="tip">
             {{ stage }}{{ subject }}还没有知识树，可在 <RouterLink to="/upload/knowledge">知识树管理</RouterLink> 中导入。
           </p>

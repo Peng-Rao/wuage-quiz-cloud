@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { TYPE_ORDER, coefToDiff } from '@/data/mock'
 import { bankApi, type FacetCount, type PaperFacets, type PaperPage, type PaperSummary } from '@/api/bank'
 import { fromBank, useBasketStore } from '@/stores/basket'
+import LoadingState from '@/components/LoadingState.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -86,6 +87,7 @@ const tagsOf = (p: PaperSummary) =>
 // 整卷加入试题篮
 const adding = reactive<Record<string, 'loading' | 'done'>>({})
 async function addPaper(p: PaperSummary) {
+  if (adding[p.id]) return
   adding[p.id] = 'loading'
   try {
     const d = await bankApi.getPaper(p.id)
@@ -139,13 +141,14 @@ async function addPaper(p: PaperSummary) {
     </div>
 
     <div v-if="error" class="card empty err">加载失败：{{ error }} <button class="btn-link is-primary" @click="load">重试</button></div>
-    <div v-else-if="!data && loading" class="card empty">加载中…</div>
+    <LoadingState v-else-if="loading && !data?.items.length" class="card" label="正在加载试卷…" detail="正在整理试卷目录与题目统计" :rows="3" />
     <div v-else-if="data && !data.items.length" class="card empty">
       没有符合条件的试卷。<br>
       <span class="small">试卷库收录「试卷解析」中核对并保存到校本题库的试卷，<RouterLink to="/upload">去上传试卷</RouterLink>。</span>
     </div>
 
-    <div v-else class="card list" :class="{ dim: loading }">
+    <div v-else class="card list" :class="{ dim: loading }" :aria-busy="loading">
+      <LoadingState v-if="loading" compact label="正在更新试卷…" />
       <div v-for="p in data?.items" :key="p.id" class="paper-row">
         <span class="tag">{{ p.meta.paperType || '试卷' }}</span>
         <div class="main">
@@ -166,7 +169,8 @@ async function addPaper(p: PaperSummary) {
           <div class="btns">
             <RouterLink :to="`/papers/${p.id}`" class="op">查看</RouterLink>
             <button class="op primary" :disabled="!!adding[p.id]" @click="addPaper(p)">
-              {{ adding[p.id] === 'done' ? '已加入试题篮' : adding[p.id] === 'loading' ? '加入中…' : '整卷加入试题篮' }}
+              <LoadingState v-if="adding[p.id] === 'loading'" compact label="正在获取整卷题目…" />
+              <template v-else>{{ adding[p.id] === 'done' ? '已加入试题篮' : '整卷加入试题篮' }}</template>
             </button>
           </div>
         </div>

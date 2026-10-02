@@ -42,6 +42,9 @@ export const useParseJobStore = defineStore('parseJob', () => {
   const jobList = ref<JobListItem[]>([])
   const jobsTotal = ref(0)
   const jobsActive = ref(0)
+  const jobsLoading = ref(false)
+  const openingJob = ref<string | null>(null)
+  let openSeq = 0
   const batchUploading = ref(false)
   const batchPct = ref(0)
   /** 批量上传后的提示，如「已加入后台队列：3 份试卷」 */
@@ -91,6 +94,7 @@ export const useParseJobStore = defineStore('parseJob', () => {
   const JOBS_PAGE = 20
 
   async function refreshJobs() {
+    jobsLoading.value = true
     try {
       const page = await parseApi.listJobs({ limit: JOBS_PAGE })
       jobList.value = page.items
@@ -98,6 +102,8 @@ export const useParseJobStore = defineStore('parseJob', () => {
       jobsActive.value = page.active
     } catch {
       // 列表刷新失败不打断当前操作，下次轮询重试
+    } finally {
+      jobsLoading.value = false
     }
     scheduleJobs()
   }
@@ -138,29 +144,37 @@ export const useParseJobStore = defineStore('parseJob', () => {
   /** 打开任意任务：已完成进入核对，未完成查看进度 */
   async function openJob(jobId: string) {
     reset()
-    let next: ParseJob
+    const seq = openSeq
+    openingJob.value = jobId
     try {
-      next = await parseApi.getJob(jobId)
-    } catch (e) {
-      error.value = (e as Error).message
-      return
-    }
-    job.value = next
-    if (next.status === 'done') {
-      applyQuestions(await parseApi.listQuestions(jobId))
-      selected.value = new Set(questions.value.filter((q) => q.status !== 'saved').map((q) => q.id))
-      phase.value = 'done'
-      loadUsage()
-      if (next.answerTask && ['queued', 'running'].includes(next.answerTask.status)) {
-        pollAnswers(next.answerTask.done + next.answerTask.failed)
+      const next = await parseApi.getJob(jobId)
+      if (seq !== openSeq) return
+      if (next.status === 'done') {
+        const list = await parseApi.listQuestions(jobId)
+        if (seq !== openSeq) return
+        job.value = next
+        applyQuestions(list)
+        selected.value = new Set(questions.value.filter((q) => q.status !== 'saved').map((q) => q.id))
+        phase.value = 'done'
+        loadUsage()
+        if (next.answerTask && ['queued', 'running'].includes(next.answerTask.status)) {
+          pollAnswers(next.answerTask.done + next.answerTask.failed)
+        }
+        if (knowledgeRunning.value) pollKnowledge()
+      } else {
+        job.value = next
+        if (next.status === 'failed' || next.status === 'cancelled') {
+          phase.value = 'failed'
+          error.value = next.error ?? ''
+        } else {
+          phase.value = 'parsing'
+          unsubscribe = parseApi.subscribe(jobId, onJobEvent)
+        }
       }
-      if (knowledgeRunning.value) pollKnowledge()
-    } else if (next.status === 'failed' || next.status === 'cancelled') {
-      phase.value = 'failed'
-      error.value = next.error ?? ''
-    } else {
-      phase.value = 'parsing'
-      unsubscribe = parseApi.subscribe(jobId, onJobEvent)
+    } catch (e) {
+      if (seq === openSeq) error.value = (e as Error).message
+    } finally {
+      if (seq === openSeq) openingJob.value = null
     }
   }
 
@@ -195,6 +209,7 @@ export const useParseJobStore = defineStore('parseJob', () => {
     withBusy('similar:' + id, () => parseApi.getSimilar(id, { limit: 8, scope: 'all' }))
 
   async function start(files: File[]) {
+    if (batchUploading.value || openingJob.value || phase.value === 'uploading') return
     if (isBatch(files)) return startBatch(files)
     reset()
     phase.value = 'uploading'
@@ -210,6 +225,8 @@ export const useParseJobStore = defineStore('parseJob', () => {
   }
 
   async function onJobEvent(next: ParseJob) {
+    if (job.value?.id !== next.id) return
+    const seq = openSeq
     job.value = next
     if (next.status === 'failed' || next.status === 'cancelled') {
       stop()
@@ -218,7 +235,18 @@ export const useParseJobStore = defineStore('parseJob', () => {
       error.value = next.error ?? '解析失败，请稍后重试'
     } else if (next.status === 'done' && phase.value === 'parsing') {
       stop()
-      applyQuestions(await parseApi.listQuestions(next.id))
+      let list: DraftQuestion[]
+      try {
+        list = await parseApi.listQuestions(next.id)
+      } catch (e) {
+        if (seq === openSeq) {
+          error.value = (e as Error).message
+          phase.value = 'failed'
+        }
+        return
+      }
+      if (seq !== openSeq) return
+      applyQuestions(list)
       selected.value = new Set(questions.value.map((q) => q.id))
       phase.value = 'done'
       loadUsage()
@@ -379,6 +407,8 @@ export const useParseJobStore = defineStore('parseJob', () => {
   }
 
   function reset() {
+    openSeq++
+    openingJob.value = null
     stop()
     phase.value = 'idle'
     uploadPct.value = 0
@@ -394,7 +424,7 @@ export const useParseJobStore = defineStore('parseJob', () => {
   return {
     phase, options, uploadPct, overallPct, job, questions, selected, recent, error, busy, savedCount, commitResult,
     usage, usageOverview, OVERVIEW_DAYS, loadUsage,
-    jobList, jobsTotal, jobsActive, batchUploading, batchPct, notice,
+    jobList, jobsTotal, jobsActive, jobsLoading, openingJob, batchUploading, batchPct, notice,
     refreshJobs, watchJobs, openJob, backToList, retryJob, cancelJob, getSimilar, markEvalSample,
     missingAnswerCount, answerTask, answering, isAnswering, generateAnswers,
     missingKnowledgeCount, knowledgeRunning, tagKnowledge,

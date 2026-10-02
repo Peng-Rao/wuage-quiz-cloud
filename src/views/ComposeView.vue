@@ -4,6 +4,7 @@ import { storeToRefs } from 'pinia'
 import { useRouter } from 'vue-router'
 import { bankApi, type ComposeMessage, type ComposeResult } from '@/api/bank'
 import MathText from '@/components/MathText.vue'
+import LoadingState from '@/components/LoadingState.vue'
 import { CN_NUM, coefToDiff } from '@/data/mock'
 import { useAppStore } from '@/stores/app'
 import { fromBank, useBasketStore } from '@/stores/basket'
@@ -29,6 +30,7 @@ const busy = ref(false)
 const error = ref('')
 const result = ref<ComposeResult | null>(null)
 const chatBox = ref<HTMLElement>()
+let requestSeq = 0
 
 const count = computed(() => result.value?.sections.reduce((a, s) => a + s.items.length, 0) ?? 0)
 /** 各大题及题号（全卷连续编号） */
@@ -48,6 +50,7 @@ async function scrollToEnd() {
 async function send(text = input.value) {
   const content = text.trim()
   if (!content || busy.value) return
+  const seq = ++requestSeq
   const history = [...messages.value, { role: 'user' as const, content }]
   messages.value = history
   input.value = ''
@@ -58,19 +61,23 @@ async function send(text = input.value) {
     const r = await bankApi.compose({
       stage: stage.value, subject: subject.value, total: total.value, difficulty: difficulty.value, messages: history.slice(-20),
     })
+    if (seq !== requestSeq) return
     result.value = r
     messages.value = [...history, { role: 'assistant', content: r.reply }]
     // 对话中调整了总分、难度时同步到设置
     if (r.total) total.value = r.total
     difficulty.value = r.difficulty
   } catch (e) {
+    if (seq !== requestSeq) return
     // 失败时撤回这条消息，放回输入框便于重试
     messages.value = history.slice(0, -1)
     input.value = content
     error.value = (e as Error).message
   } finally {
-    busy.value = false
-    scrollToEnd()
+    if (seq === requestSeq) {
+      busy.value = false
+      scrollToEnd()
+    }
   }
 }
 
@@ -83,6 +90,8 @@ function onKeydown(e: KeyboardEvent) {
 }
 
 function restart() {
+  requestSeq++
+  busy.value = false
   messages.value = []
   result.value = null
   error.value = ''
@@ -118,7 +127,7 @@ function toBasket() {
           </div>
         </div>
         <div v-for="(m, i) in messages" :key="i" class="msg" :class="m.role">{{ m.content }}</div>
-        <div v-if="busy" class="msg assistant pending">AI 正在组卷…</div>
+        <div v-if="busy" class="msg assistant pending"><LoadingState compact label="AI 正在组卷…" /></div>
       </div>
 
       <div class="settings">
@@ -137,17 +146,19 @@ function toBasket() {
           :placeholder="messages.length ? '继续提出修改要求' : '如：高一学生，函数比较薄弱，期中复习'"
           @keydown="onKeydown"
         />
-        <button class="btn btn-primary" :disabled="busy || !input.trim()" @click="send()">发送</button>
+        <button class="btn btn-primary" :disabled="busy || !input.trim()" @click="send()"><LoadingState v-if="busy" compact label="组卷中…" /><template v-else>发送</template></button>
       </div>
       <p class="hint">请勿输入学生姓名等身份信息。Enter 发送，Shift + Enter 换行。</p>
     </section>
 
-    <section class="card result">
-      <div v-if="!result" class="empty">
+    <section class="card result" :aria-busy="busy">
+      <LoadingState v-if="busy && !result" label="AI 正在为你组卷…" detail="正在匹配知识点、筛选题目并分配分值，请稍候" :rows="3" />
+      <div v-else-if="!result" class="empty">
         <p>组好的试卷会显示在这里</p>
         <p class="muted">题目全部来自校本题库，总分与设置一致；确认后可加入试题篮，继续排版、导出 Word。</p>
       </div>
       <template v-else>
+        <LoadingState v-if="busy" compact label="正在按新要求调整试卷…" />
         <div class="result-head">
           <div>
             <h1 class="serif">{{ result.title }}</h1>
@@ -161,7 +172,7 @@ function toBasket() {
               <span v-if="!result.ai" class="tag">关键词匹配</span>
             </div>
           </div>
-          <button class="btn btn-primary" :disabled="!count" @click="toBasket">加入试题篮并编辑</button>
+          <button class="btn btn-primary" :disabled="busy || !count" @click="toBasket">加入试题篮并编辑</button>
         </div>
 
         <div v-if="result.focus.length" class="focus">

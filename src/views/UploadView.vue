@@ -21,6 +21,7 @@ import CostOverviewCard from '@/components/parse/CostOverviewCard.vue'
 import JobListPanel from '@/components/parse/JobListPanel.vue'
 import SimilarDialog from '@/components/parse/SimilarDialog.vue'
 import ModalDialog from '@/components/ModalDialog.vue'
+import LoadingState from '@/components/LoadingState.vue'
 
 const auth = useAuthStore()
 const store = useParseJobStore()
@@ -36,7 +37,7 @@ function syncFromRoute() {
   const id = routeJob()
   if (id) {
     if (id !== job.value?.id) store.openJob(id)
-  } else if (job.value && phase.value !== 'uploading') {
+  } else if ((job.value || store.openingJob) && phase.value !== 'uploading') {
     store.backToList()
   }
 }
@@ -214,7 +215,11 @@ async function forceCommit() {
     </div>
 
     <!-- 1 上传 -->
-    <div v-if="phase === 'idle'" class="row">
+    <div v-if="store.openingJob" class="card">
+      <LoadingState label="正在打开解析结果…" detail="正在获取整卷题目与核对信息" :rows="3" />
+      <button class="btn" @click="leaveJob">返回任务列表</button>
+    </div>
+    <div v-else-if="phase === 'idle'" class="row">
       <div
         class="drop" :class="{ dragging }" role="button" tabindex="0"
         @click="fileInput?.click()" @keydown.enter.prevent="fileInput?.click()" @keydown.space.prevent="fileInput?.click()"
@@ -227,7 +232,8 @@ async function forceCommit() {
           可一次选择多份 PDF / Word，在后台依次解析 · 单个文件不超过 {{ MAX_MB }} MB
         </span>
         <button type="button" class="btn btn-primary pick-btn" :disabled="store.batchUploading">
-          {{ store.batchUploading ? `上传中 ${store.batchPct}%` : '选择文件' }}
+          <LoadingState v-if="store.batchUploading" compact :label="store.batchPct >= 100 ? '上传完成，正在创建批量任务…' : `批量上传中 ${store.batchPct}%`" />
+          <template v-else>选择文件</template>
         </button>
         <span v-if="error" class="drop-err">{{ error }}</span>
         <span v-else-if="notice" class="drop-ok">{{ notice }}</span>
@@ -242,7 +248,7 @@ async function forceCommit() {
           <ToggleSwitch v-for="[k, l] in UP_OPT_LABELS" :key="k" v-model="options[k]" :label="l" />
         </div>
         <JobListPanel
-          :jobs="jobList" :total="store.jobsTotal" :active="store.jobsActive" :busy="busy"
+          :jobs="jobList" :total="store.jobsTotal" :active="store.jobsActive" :busy="busy" :loading="store.jobsLoading"
           @open="openJob" @retry="store.retryJob" @cancel="store.cancelJob"
         />
         <CostOverviewCard v-if="auth.isAdmin" :overview="usageOverview" />
@@ -254,7 +260,7 @@ async function forceCommit() {
       v-else-if="phase !== 'done'"
       :phase="phase" :job="job" :pct="store.overallPct" :upload-pct="store.uploadPct"
       :file-label="picked.label" :file-size="picked.size" :error="error"
-      @retry="job && store.retryJob(job.id)" @back="leaveJob" @background="leaveJob"
+      @retry="job && (job.status === 'done' ? store.openJob(job.id) : store.retryJob(job.id))" @back="leaveJob" @background="leaveJob"
     />
 
     <!-- 3 核对 -->
@@ -284,15 +290,14 @@ async function forceCommit() {
         <div class="card summary">
           <span class="summary-count">已拆分 <b>{{ questions.length }}</b> 道题</span>
           <span v-if="store.reviewCount" class="warn">{{ store.reviewCount }} 道题识别置信度较低，建议核对</span>
-          <span v-if="store.answering && store.answerTask" class="ai-progress">
-            AI 解答中 {{ store.answerTask.done + store.answerTask.failed }} / {{ store.answerTask.total }}
-          </span>
+          <LoadingState v-if="store.answering && store.answerTask" compact class="ai-progress" :label="`AI 解答中 ${store.answerTask.done + store.answerTask.failed} / ${store.answerTask.total}`" />
+          <LoadingState v-else-if="busy.has('answers')" compact class="ai-progress" label="正在申请 AI 解答任务…" />
           <button
             v-else-if="store.missingAnswerCount" class="ai-gen" :disabled="busy.has('answers')"
             title="为缺少答案的题生成答案与解析，结果会标记为「AI 生成」，请老师核对"
             @click="store.generateAnswers()"
           >AI 生成答案（{{ store.missingAnswerCount }} 题）</button>
-          <span v-if="store.knowledgeRunning" class="ai-progress">AI 标注知识点中…</span>
+          <LoadingState v-if="store.knowledgeRunning || busy.has('knowledge')" compact class="ai-progress" label="AI 标注知识点中…" />
           <button
             v-else-if="store.missingKnowledgeCount" class="ai-gen" :disabled="busy.has('knowledge')"
             title="为尚未标注知识点的题标注 1–3 个知识点"
@@ -340,7 +345,7 @@ async function forceCommit() {
             >{{ job?.evalSampleId ? '更新评测样本' : '设为评测样本' }}</button>
             <button class="ab-btn light" :disabled="!store.selectedCount" @click="addToBasket">加入试题篮</button>
             <button class="ab-btn primary" :disabled="!store.selectedCount || busy.has('commit')" @click="store.commit()">
-              {{ busy.has('commit') ? '保存中…' : '保存到校本题库' }}
+              <LoadingState v-if="busy.has('commit')" compact label="正在保存到题库…" /><template v-else>保存到校本题库</template>
             </button>
           </div>
         </div>

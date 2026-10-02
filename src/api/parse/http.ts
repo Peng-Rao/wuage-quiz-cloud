@@ -37,6 +37,8 @@ async function uploadAll(files: File[], onProgress?: (pct: number) => void): Pro
     })
     await putWithProgress(uploadUrl, file, uploadHeaders ?? {}, pct => onProgress?.(Math.round(((done + (file.size * pct) / 100) / total) * 100)))
     done += file.size
+    // 小文件或极快上传可能没有 progress 事件；服务端确认接收后同步完成进度。
+    onProgress?.(Math.round((done / total) * 100))
     keys.push(fileKey)
   }
   return keys
