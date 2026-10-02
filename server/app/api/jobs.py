@@ -1,22 +1,21 @@
 import asyncio
-import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from ..bank import check_duplicates, sync_meta
+from ..bank import commit_questions, sync_meta
 from ..auth import current_user, require_subject, scope_session
-from ..db import BankQuestion, ParseJob, SessionLocal, get_session
+from ..db import ParseJob, SessionLocal, get_session
 from ..schemas import (
-    PARSE_STAGES, AnswerTask, CommitRequest, CommitResult, CommitSkip, CreateJobRequest, DraftQuestionOut, GenerateAnswersRequest,
+    PARSE_STAGES, AnswerTask, CommitRequest, CommitResult, CreateJobRequest, DraftQuestionOut, GenerateAnswersRequest,
     JobListPage, JobUsage, PaperMeta, ParseJobOut, RecentUpload,
 )
 from ..config import get_settings
 from ..pipeline.answer import pick_questions
 from ..usage import calls_out, job_rows, summarize
-from ..services import current_school, question_source, get_job, job_out, list_item, list_questions, new_job, question_out, recent_out
+from ..services import current_school, get_job, job_out, list_item, list_questions, new_job, question_out, recent_out
 from ..worker import worker
 
 router = APIRouter(prefix="/api/parse-jobs")
@@ -195,37 +194,6 @@ def commit(job_id: str, req: CommitRequest, s: Session = Depends(get_session)) -
     qs = [q for q in list_questions(s, job_id) if q.id in wanted]
     if len(qs) != len(wanted):
         raise HTTPException(400, "部分题目不存在，请刷新后重试")
-    skipped: list[CommitSkip] = []
-    if not req.force:
-        # 与其他试卷已入库的题重复的跳过；整份试卷已在试卷库中时不保存，由老师确认后 force 重新提交
-        check = check_duplicates(s, job, qs)
-        if check.paper is not None:
-            s.commit()  # 保存补算的文件指纹
-            return CommitResult(saved_count=0, duplicate_paper=check.paper)
-        for q in qs:
-            if q.id in check.questions:
-                b, score = check.questions[q.id]
-                src = question_source(b.meta, b.source_file_name, b.source_no, b.source_page)
-                skipped.append(CommitSkip(question_id=q.id, no=q.no, duplicate_of=b.id, score=score, source=src.label))
-        qs = [q for q in qs if q.id not in check.questions]
-        wanted = {q.id for q in qs}
-    existing = {b.source_draft_id: b for b in s.scalars(
-        select(BankQuestion).where(BankQuestion.source_draft_id.in_(wanted)))}
-    for q in qs:
-        b = existing.get(q.id) or BankQuestion(id="k" + uuid.uuid4().hex[:20], school_id=job.school_id,
-                                               source_job_id=job_id, source_draft_id=q.id)
-        b.type, b.score, b.stem, b.options = q.type, q.score, q.stem, q.options
-        b.answer, b.analysis, b.knowledge_points, b.coef = q.answer, q.analysis, q.knowledge_points, q.coef
-        # Recommitting updates invalidates the previous review/assignment.
-        b.owner_id = b.owner_id or s.info["user"].id
-        b.reviewed_at, b.reviewed_by = None, None
-        b.answer_source = q.answer_source
-        b.embedding, b.embedding_model = q.embedding, q.embedding_model
-        b.source_file_name, b.source_no, b.source_page = job.file_name, q.no, q.page
-        b.images, b.meta = q.images, job.meta
-        s.add(b)
-        q.status = "saved"
-    # 同卷先前入库的题也换成最新的试卷分类
-    sync_meta(s, job)
-    s.commit()
-    return CommitResult(saved_count=len(qs), saved_ids=[q.id for q in qs], skipped=skipped)
+    result = commit_questions(s, job, qs, s.info["user"].id, force=req.force)
+    s.commit()  # 整份试卷重复时也保存补算的文件指纹
+    return result

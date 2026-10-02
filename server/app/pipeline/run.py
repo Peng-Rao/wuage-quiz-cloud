@@ -9,6 +9,7 @@ from sqlalchemy import delete
 
 from ..config import get_settings
 from ..db import DraftQuestion, ParseBlock, ParseJob, SessionLocal
+from ..bank import auto_commit
 from ..similar import dedupe_job
 from ..storage import ObjectStore, get_store
 from ..usage import current_job
@@ -245,6 +246,18 @@ async def run_job(job_id: str) -> None:
         ctx.stage("dedupe", "done", f"{dup} 道疑似重复" if dup else "未发现重复")
     else:
         ctx.stage("dedupe", "skipped")
+
+    # ---- 自动入库：确定的题直接保存到题库，不确定的留给人工审核（评测任务不入库） ----
+    if settings.auto_commit and kind != "eval":
+        try:
+            with SessionLocal() as s:
+                job = s.get(ParseJob, job_id)
+                res = auto_commit(s, job, settings.auto_commit_min_confidence, settings.auto_commit_require_answer)
+                s.commit()
+            warnings.append(res.note())
+        except Exception:  # noqa: BLE001 — 自动入库失败不影响解析结果，题目仍可人工入库
+            log.exception("任务 %s 自动入库失败", job_id)
+            warnings.append("自动入库失败，请人工入库")
     ctx.update(status="done", progress=100, warnings=warnings)
 
 

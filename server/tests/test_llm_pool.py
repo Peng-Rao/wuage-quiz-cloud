@@ -112,3 +112,24 @@ async def test_all_models_unavailable(monkeypatch):
 def test_legacy_single_model_settings():
     s = Settings(llm_base_url="u", llm_api_key="k", llm_model="m", vision_model="v")
     assert s.text_models == ["m"] and s.vision_model_pool == ["v"] and s.llm_enabled and s.vision_enabled
+
+
+async def test_tls_error_while_streaming_is_retried(monkeypatch):
+    import ssl
+
+    calls = {"n": 0}
+
+    class Flaky(httpx.AsyncBaseTransport):
+        async def handle_async_request(self, req: httpx.Request) -> httpx.Response:
+            calls["n"] += 1
+            if calls["n"] == 1:
+                class Broken(httpx.AsyncByteStream):
+                    async def __aiter__(self):
+                        yield b'data: {"choices":[{"delta":{"content":"{"}}]}\n\n'
+                        raise ssl.SSLError("[SSL: RECORD_LAYER_FAILURE] record layer failure")
+                return httpx.Response(200, headers={"content-type": "text/event-stream"}, stream=Broken())
+            return httpx.Response(200, json={"choices": [{"message": {"content": '{"ok": 1}'}}]})
+
+    monkeypatch.setattr(llm, "transport", Flaky())
+    assert await llm.chat_json("sys", "u", settings(), retries=1) == {"ok": 1}
+    assert calls["n"] == 2
