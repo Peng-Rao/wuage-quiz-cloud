@@ -189,6 +189,17 @@ def _extra_for(model: str, base: dict[str, Any], settings: Settings) -> dict[str
     return {k: v for k, v in merged.items() if v is not None}
 
 
+def _apply_model_overrides(body: dict[str, Any], model: str, settings: Settings) -> dict[str, Any]:
+    """按模型覆盖请求参数：值为 null 的键从请求中删除（包括 response_format 等内置参数），
+    如思考模式下不支持 JSON 输出模式的模型：{"glm-5.3": {"enable_thinking": true, "response_format": null}}。"""
+    for k, v in settings.llm_model_extra_body.get(model, {}).items():
+        if v is None:
+            body.pop(k, None)
+        else:
+            body[k] = v
+    return body
+
+
 async def chat_json(system: str, user: str, settings: Settings, *, purpose: str = "other", retries: int = 1,
                     images: list[str] | None = None) -> Any:
     """images 为图片地址（http(s) 或 data:image/...;base64,...）；非空时改用看图模型池，按题目顺序附在文字之后。
@@ -220,8 +231,9 @@ async def chat_json(system: str, user: str, settings: Settings, *, purpose: str 
             **fmt,
             "stream": True,
             "stream_options": {"include_usage": True},
-            **_extra_for(model, base_extra, settings),
+            **base_extra,
         }
+        _apply_model_overrides(body, model, settings)
         try:
             return await _call(model, base_url, api_key, body, system + user, settings, purpose, retries)
         except _Switch as e:

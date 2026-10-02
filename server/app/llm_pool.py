@@ -16,7 +16,7 @@ import time
 import httpx
 
 from .config import Settings, get_settings
-from .pipeline.llm import _extra_for, _spent
+from .pipeline.llm import _apply_model_overrides, _spent
 
 
 def _digit_image() -> tuple[str, str]:
@@ -29,8 +29,8 @@ def _digit_image() -> tuple[str, str]:
 
 
 async def _ask(client: httpx.AsyncClient, s: Settings, model: str, content, base_extra: dict) -> tuple[str, str]:  # noqa: ANN001
-    body = {"model": model, "messages": [{"role": "user", "content": content}], "temperature": 0, "stream": True,
-            "stream_options": {"include_usage": True}, **_extra_for(model, base_extra, s)}
+    body = _apply_model_overrides({"model": model, "messages": [{"role": "user", "content": content}], "temperature": 0,
+                                   "stream": True, "stream_options": {"include_usage": True}, **base_extra}, model, s)
     out: list[str] = []
     try:
         async with client.stream("POST", s.llm_base_url.rstrip("/") + "/chat/completions", json=body,
