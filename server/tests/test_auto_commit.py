@@ -59,6 +59,7 @@ def parse(client, name: str, data: bytes) -> dict:  # noqa: F811
 def test_auto_commit_after_parse(client, monkeypatch):  # noqa: F811
     s = get_settings()
     monkeypatch.setattr(s, "auto_commit", True)
+    monkeypatch.setattr(s, "auto_commit_rule_only", True)  # 测试环境没有大模型，拆题均为规则结果
     data = make_exam_pdf(EXAM)
     job = parse(client, "自动入库测试.pdf", data)
     assert job["status"] == "done", job.get("error")
@@ -91,3 +92,21 @@ def test_auto_commit_disabled_keeps_drafts(client, monkeypatch):  # noqa: F811
             for x in EXAM]
     job = parse(client, "手动入库测试.pdf", make_exam_pdf(exam))
     assert job["status"] == "done" and job["savedCount"] == 0
+
+
+def test_rule_only_split_is_not_auto_committed():
+    from app.bank import auto_commit
+
+    with SessionLocal() as db:
+        job = ParseJob(id="ruleonly0000001", school_id="demo", file_name="规则拆题.docx", file_count=1, file_size=1,
+                       file_type="docx", file_keys=[], options={}, status="done", progress=100, warnings=[],
+                       stages=[{"stage": "segment", "status": "done", "note": "3 道题（规则）"}])
+        db.add(job)
+        db.flush()
+        db.add(DraftQuestion(id="qruleonly1", job_id=job.id, no=1, type="单选题", score=5, page=1, stem="题干",
+                             options=[], answer="A", knowledge_points=[], coef=0.5, confidence=0.95))
+        db.flush()
+        res = auto_commit(db, job, 0.8, True)
+        assert res.saved == 0 and res.pending["规则拆题，未经大模型核对"] == 1
+        assert auto_commit(db, job, 0.8, True, rule_only_ok=True).saved == 1
+        db.rollback()

@@ -514,13 +514,19 @@ class AutoCommitResult:
         return s
 
 
-def auto_commit(s: Session, job: ParseJob, min_confidence: float, require_answer: bool) -> AutoCommitResult:
+def auto_commit(s: Session, job: ParseJob, min_confidence: float, require_answer: bool,
+                rule_only_ok: bool = False) -> AutoCommitResult:
     """解析完成后：确定的题直接入库，不确定的留作草稿由人工审核。调用方负责提交事务。"""
     res = AutoCommitResult()
     ready = []
+    # 拆题未经大模型核对（大模型不可用、额度用完等降级为规则拆题）：整卷留给人工审核
+    seg_note = next((st.get("note") or "" for st in (job.stages or []) if st.get("stage") == "segment"), "")
+    rule_only = "（规则）" in seg_note and not rule_only_ok
     for q in s.scalars(select(DraftQuestion).where(DraftQuestion.job_id == job.id, DraftQuestion.status == "draft")
                        .order_by(DraftQuestion.no)):
         reasons = review_reasons(q, min_confidence, require_answer)
+        if rule_only:
+            reasons.append("规则拆题，未经大模型核对")
         if reasons:
             res.pending.update(reasons)
             res.pending_count += 1

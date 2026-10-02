@@ -252,7 +252,8 @@ async def run_job(job_id: str) -> None:
         try:
             with SessionLocal() as s:
                 job = s.get(ParseJob, job_id)
-                res = auto_commit(s, job, settings.auto_commit_min_confidence, settings.auto_commit_require_answer)
+                res = auto_commit(s, job, settings.auto_commit_min_confidence, settings.auto_commit_require_answer,
+                              settings.auto_commit_rule_only)
                 s.commit()
             warnings.append(res.note())
         except Exception:  # noqa: BLE001 — 自动入库失败不影响解析结果，题目仍可人工入库
