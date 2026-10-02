@@ -38,6 +38,9 @@ class Settings(BaseSettings):
     cos_secret_key: str = ""
     # 对象名前缀，多套环境共用一个 Bucket 时区分，如 fg-quiz/prod
     cos_prefix: str = ""
+    # COS 读写超时（秒）与网络错误时的尝试次数（含读取响应体）
+    cos_timeout: int = 60
+    cos_attempts: int = 3
     # 构建好的前端目录（npm run build:api 的 dist）；设置后由本服务直接托管页面，Docker 镜像中为 /app/web
     static_dir: Path | None = None
     # PostgreSQL；默认连接 docker compose 中的数据库（本机 5433 端口）

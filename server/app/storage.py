@@ -6,13 +6,16 @@
 """
 
 import datetime
+import logging
 import re
+import time
 import uuid
 from pathlib import Path
 from typing import Protocol
 
 from .config import Settings, get_settings
 
+log = logging.getLogger(__name__)
 _SAFE_KEY = re.compile(r"^[A-Za-z0-9._/-]+$")
 
 
@@ -172,10 +175,12 @@ class CosStore:
         if client is None:
             from qcloud_cos import CosConfig, CosS3Client
 
-            client = CosS3Client(CosConfig(Region=s.cos_region, SecretId=s.cos_secret_id,
-                                           SecretKey=s.cos_secret_key, Scheme="https"))
+            # 连接池按并发放大：每个解析任务最多同时上传 PUT_CONCURRENCY 张图
+            client = CosS3Client(CosConfig(Region=s.cos_region, SecretId=s.cos_secret_id, SecretKey=s.cos_secret_key,
+                                           Scheme="https", Timeout=s.cos_timeout, PoolConnections=32, PoolMaxSize=32))
         self.client = client
         self.upload_expires = s.storage_upload_expires
+        self.attempts = max(1, s.cos_attempts)
 
     def _name(self, key: str) -> str:
         return self.prefix + check_key(key)
@@ -195,22 +200,45 @@ class CosStore:
     def signed_url(self, key: str, expires_s: int) -> str | None:
         return self.client.get_presigned_url(Bucket=self.bucket, Key=self._name(key), Method="GET", Expired=expires_s)
 
+    def _retry(self, op: str, fn):  # noqa: ANN001, ANN202
+        """网络错误（连接 / 读取超时、连接重置等）重试，含读取响应体；COS 返回的业务错误（404、403 等）不重试。"""
+        from qcloud_cos.cos_exception import CosServiceError
+
+        for attempt in range(1, self.attempts + 1):
+            try:
+                return fn()
+            except CosServiceError:
+                raise
+            except Exception as e:  # noqa: BLE001 — CosClientError、requests / urllib3 超时、OSError 等
+                if attempt == self.attempts:
+                    raise
+                log.warning("COS %s 失败（第 %d 次），重试：%s", op, attempt, str(e)[:200])
+                time.sleep(2 ** (attempt - 1))
+        return None
+
     def put(self, key: str, data: bytes) -> None:
-        self.client.put_object(Bucket=self.bucket, Key=self._name(key), Body=data)
+        name = self._name(key)
+        self._retry("上传", lambda: self.client.put_object(Bucket=self.bucket, Key=name, Body=data))
 
     def get(self, key: str) -> bytes:
-        r = self.client.get_object(Bucket=self.bucket, Key=self._name(key))
-        return r["Body"].get_raw_stream().read()
+        name = self._name(key)
+
+        def read() -> bytes:
+            r = self.client.get_object(Bucket=self.bucket, Key=name)
+            return r["Body"].get_raw_stream().read()
+
+        return self._retry("读取", read)
 
     def exists(self, key: str) -> bool:
         try:
             name = self._name(key)
         except ValueError:
             return False
-        return self.client.object_exists(Bucket=self.bucket, Key=name)
+        return self._retry("查询", lambda: self.client.object_exists(Bucket=self.bucket, Key=name))
 
     def size(self, key: str) -> int:
-        r = self.client.head_object(Bucket=self.bucket, Key=self._name(key))
+        name = self._name(key)
+        r = self._retry("查询", lambda: self.client.head_object(Bucket=self.bucket, Key=name))
         return int(r.get("Content-Length") or 0)
 
 
