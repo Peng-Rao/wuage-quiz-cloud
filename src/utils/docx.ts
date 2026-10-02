@@ -139,7 +139,9 @@ const MAX_IMAGE_EMU = 7 * 360000 // 最宽 7 cm
 
 async function loadImage(url: string, index: number): Promise<Media | null> {
   try {
-    const res = await fetch(url, { credentials: 'include' })
+    // 配图地址为本服务的 /api/files（同源，自动携带登录 Cookie）；使用 OSS / COS 时会重定向到签名地址，
+    // 跨域跳转后不能再带 Cookie，否则需要对象存储允许凭据跨域
+    const res = await fetch(url, { credentials: 'same-origin' })
     if (!res.ok) return null
     let blob = await res.blob()
     const bmp = await createImageBitmap(blob)

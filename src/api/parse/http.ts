@@ -8,11 +8,15 @@ import { useAppStore } from '@/stores/app'
 
 /** 按 docs/ai-parse-api.md 对接后端 */
 
-function putWithProgress(url: string, file: File, onProgress?: (pct: number) => void) {
+/** 上传到本服务（本地存储）或对象存储的预签名地址；headers 为签名包含的请求头，须原样携带 */
+function putWithProgress(url: string, file: File, headers: Record<string, string>, onProgress?: (pct: number) => void) {
   return new Promise<void>((resolve, reject) => {
     const xhr = new XMLHttpRequest()
-    xhr.open('PUT', url.startsWith('/') ? BASE + url : url)
-    xhr.withCredentials = true
+    const own = url.startsWith('/')
+    xhr.open('PUT', own ? BASE + url : url)
+    // 登录 Cookie 只发给本服务；对象存储凭签名鉴权，携带 Cookie 反而需要更严格的跨域配置
+    xhr.withCredentials = own
+    for (const [k, v] of Object.entries(headers)) xhr.setRequestHeader(k, v)
     xhr.upload.onprogress = e => e.lengthComputable && onProgress?.(Math.round((e.loaded / e.total) * 100))
     xhr.onload = () => (xhr.status < 300 ? resolve() : reject(new Error(`上传失败（HTTP ${xhr.status}）`)))
     xhr.onerror = () => reject(new Error('上传失败，请检查网络'))
@@ -26,12 +30,12 @@ async function uploadAll(files: File[], onProgress?: (pct: number) => void): Pro
   let done = 0
   const keys: string[] = []
   for (const file of files) {
-    const { uploadUrl, fileKey } = await request<{ uploadUrl: string; fileKey: string }>('POST', '/api/uploads', {
+    const { uploadUrl, uploadHeaders, fileKey } = await request<{ uploadUrl: string; uploadHeaders?: Record<string, string>; fileKey: string }>('POST', '/api/uploads', {
       fileName: file.name,
       fileSize: file.size,
       contentType: file.type,
     })
-    await putWithProgress(uploadUrl, file, pct => onProgress?.(Math.round(((done + (file.size * pct) / 100) / total) * 100)))
+    await putWithProgress(uploadUrl, file, uploadHeaders ?? {}, pct => onProgress?.(Math.round(((done + (file.size * pct) / 100) / total) * 100)))
     done += file.size
     keys.push(fileKey)
   }

@@ -96,33 +96,49 @@ async def _read_stream(r: httpx.Response) -> tuple[str, Usage | None]:
     return "".join(parts), usage
 
 
-def _log_usage(settings: Settings, purpose: str, prompt_text: str, content: str, u: Usage | None,
+def _log_usage(model: str, purpose: str, prompt_text: str, content: str, u: Usage | None,
                started: float, status: str) -> None:
     estimated = u is None
     if u is None:
         # 服务端未返回用量（或请求中途失败）：按字符数估算；失败请求多数厂商仍按输入计费
         u = Usage(prompt=usage_log.estimate_tokens(prompt_text), completion=usage_log.estimate_tokens(content))
     usage_log.record(
-        "llm", purpose, settings.llm_model, prompt_tokens=u.prompt, completion_tokens=u.completion,
+        "llm", purpose, model, prompt_tokens=u.prompt, completion_tokens=u.completion,
         reasoning_tokens=u.reasoning, cached_tokens=u.cached, duration_ms=int((time.monotonic() - started) * 1000),
         estimated=estimated, status=status,
     )
 
 
-async def chat_json(system: str, user: str, settings: Settings, *, purpose: str = "other", retries: int = 1) -> Any:
-    if not settings.llm_enabled:
-        raise LLMError("未配置大模型")
-    url = settings.llm_base_url.rstrip("/") + "/chat/completions"
+async def chat_json(system: str, user: str, settings: Settings, *, purpose: str = "other", retries: int = 1,
+                    images: list[str] | None = None) -> Any:
+    """images 为图片地址（http(s) 或 data:image/...;base64,...）；非空时改用看图模型（VISION_MODEL），按题目顺序附在文字之后。"""
+    if images:
+        if not settings.vision_enabled:
+            raise LLMError("未配置看图模型")
+        model = settings.vision_model
+        base_url = settings.vision_base_url or settings.llm_base_url
+        api_key = settings.vision_api_key or settings.llm_api_key
+        extra = settings.llm_extra_body if settings.vision_extra_body is None else settings.vision_extra_body
+        content: Any = [{"type": "text", "text": user}] + [{"type": "image_url", "image_url": {"url": u}} for u in images]
+        # 部分看图模型不支持 response_format，依靠提示词约束输出 JSON，解析时容忍前后说明文字
+        fmt: dict[str, Any] = {}
+    else:
+        if not settings.llm_enabled:
+            raise LLMError("未配置大模型")
+        model, base_url, api_key, extra = settings.llm_model, settings.llm_base_url, settings.llm_api_key, settings.llm_extra_body
+        content = user
+        fmt = {"response_format": {"type": "json_object"}}
+    url = base_url.rstrip("/") + "/chat/completions"
     body = {
-        "model": settings.llm_model,
-        "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
+        "model": model,
+        "messages": [{"role": "system", "content": system}, {"role": "user", "content": content}],
         "temperature": 0,
-        "response_format": {"type": "json_object"},
+        **fmt,
         "stream": True,
         "stream_options": {"include_usage": True},
-        **settings.llm_extra_body,
+        **extra,
     }
-    headers = {"Authorization": f"Bearer {settings.llm_api_key}"}
+    headers = {"Authorization": f"Bearer {api_key}"}
     last: Exception | None = None
     async with httpx.AsyncClient(timeout=settings.llm_timeout, transport=transport) as client:
         prompt_text = system + user
@@ -146,7 +162,7 @@ async def chat_json(system: str, user: str, settings: Settings, *, purpose: str 
                 if not content.strip():
                     raise LLMError("大模型返回内容为空")
                 result = _parse_json(content)
-                _log_usage(settings, purpose, prompt_text, content, used, started, "ok")
+                _log_usage(model, purpose, prompt_text, content, used, started, "ok")
                 return result
             except LLMError as e:
                 if "Key" in str(e):
@@ -155,6 +171,6 @@ async def chat_json(system: str, user: str, settings: Settings, *, purpose: str 
             except (httpx.HTTPError, KeyError, IndexError, json.JSONDecodeError) as e:
                 last = e
             # 请求已发出即可能计费，失败也记一笔
-            _log_usage(settings, purpose, prompt_text, content, used, started, "error")
+            _log_usage(model, purpose, prompt_text, content, used, started, "error")
             log.warning("大模型调用失败（第 %d 次）：%s", attempt + 1, describe(last))
     raise LLMError(f"大模型调用失败：{describe(last)}")  # type: ignore[arg-type]

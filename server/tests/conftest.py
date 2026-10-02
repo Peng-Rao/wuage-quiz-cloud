@@ -36,6 +36,8 @@ with open(os.path.join(_web, "assets", "app-abc123.js"), "w") as f:
 os.environ.update({
     "STATIC_DIR": _web,
     "DATA_DIR": _tmp,
+    # 不受 server/.env 中 STORAGE_BACKEND 影响，测试不访问真实对象存储
+    "STORAGE_BACKEND": "local",
     "DATABASE_URL": TEST_DB.render_as_string(hide_password=False),
     "MINERU_TOKEN": "",
     "LLM_BASE_URL": "",

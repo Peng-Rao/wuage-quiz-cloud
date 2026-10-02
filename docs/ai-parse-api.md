@@ -14,7 +14,7 @@
 ## 流程
 
 ```
-POST /api/uploads            （每个文件一次）→ { uploadUrl, fileKey }
+POST /api/uploads            （每个文件一次）→ { uploadUrl, uploadHeaders, fileKey }
 PUT  {uploadUrl}             浏览器直传对象存储
 POST /api/parse-jobs         → ParseJob（status=queued）
 GET  /api/parse-jobs/{id}/events   SSE，每条 data 为 ParseJob 快照，done / failed 后服务端关闭
@@ -27,7 +27,7 @@ POST /api/parse-jobs/{id}/commit    → 入校本题库
 
 | 方法 | 路径 | 请求 | 响应 |
 |---|---|---|---|
-| POST | `/api/uploads` | `{ fileName, fileSize, contentType }` | `{ uploadUrl, fileKey }` |
+| POST | `/api/uploads` | `{ fileName, fileSize, contentType }` | `{ uploadUrl, uploadHeaders, fileKey }` |
 | POST | `/api/parse-jobs` | `{ fileKeys: string[], fileNames: string[], options: ParseOptions }` | `ParseJob` |
 | GET | `/api/parse-jobs/{id}` | — | `ParseJob` |
 | GET | `/api/parse-jobs/{id}/events` | SSE | `data: ParseJob` |
@@ -69,10 +69,12 @@ POST /api/parse-jobs/{id}/commit    → 入校本题库
 | GET | `/api/papers/{id}` | — | `PaperDetail`（按原卷题号排列的题目） |
 | DELETE | `/api/papers/{id}` | — | 204（移出试卷库：删除已入库的题，草稿题恢复为未保存） |
 
-### 本地存储（P1）
+### 文件存储
 
 后端使用本地磁盘存储时，`uploadUrl` 为 `/api/files/uploads/…`（同源 PUT，请求体为文件原始字节）；
-页面图与题图通过 `GET /api/files/jobs/…` 读取。换成 OSS / S3 后 `uploadUrl` 为预签名地址，前端代码不变。
+页面图与题图通过 `GET /api/files/jobs/…` 读取。使用腾讯云 COS（`STORAGE_BACKEND=cos`）或阿里云 OSS（`oss`）时
+`uploadUrl` 为预签名地址，PUT 时须原样携带 `uploadHeaders`（`Content-Type`、`x-cos-forbid-overwrite` /
+`x-oss-forbid-overwrite` 等参与签名），不携带 Cookie；`GET /api/files/jobs/…` 校验权限后 302 跳转到短时有效的签名地址。
 
 ### 上传校验
 

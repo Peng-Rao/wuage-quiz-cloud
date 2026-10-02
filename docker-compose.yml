@@ -1,7 +1,7 @@
 # docker compose up -d --build 后访问 http://localhost:8000
 # app 提供页面与接口；worker 从 Redis 任务队列中取出解析、生成答案等任务执行；db 为 PostgreSQL，redis 为任务队列。
 # 批量解析时增加 Worker：docker compose up -d --scale worker=3（每个 Worker 同时执行 WORKER_CONCURRENCY 个任务）
-# 上传文件、页面图保存在 /data 卷中，由 app 与各 worker 共用
+# 本地存储时上传文件、页面图保存在 /data 卷中，由 app 与各 worker 共用；改用 COS / OSS 后可跨机器部署
 
 # app 与 worker 共用的配置
 x-backend: &backend

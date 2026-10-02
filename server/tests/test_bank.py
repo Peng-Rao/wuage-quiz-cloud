@@ -157,10 +157,10 @@ def _upload_job(s, meta: dict, stems: list[str], data: bytes) -> tuple[str, list
     """带真实文件的已解析任务（未入库），返回任务 id 与草稿题 id。"""
     from app.services import new_job
     from app.schemas import ParseOptions
-    from app.storage import get_store
+    from app.storage import get_store, new_upload_key
 
     store = get_store()
-    key = store.new_upload_key("paper.pdf")
+    key = new_upload_key("paper.pdf")
     store.put(key, data)
     job = new_job(s, [key], [meta["title"] + ".pdf"], ParseOptions())
     job.status, job.meta = "done", meta
