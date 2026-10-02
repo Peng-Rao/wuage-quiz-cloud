@@ -6,8 +6,8 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
-from app.auth import COOKIE, hash_password, token_hash
-from app.db import BankQuestion, KnowledgeNode, KnowledgeTree, LoginSession, LoginThrottle, SessionLocal, User, utcnow
+from app.auth import COOKIE, admin, hash_password, token_hash
+from app.db import BankQuestion, KnowledgeNode, KnowledgeTree, LoginSession, LoginThrottle, ParseJob, SessionLocal, UploadOwner, User, utcnow
 from app.main import app
 from app.storage import get_store
 from .test_bank import _paper
@@ -233,3 +233,83 @@ def test_as_utc():
     t0 = datetime(2026, 9, 1, 8, 30, tzinfo=timezone.utc)
     assert as_utc(datetime(2026, 9, 1, 8, 30)) == t0
     assert as_utc(datetime(2026, 9, 1, 16, 30, tzinfo=timezone(timedelta(hours=8)))) == t0
+
+
+@pytest.mark.parametrize("role", ["leader", "member"])
+def test_delete_user_requires_admin(accounts, role):
+    target = accounts['other']
+    assert TestClient(app).delete(f"/api/users/{target.id}").status_code == 401
+    assert sign_in(accounts[role]).delete(f"/api/users/{target.id}").status_code == 403
+    with SessionLocal() as s:
+        assert s.get(User, target.id) is not None
+
+
+def test_delete_user_rejects_self_missing_and_cross_origin(accounts):
+    actor = accounts['admin']
+    client = sign_in(actor)
+    assert client.delete(f"/api/users/{actor.id}").status_code == 400
+    assert client.delete('/api/users/missing').status_code == 404
+    assert client.delete(f"/api/users/{accounts['member'].id}",
+                         headers={'origin': 'https://untrusted.example'}).status_code == 403
+    assert client.get('/api/auth/me').status_code == 200
+
+
+def test_delete_user_preserves_content_and_revokes_sessions(accounts, data):
+    target = accounts['member']
+    member = sign_in(target)
+    second_session = sign_in(target)
+    with SessionLocal() as s:
+        s.add(UploadOwner(key=f'uploads/{target.id}.pdf', user_id=target.id))
+        s.get(ParseJob, data['math']).owner_id = target.id
+        s.commit()
+    client = sign_in(accounts['admin'])
+    response = client.delete(f"/api/users/{target.id}")
+    assert response.status_code == 204 and response.content == b''
+    assert member.get('/api/auth/me').status_code == 401
+    assert second_session.get('/api/auth/me').status_code == 401
+    assert member.post('/api/auth/login', json={'username': target.username, 'password': PASSWORD}).status_code == 401
+    assert target.id not in [u['id'] for u in client.get('/api/users').json()]
+    assert target.id not in [u['id'] for u in client.get('/api/review-recipients').json()]
+    with SessionLocal() as s:
+        assert s.get(User, target.id) is None
+        assert not list(s.scalars(select(LoginSession).where(LoginSession.user_id == target.id)))
+        assert s.get(UploadOwner, f'uploads/{target.id}.pdf') is None
+        assert s.get(ParseJob, data['math']).owner_id is None
+        for question_id in data['questions'][:2]:
+            assert s.get(BankQuestion, question_id).owner_id is None
+        reviewed = s.get(BankQuestion, data['questions'][0])
+        assert reviewed.reviewed_at is not None and reviewed.reviewed_by == accounts['leader'].id
+        assert s.get(BankQuestion, data['questions'][2]).owner_id == accounts['other'].id
+    assert client.get(f"/api/papers/{data['math']}").status_code == 200
+
+
+def test_delete_other_admin(accounts):
+    client = TestClient(app)
+    assert client.post('/api/auth/login', json={'username': 'test-admin', 'password': 'test-password-123'}).status_code == 200
+    assert client.delete(f"/api/users/{accounts['admin'].id}").status_code == 204
+    assert client.get('/api/auth/me').status_code == 200
+
+
+@pytest.mark.parametrize("change", ["deleted", "inactive", "demoted"])
+@pytest.mark.parametrize("method", ["delete", "put"])
+def test_stale_admin_cannot_change_other_admin(accounts, monkeypatch, change, method):
+    # Model two requests that both authenticated before the first one changed the other admin.
+    stale_actor = accounts['admin']
+    client = TestClient(app)
+    assert client.post('/api/auth/login', json={'username': 'test-admin', 'password': 'test-password-123'}).status_code == 200
+    if change == "deleted":
+        assert client.delete(f"/api/users/{stale_actor.id}").status_code == 204
+    else:
+        body = {'displayName': '已变更管理员', 'role': 'leader' if change == 'demoted' else 'admin',
+                'subjects': ['数学'] if change == 'demoted' else [], 'active': change != 'inactive'}
+        assert client.put(f"/api/users/{stale_actor.id}", json=body).status_code == 200
+    monkeypatch.setitem(app.dependency_overrides, admin, lambda: stale_actor)
+    if method == "delete":
+        response = client.delete('/api/users/test-admin')
+    else:
+        response = client.put('/api/users/test-admin', json={
+            'displayName': '不应被停用', 'role': 'admin', 'subjects': [], 'active': False})
+    assert response.status_code == (403 if change == 'demoted' else 401)
+    with SessionLocal() as s:
+        remaining = s.get(User, 'test-admin')
+        assert remaining and remaining.active and remaining.role == 'admin'
