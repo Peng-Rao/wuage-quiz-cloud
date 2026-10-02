@@ -1,4 +1,3 @@
-from datetime import datetime
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, Literal
@@ -80,18 +79,6 @@ class Settings(BaseSettings):
     vision_image_mode: Literal["auto", "url", "base64"] = "auto"
     # 每道题最多附带的图片数，控制费用
     vision_max_images: int = 6
-    # 模型池（可选，同一地址与 Key）：按顺序优先使用，额度用完、限流、模型不可用或超出预算时自动换下一个。
-    # 留空时只用 LLM_MODEL / VISION_MODEL。看图模型池只放支持图片输入的模型（python -m app.llm_pool --probe 可检测）
-    llm_models: list[str] = []
-    vision_models: list[str] = []
-    # 按模型覆盖附加参数（合并到 LLM_EXTRA_BODY / VISION_EXTRA_BODY 之上，值为 null 表示删除该参数），
-    # 如只支持思考模式的模型：{"glm-5.3": {"enable_thinking": true}}
-    llm_model_extra_body: dict[str, dict[str, Any]] = {}
-    # 每个模型最多使用的 token 数（按本服务记录的用量统计，自 LLM_BUDGET_SINCE 起），用于免费额度：达到后换下一个模型
-    llm_model_budget: dict[str, int] = {}
-    llm_budget_since: datetime | None = None
-    # 模型额度用完后暂停使用的时间（秒）；限流、模型不可用的暂停时间较短，见 pipeline/llm.py
-    llm_exhausted_cooldown: int = 6 * 3600
     # 相似题语义检索（可选）：OpenAI 兼容 /embeddings；地址与 Key 留空时沿用 LLM_BASE_URL / LLM_API_KEY
     # 如通义千问：EMBEDDING_MODEL=text-embedding-v4
     embedding_model: str = ""
@@ -148,20 +135,12 @@ class Settings(BaseSettings):
         return self.database_url
 
     @property
-    def text_models(self) -> list[str]:
-        return self.llm_models or ([self.llm_model] if self.llm_model else [])
-
-    @property
-    def vision_model_pool(self) -> list[str]:
-        return self.vision_models or ([self.vision_model] if self.vision_model else [])
-
-    @property
     def llm_enabled(self) -> bool:
-        return bool(self.llm_base_url and self.llm_api_key and self.text_models)
+        return bool(self.llm_base_url and self.llm_api_key and self.llm_model)
 
     @property
     def vision_enabled(self) -> bool:
-        return bool(self.vision_model_pool and (self.vision_base_url or self.llm_base_url)
+        return bool(self.vision_model and (self.vision_base_url or self.llm_base_url)
                     and (self.vision_api_key or self.llm_api_key))
 
 

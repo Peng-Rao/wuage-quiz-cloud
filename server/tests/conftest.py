@@ -43,13 +43,7 @@ os.environ.update({
     "LLM_BASE_URL": "",
     "LLM_API_KEY": "",
     "LLM_MODEL": "",
-    # 不受 server/.env 中模型池配置影响
-    "LLM_MODELS": "[]",
-    "VISION_MODELS": "[]",
     "VISION_MODEL": "",
-    "LLM_MODEL_EXTRA_BODY": "{}",
-    "LLM_MODEL_BUDGET": "{}",
-    "LLM_BUDGET_SINCE": "2000-01-01T00:00:00Z",
     # 原有用例测试人工入库；自动入库的用例单独开启
     "AUTO_COMMIT": "false",
     # 测试不访问网络抓取单价

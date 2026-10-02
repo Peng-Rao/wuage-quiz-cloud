@@ -237,9 +237,9 @@ def fetch_sources(settings: Settings, client: httpx.Client | None = None) -> tup
 
 
 def tracked_models(s: Session, settings: Settings) -> list[str]:
-    """需要单价的模型：模型池中的模型与历史上调用过的模型。"""
+    """需要单价的模型：当前配置的文字 / 看图模型与历史上调用过的模型。"""
     used = s.scalars(select(AiUsage.model).where(AiUsage.provider == "llm").distinct())
-    return sorted(set(settings.text_models) | set(settings.vision_model_pool) | set(used))
+    return sorted({m for m in (settings.llm_model, settings.vision_model) if m} | set(used))
 
 
 def _spec(row: ModelPrice) -> tuple:
