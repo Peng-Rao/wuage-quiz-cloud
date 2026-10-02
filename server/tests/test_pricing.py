@@ -47,7 +47,8 @@ def test_parse_aliyun_region_scope_tiers_offpeak_and_mode():
     assert [(t["max_input"], t["input"], t["output"]) for t in got["qwen3.7-flash"]] == [
         (32_000, 0.03, 0.13), (256_000, 0.1, 0.4), (1_000_000, 0.2, 0.8)]  # Global 行不取
     assert got["deepseek-v4.1-flash"][0] | {} == {"max_input": None, "input": 0.3, "output": 1.2, "input_offpeak": 0.15,
-                                                   "output_offpeak": 0.6, "cached_input": None, "mode": None}
+                                                   "output_offpeak": 0.6, "cached_input": None,
+                                                   "cached_input_offpeak": None, "mode": None}
     assert got["kimi-k3"][0]["input"] == 3  # 北京地域的 2.827 不取
     assert {t["mode"]: t["output"] for t in got["qwen-plus"]} == {"non_thinking": 1.2, "thinking": 4}
 
@@ -56,11 +57,13 @@ def test_parse_openrouter_exact_names_only():
     got = parse_openrouter(OPENROUTER)
     assert set(got) == {"glm-5.3", "glm-5.3-prime"}  # :batch 等变体跳过
     assert got["glm-5.3"][0] | {} == {"max_input": None, "input": 1.4, "output": 4.4, "input_offpeak": None,
-                                      "output_offpeak": None, "cached_input": 0.28, "mode": None}
+                                      "output_offpeak": None, "cached_input": 0.28, "cached_input_offpeak": None,
+                                      "mode": None}
 
 
 def price(tiers, ratio=0.2, provider="llm") -> ModelPrice:  # noqa: ANN001
-    return ModelPrice(provider=provider, model="m", source="aliyun", currency="USD", tiers=tiers, cache_ratio=ratio)
+    return ModelPrice(provider=provider, model="m", source="aliyun", currency="USD", tiers=tiers, cache_ratio=ratio,
+                      peak=pricing.ALIYUN_PEAK)
 
 
 BJ = timezone(timedelta(hours=8))
@@ -111,8 +114,9 @@ def clean_prices():
 
 
 def settings(**kw) -> Settings:  # noqa: ANN003
-    return get_settings().model_copy(update={"llm_model": "qwen3.7-flash", "vision_model": "glm-5.3",
-                                             "llm_prices": {}, **kw})
+    return get_settings().model_copy(update={"llm_model": "qwen3.7-flash", "vision_model": "glm-5.3", "llm_prices": {},
+                                             "price_sources": ["aliyun", "openrouter"],
+                                             "price_billing_source": "aliyun", **kw})
 
 
 def test_refresh_saves_history_only_on_change(clean_prices):
@@ -139,11 +143,11 @@ def test_refresh_saves_history_only_on_change(clean_prices):
         assert price_at(db, "llm", "qwen3.7-flash", t0 + timedelta(hours=1)).tiers[0]["input"] == 0.03
         assert price_at(db, "llm", "qwen3.7-flash", t0 + timedelta(days=3)).tiers[0]["input"] == 0.05
 
-    # 手动配置优先
-    refresh(settings(llm_prices={"qwen3.7-flash": {"input": 1, "output": 2}}, currency="¥"),
-            httpx.Client(transport=Pages()), now=t0 + timedelta(days=3))
+    # 手动配置优先（定价页单价仍另存一条作参考）
+    manual = settings(llm_prices={"qwen3.7-flash": {"input": 1, "output": 2}}, currency="¥")
+    refresh(manual, httpx.Client(transport=Pages()), now=t0 + timedelta(days=3))
     with SessionLocal() as db:
-        p = price_at(db, "llm", "qwen3.7-flash", t0 + timedelta(days=4))
+        p = price_at(db, "llm", "qwen3.7-flash", t0 + timedelta(days=4), pricing.cost_sources(manual))
         assert (p.source, p.currency, p.tiers[0]["input"]) == ("manual", "CNY", 1)
 
 
@@ -165,7 +169,8 @@ def test_claim_refresh_once_per_interval(clean_prices):
     assert pricing.claim_refresh(settings(price_refresh_hours=0), t0 + timedelta(days=9)) is False
 
 
-def test_record_writes_cost_and_summary_uses_it(clean_prices):
+def test_record_writes_cost_and_summary_uses_it(clean_prices, monkeypatch):
+    monkeypatch.setattr(get_settings(), "price_billing_source", "aliyun")
     refresh(settings(), httpx.Client(transport=Pages()), now=datetime(2026, 1, 1, tzinfo=timezone.utc))
     with SessionLocal() as db:
         db.execute(delete(AiUsage).where(AiUsage.model.in_(["qwen3.7-flash", "no-price-model"])))
@@ -198,5 +203,116 @@ def test_prices_api(client, clean_prices):  # noqa: F811
     current = client.get("/api/usage/prices").json()
     flash = next(p for p in current if p["model"] == "qwen3.7-flash")
     assert flash["tiers"][0]["input"] == 0.05 and flash["source"] == "aliyun" and flash["currency"] == "USD"
+    assert flash["peak"] == pricing.ALIYUN_PEAK and "billing" in flash
     history = client.get("/api/usage/prices", params={"history": True}).json()
     assert [p["tiers"][0]["input"] for p in history if p["model"] == "qwen3.7-flash"] == [0.03, 0.05]
+
+
+
+# ---------------- 腾讯云 TokenHub ----------------
+
+TENCENT_DOC = """<html><body>
+<h2>按 Token 计费（后付费）</h2>
+<ul><li>广州</li><li>新加坡</li></ul>
+<table><tr><th>模型名称</th><th>条件 （token）</th><th>峰谷计费</th><th>推理输入 （元/百万 tokens）</th>
+<th>推理输出 （元/百万 tokens）</th><th>缓存命中 （元/百万 tokens）</th></tr>
+<tr><td>Kimi K3</td><td>-</td><td>-</td><td>20</td><td>100</td><td>2</td></tr>
+<tr><td rowspan="2">DeepSeek-V4.1-Flash 原厂直供</td><td>-</td><td>空闲时段</td><td>1</td><td>4</td><td>0.02</td></tr>
+<tr><td>-</td><td>高峰时段</td><td>2</td><td>8</td><td>0.04</td></tr>
+<tr><td rowspan="2">DeepSeek-V4-Flash 0731 正式版</td><td>-</td><td>空闲时段</td><td>1.5</td><td>4.5</td><td>0.05</td></tr>
+<tr><td>-</td><td>高峰时段</td><td>3</td><td>9</td><td>0.1</td></tr>
+<tr><td rowspan="2">Qwen3.5-Flash</td><td>输入长度（0, 128k]</td><td>-</td><td>0.2</td><td>2</td><td>0.02</td></tr>
+<tr><td>输入长度（128k, 1M]</td><td>-</td><td>1.2</td><td>12</td><td>0.12</td></tr>
+</table>
+<h2>按 Token 计费（后付费）</h2>
+<table><tr><th>模型名称</th><th>条件 （token）</th><th>峰谷计费</th><th>推理输入 （元/百万 tokens）</th>
+<th>推理输出 （元/百万 tokens）</th><th>缓存命中 （元/百万 tokens）</th></tr>
+<tr><td>Kimi K3</td><td>-</td><td>-</td><td>21.974</td><td>109.869</td><td>2.197</td></tr>
+</table>
+<h2>批量任务场景</h2>
+<table><tr><th>模型名称</th><th>条件 （token）</th><th>推理输入 （元/百万 tokens）</th><th>推理输出 （元/百万 tokens）</th></tr>
+<tr><td>Kimi K3</td><td>-</td><td>10</td><td>50</td></tr></table>
+</body></html>"""
+
+
+def test_parse_tencent_regions_peak_and_tiers():
+    gz = pricing.parse_tencent(TENCENT_DOC, "广州")
+    assert gz["Kimi K3"][0] | {} == {"max_input": None, "input": 20, "output": 100, "input_offpeak": None,
+                                     "output_offpeak": None, "cached_input": 2, "cached_input_offpeak": None,
+                                     "mode": None}
+    ds = gz["DeepSeek-V4.1-Flash 原厂直供"][0]
+    assert (ds["input"], ds["output"], ds["cached_input"]) == (2, 8, 0.04)
+    assert (ds["input_offpeak"], ds["output_offpeak"], ds["cached_input_offpeak"]) == (1, 4, 0.02)
+    assert [(t["max_input"], t["input"]) for t in gz["Qwen3.5-Flash"]] == [(128_000, 0.2), (1_000_000, 1.2)]
+    assert pricing.parse_tencent(TENCENT_DOC, "新加坡")["Kimi K3"][0]["input"] == 21.974
+
+
+def test_match_tencent_names():
+    doc = pricing.parse_tencent(TENCENT_DOC, "广州")
+    names = {"deepseek/deepseek-flash": "DeepSeek-V4.1-Flash"}
+    assert pricing.match_tencent(doc, "kimi-k3", {})[0]["input"] == 20  # 按 id 推断
+    assert pricing.match_tencent(doc, "deepseek/deepseek-flash", names)[0]["input"] == 2  # 原厂直供
+    assert pricing.match_tencent(doc, "deepseek-v4-flash-0731", {})[0]["input"] == 3  # 正式版
+    assert pricing.match_tencent(doc, "qwen3.7-flash", {}) is None
+
+
+def test_billing_source_and_tencent_peak_hours():
+    assert pricing.billing_source(Settings(llm_base_url="https://tokenhub.tencentmaas.com/v1")) == "tencent"
+    assert pricing.billing_source(Settings(
+        llm_base_url="https://ws-x.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1")) == "aliyun"
+    assert pricing.billing_source(Settings(llm_base_url="https://api.example.com/v1")) == "openrouter"
+    assert pricing.billing_source(Settings(llm_base_url="https://x", price_billing_source="tencent")) == "tencent"
+    tp = pricing.TENCENT_PEAK
+    assert pricing.is_peak(datetime(2026, 10, 9, 10, tzinfo=BJ), tp)        # 周五 10 点
+    assert not pricing.is_peak(datetime(2026, 10, 9, 12, 30, tzinfo=BJ), tp)  # 午间空闲
+    assert pricing.is_peak(datetime(2026, 10, 9, 17, 59, tzinfo=BJ), tp)
+    assert not pricing.is_peak(datetime(2026, 10, 10, 10, tzinfo=BJ), tp)   # 周六全天空闲
+    assert pricing.is_peak(datetime(2026, 10, 10, 10, tzinfo=BJ), pricing.ALIYUN_PEAK)
+
+
+class AllPages(httpx.BaseTransport):
+    """百炼定价页、OpenRouter、TokenHub 价格文档与 /v1/models。"""
+
+    def handle_request(self, request: httpx.Request) -> httpx.Response:
+        if "openrouter" in request.url.host:
+            return httpx.Response(200, json=OPENROUTER)
+        if "cloud.tencent.com" in request.url.host:
+            return httpx.Response(200, text=TENCENT_DOC)
+        if request.url.host == "tokenhub.tencentmaas.com":
+            return httpx.Response(200, json={"data": [{"id": "kimi-k3", "name": "Kimi K3"}]})
+        return httpx.Response(200, text=PAGE.replace("<td>kimi-k3</td><td>International</td>",
+                                                     "<td>kimi-k3</td><td>International</td>"))
+
+
+def test_tencent_billing_with_reference_sources(clean_prices, monkeypatch):
+    s = get_settings()
+    for k, v in {"llm_base_url": "https://tokenhub.tencentmaas.com/v1", "llm_api_key": "k", "llm_model": "kimi-k3",
+                 "vision_model": "", "price_sources": ["tencent", "aliyun", "openrouter"],
+                 "price_billing_source": "auto", "llm_prices": {}}.items():
+        monkeypatch.setattr(s, k, v)
+    t0 = datetime(2026, 10, 9, 2, tzinfo=timezone.utc)  # 北京时间周五 10 点（高峰）
+    lines = refresh(s, httpx.Client(transport=AllPages()), now=t0)
+    assert any(x.startswith("*kimi-k3：tencent CNY 输入 20") for x in lines)  # 计费来源
+    assert any(x.startswith(" kimi-k3：aliyun USD 输入 3") for x in lines)    # 参考
+    with SessionLocal() as db:
+        sources = {p.source: p for p in db.scalars(select(ModelPrice).where(ModelPrice.model == "kimi-k3"))}
+    assert set(sources) == {"tencent", "aliyun"} and sources["tencent"].peak == pricing.TENCENT_PEAK
+
+    with SessionLocal() as db:
+        db.execute(delete(AiUsage).where(AiUsage.model == "kimi-k3"))
+        db.commit()
+    usage.record("llm", "segment", "kimi-k3", prompt_tokens=1_000_000, completion_tokens=100_000)
+    with SessionLocal() as db:
+        u = db.scalars(select(AiUsage).where(AiUsage.model == "kimi-k3")).one()
+        assert (u.currency, u.price_id) == ("CNY", sources["tencent"].id)
+        assert u.cost == pytest.approx(20 + 0.1 * 100)
+        # 改为按百炼计费后，--since 重新计算之后的调用
+        u.created_at = t0
+        db.commit()
+    monkeypatch.setattr(s, "price_billing_source", "aliyun")
+    pricing.backfill(since=t0 - timedelta(minutes=1))
+    with SessionLocal() as db:
+        u = db.scalars(select(AiUsage).where(AiUsage.model == "kimi-k3")).one()
+        assert u.currency == "USD" and u.cost == pytest.approx(3 + 0.1 * 15)
+        db.execute(delete(AiUsage).where(AiUsage.model == "kimi-k3"))
+        db.commit()

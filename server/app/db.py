@@ -171,9 +171,10 @@ class AiUsage(Base):
 
 
 class ModelPrice(Base):
-    """模型单价历史：定时从官方定价页 / OpenRouter / 手动配置获取，价格变化时新增一条，未变化只更新 checked_at。
-    tiers：[{max_input, input, output, input_offpeak, output_offpeak, cached_input, mode}]，单位为每百万 token；
-    MinerU 为 [{per_page}]。"""
+    """模型单价历史：按来源（tencent / aliyun / openrouter / manual）分别记录，价格变化时新增一条，未变化只更新
+    checked_at。计算成本只用手动配置与当前调用平台（计费来源）的单价，其他来源作为参考。
+    tiers：[{max_input, input, output, input_offpeak, output_offpeak, cached_input, cached_input_offpeak, mode}]，
+    单位为每百万 token；MinerU 为 [{per_page}]。"""
 
     __tablename__ = "model_price"
 
@@ -185,6 +186,8 @@ class ModelPrice(Base):
     tiers: Mapped[list[Any]] = mapped_column(JSON)
     # 缓存命中的输入 token 按输入单价的该比例计费（tiers 中给出 cached_input 时以其为准）
     cache_ratio: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # 峰谷时段（北京时间）：{"ranges": [[9, 12], [14, 18]], "weekdays_only": true}；为空表示不分峰谷
+    peak: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
     checked_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

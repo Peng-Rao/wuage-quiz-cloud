@@ -18,9 +18,17 @@ def usage_summary(days: int = Query(30, ge=1, le=365), s: Session = Depends(get_
 
 @router.get("/prices", response_model=list[ModelPriceOut])
 def model_prices(history: bool = False, s: Session = Depends(get_session)) -> list[ModelPriceOut]:
-    """模型单价：默认每个模型的当前单价，history=true 时含历史记录（价格变化时新增）。"""
+    """模型单价：默认每个模型、每个来源的当前单价，history=true 时含历史记录（价格变化时新增）。
+    billing 为 true 的单价用于计算成本（手动配置或当前调用平台），其余来源作为参考。"""
+    from ..config import get_settings
+    from ..pricing import cost_sources
+
+    used = set(cost_sources(get_settings()))
     q = select(ModelPrice)
     if not history:
-        latest = select(func.max(ModelPrice.id).label("id")).group_by(ModelPrice.provider, ModelPrice.model).subquery()
+        latest = (select(func.max(ModelPrice.id).label("id"))
+                  .group_by(ModelPrice.provider, ModelPrice.model, ModelPrice.source).subquery())
         q = q.where(ModelPrice.id.in_(select(latest.c.id)))
-    return [ModelPriceOut.model_validate(p) for p in s.scalars(q.order_by(ModelPrice.model, ModelPrice.fetched_at))]
+    rows = s.scalars(q.order_by(ModelPrice.model, ModelPrice.source, ModelPrice.fetched_at))
+    return [ModelPriceOut.model_validate(p).model_copy(update={"billing": p.source in used or p.provider == "mineru"})
+            for p in rows]
