@@ -5,6 +5,7 @@ import { bankApi, type PaperSummary } from '@/api/bank'
 import { useAuthStore } from '@/stores/auth'
 import { useAppStore } from '@/stores/app'
 import { useBasketStore } from '@/stores/basket'
+import LoadingState from '@/components/LoadingState.vue'
 const auth = useAuthStore()
 const app = useAppStore()
 const basket = useBasketStore()
@@ -42,7 +43,7 @@ function search() { router.push({ path: '/knowledge', query: keyword.value.trim(
     <div class="container body">
       <div class="entries"><RouterLink v-for="e in entries" :key="e.to" :to="e.to" class="card entry"><div class="entry-head"><span class="entry-mark serif">{{ e.mark }}</span><span class="entry-title">{{ e.title }}</span></div><span class="entry-desc">{{ e.desc }}</span></RouterLink></div>
       <div class="split"><section class="card papers"><div class="papers-head"><h2>{{ auth.isStaff ? '最新试卷' : '我的已审核题目' }}</h2><RouterLink to="/papers" class="more">更多 ›</RouterLink></div>
-        <p v-if="error" role="alert">{{ error }}</p><p v-else-if="loading">加载中…</p><p v-else-if="!papers.length">当前学科暂无可查看的试卷{{ auth.isStaff ? '，可上传试卷开始整理。' : '，请联系管理员或组长审核分配。' }}</p>
+        <p v-if="error" role="alert">{{ error }}</p><LoadingState v-else-if="loading" :compact="!!papers.length" label="正在加载最新试卷…" :rows="papers.length ? 0 : 2" /><p v-else-if="!papers.length">当前学科暂无可查看的试卷{{ auth.isStaff ? '，可上传试卷开始整理。' : '，请联系管理员或组长审核分配。' }}</p>
         <RouterLink v-for="p in papers" :key="p.id" :to="`/papers/${p.id}`" class="paper-row"><span class="tag">{{ p.meta.subject }}</span><span class="paper-title">{{ p.title }}</span><span class="paper-date">{{ p.questionCount }} 道题</span></RouterLink>
       </section><aside class="side"><section class="card side-card"><h2>我的组卷</h2><div class="mine"><span class="mine-title">试题篮已选 {{ basket.count }} 道题</span><span class="mine-meta">当前合计 {{ basket.totalScore }} 分</span><RouterLink to="/paper">继续组卷与下载 ›</RouterLink></div></section>
         <section v-if="auth.isStaff" class="school"><span class="school-title">校本题库</span><span class="school-desc">上传试卷，AI 解析后核对入库，再审核分配给老师。</span><RouterLink to="/upload" class="school-btn">上传试卷</RouterLink></section>

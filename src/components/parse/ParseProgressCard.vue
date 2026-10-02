@@ -3,6 +3,7 @@ import { computed } from 'vue'
 import type { ParseJob } from '@/api/parse'
 import type { ParsePhase } from '@/stores/parseJob'
 import { STAGE_LABELS } from '@/utils/stages'
+import LoadingState from '@/components/LoadingState.vue'
 
 const props = defineProps<{
   phase: ParsePhase
@@ -40,6 +41,10 @@ const meta = computed(() => [props.job?.pageCount ? `${props.job.pageCount} 页`
 
 <template>
   <div class="card parsing">
+    <LoadingState
+      v-if="phase === 'uploading' || phase === 'parsing'" compact
+      :label="phase === 'uploading' ? (uploadPct >= 100 ? '上传完成，正在创建解析任务…' : '正在上传试卷…') : job?.status === 'queued' ? '试卷已进入解析队列…' : pct >= 100 ? '解析完成，正在加载题目…' : '正在智能解析试卷…'"
+    />
     <div class="file">
       <div class="file-icon">{{ kind }}</div>
       <div class="file-info">
@@ -48,12 +53,12 @@ const meta = computed(() => [props.job?.pageCount ? `${props.job.pageCount} 页`
       </div>
       <span class="pct">{{ pct }}%</span>
     </div>
-    <div class="progress" role="progressbar" :aria-valuenow="pct" aria-valuemin="0" aria-valuemax="100">
+    <div class="progress" role="progressbar" aria-label="试卷处理进度" :aria-valuenow="pct" aria-valuemin="0" aria-valuemax="100">
       <div :class="{ failed: phase === 'failed' }" :style="{ width: pct + '%' }" />
     </div>
     <div class="tasks">
       <div v-for="t in rows" :key="t.key" class="task" :class="t.status">
-        <span class="dot">{{ t.status === 'done' ? '✓' : t.status === 'running' ? '…' : t.status === 'failed' ? '!' : '' }}</span>
+        <span class="dot" :class="{ spinning: t.status === 'running' }" aria-hidden="true">{{ t.status === 'done' ? '✓' : t.status === 'failed' ? '!' : '' }}</span>
         <span class="task-label">{{ t.label }}</span>
         <span class="task-note">{{ t.note }}</span>
       </div>
@@ -62,7 +67,7 @@ const meta = computed(() => [props.job?.pageCount ? `${props.job.pageCount} 页`
       <span>{{ job?.status === 'cancelled' ? '任务已取消' : error || '解析失败' }}</span>
       <div class="fail-actions">
         <button class="btn" @click="$emit('back')">返回任务列表</button>
-        <button v-if="job" class="btn btn-outline" @click="$emit('retry')">重新解析</button>
+        <button v-if="job" class="btn btn-outline" @click="$emit('retry')">{{ job.status === 'done' ? '重新加载题目' : '重新解析' }}</button>
       </div>
     </div>
     <div v-else-if="phase === 'parsing'" class="bg-row">
@@ -94,6 +99,9 @@ const meta = computed(() => [props.job?.pageCount ? `${props.job.pageCount} 页`
   font-size: 12px; background: var(--c-divider); color: var(--c-primary-dark);
 }
 .task.running .dot { background: var(--c-primary-soft); }
+.dot.spinning { border: 2px solid var(--c-primary-line); border-top-color: var(--c-primary); animation: stage-spin .85s linear infinite; }
+@keyframes stage-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .dot.spinning { animation: none; } }
 .task.done .dot { background: var(--c-primary); color: #fff; }
 .task.failed .dot { background: #FBEAE6; color: #A0301F; }
 .task.skipped .task-label { text-decoration: line-through; }

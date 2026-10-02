@@ -2,6 +2,7 @@
 import type { SimilarQuestion } from '@/api/parse'
 import ModalDialog from '@/components/ModalDialog.vue'
 import MathText from '@/components/MathText.vue'
+import LoadingState from '@/components/LoadingState.vue'
 
 defineProps<{ title: string; items: SimilarQuestion[] | null; error?: string }>()
 const open = defineModel<boolean>({ required: true })
@@ -13,7 +14,7 @@ const pct = (v: number) => Math.round(v * 100) + '%'
 <template>
   <ModalDialog v-model="open" :title="title" :width="680">
     <p v-if="error" class="err">{{ error }}</p>
-    <p v-else-if="!items" class="muted">查找中…</p>
+    <LoadingState v-else-if="!items" label="正在查找相似题…" detail="正在比对题干与知识点" :rows="2" />
     <p v-else-if="!items.length" class="muted">校本题库和其他试卷中没有找到相似的题。</p>
     <ol v-else class="list">
       <li v-for="s in items" :key="s.id" class="item">

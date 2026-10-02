@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import { bankApi, type PaperSummary, type TextbookBook, type TextbookVersion } from '@/api/bank'
@@ -8,6 +8,7 @@ import { fromBank, useBasketStore } from '@/stores/basket'
 import QuestionBrowser from '@/components/bank/QuestionBrowser.vue'
 import TreeNav, { type TreeItem } from '@/components/bank/TreeNav.vue'
 import BasketFloat from '@/components/bank/BasketFloat.vue'
+import LoadingState from '@/components/LoadingState.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -22,6 +23,9 @@ const loaded = ref(false)
 const version = ref<TextbookVersion | null>(null)
 const book = ref<TextbookBook | null>(null)
 const counts = ref<Record<string, number>>({})
+const countsLoading = ref(false)
+let catalogSeq = 0
+let countsSeq = 0
 
 /** 上次选择的册按学段学科记住 */
 const bookKey = () => `fg-book:${stage.value}${subject.value}`
@@ -30,11 +34,15 @@ function remembered(): string | null {
 }
 
 async function loadCatalog() {
+  const seq = ++catalogSeq
   loaded.value = false
   loadError.value = ''
   try {
-    versions.value = await bankApi.chapters(stage.value, subject.value)
+    const next = await bankApi.chapters(stage.value, subject.value)
+    if (seq !== catalogSeq) return
+    versions.value = next
   } catch (e) {
+    if (seq !== catalogSeq) return
     versions.value = []
     loadError.value = (e as Error).message
   }
@@ -48,14 +56,19 @@ async function loadCatalog() {
 watch([stage, subject], loadCatalog, { immediate: true })
 
 function pickBook(b: TextbookBook | null, close = true) {
+  const seq = ++countsSeq
   book.value = b
   chapterId.value = null
   counts.value = {}
+  countsLoading.value = !!b
   if (close) pickerOpen.value = false
   if (!b) return
   try { localStorage.setItem(bookKey(), b.id) } catch { /* 无法写入时忽略 */ }
   if (route.query.book !== b.id) router.replace({ query: { ...route.query, book: b.id } })
-  bankApi.chapterCounts(b.id).then((c) => { if (book.value?.id === b.id) counts.value = c }).catch(() => {})
+  bankApi.chapterCounts(b.id)
+    .then((c) => { if (seq === countsSeq) counts.value = c })
+    .catch(() => {})
+    .finally(() => { if (seq === countsSeq) countsLoading.value = false })
 }
 function pickVersion(v: TextbookVersion) {
   version.value = v
@@ -93,19 +106,31 @@ const currentName = computed(() => {
 const tab = ref<'questions' | 'papers'>('questions')
 const papers = ref<PaperSummary[] | null>(null)
 const papersError = ref('')
-watch([tab, stage, subject], async () => {
+watch([tab, stage, subject], async (_, __, onCleanup) => {
+  let active = true
+  onCleanup(() => { active = false })
   if (tab.value !== 'papers') return
   papers.value = null
   papersError.value = ''
   try {
-    papers.value = (await bankApi.listPapers({ stage: stage.value, subject: subject.value, limit: 50 })).items
+    const next = await bankApi.listPapers({ stage: stage.value, subject: subject.value, limit: 50 })
+    if (active) papers.value = next.items
   } catch (e) {
-    papersError.value = (e as Error).message
+    if (active) papersError.value = (e as Error).message
   }
 })
+const adding = reactive<Record<string, 'loading' | 'done'>>({})
 async function addPaper(p: PaperSummary) {
-  const d = await bankApi.getPaper(p.id)
-  basket.addMany(d.questions.map(fromBank))
+  if (adding[p.id]) return
+  adding[p.id] = 'loading'
+  try {
+    const d = await bankApi.getPaper(p.id)
+    basket.addMany(d.questions.map(fromBank))
+    adding[p.id] = 'done'
+  } catch (e) {
+    delete adding[p.id]
+    papersError.value = (e as Error).message
+  }
 }
 </script>
 
@@ -119,7 +144,7 @@ async function addPaper(p: PaperSummary) {
     <div class="layout">
       <aside class="card side sticky-side">
         <div ref="picker" class="book">
-          <button v-if="book" class="book-btn" :aria-expanded="pickerOpen" @click="pickerOpen = !pickerOpen">
+          <button v-if="book" class="book-btn" :disabled="!loaded" :aria-expanded="pickerOpen" @click="pickerOpen = !pickerOpen">
             <span class="icon" aria-hidden="true">≡</span>
             <span class="ver">{{ version?.name }}</span><span class="gt">›</span><span class="bk">{{ book.name }}</span>
             <span class="caret" aria-hidden="true">{{ pickerOpen ? '▴' : '▾' }}</span>
@@ -150,18 +175,19 @@ async function addPaper(p: PaperSummary) {
 
         <div class="tree">
           <p v-if="loadError" class="tip err">{{ loadError }}</p>
-          <p v-else-if="!loaded" class="tip">加载中…</p>
+          <LoadingState v-else-if="!loaded" label="正在加载教材目录…" />
           <p v-else-if="!book" class="tip">
             暂无{{ stage }}{{ subject }}的教材章节目录，可先用<RouterLink to="/knowledge">知识点选题</RouterLink>。
           </p>
           <template v-else>
             <div class="tree-tools">
               <button class="all" :class="{ on: !chapterId }" @click="chapterId = null">全部章节</button>
-              <label class="only"><input v-model="onlyWithQuestions" type="checkbox"> 只看有题</label>
+              <label class="only"><input v-model="onlyWithQuestions" type="checkbox" :disabled="countsLoading"> 只看有题</label>
             </div>
+            <LoadingState v-if="countsLoading" class="tip" compact label="正在统计章节题量…" />
             <TreeNav
               :nodes="tree" :counts="counts" :selected="chapterId ? [chapterId] : []" :open-depth="1"
-              :only-with-questions="onlyWithQuestions" @select="chapterId = $event.id"
+              :only-with-questions="onlyWithQuestions && !countsLoading" @select="chapterId = $event.id"
             />
           </template>
         </div>
@@ -181,7 +207,7 @@ async function addPaper(p: PaperSummary) {
 
         <div v-else class="card papers">
           <p v-if="papersError" class="tip err">{{ papersError }}</p>
-          <p v-else-if="!papers" class="tip">加载中…</p>
+          <LoadingState v-else-if="!papers" label="正在加载同步套卷…" :rows="3" />
           <p v-else-if="!papers.length" class="tip">试卷库中还没有{{ stage }}{{ subject }}的试卷。</p>
           <div v-for="p in papers ?? []" :key="p.id" class="paper-row">
             <span class="tag">{{ p.meta.paperType || '试卷' }}</span>
@@ -189,7 +215,10 @@ async function addPaper(p: PaperSummary) {
               <RouterLink :to="`/papers/${p.id}`" class="paper-title">{{ p.title }}</RouterLink>
               <span class="paper-meta">{{ [p.meta.grade, p.meta.region, p.meta.schoolYear].filter(Boolean).join(' · ') }} · {{ p.questionCount }} 题 · 总分 {{ p.totalScore }}</span>
             </div>
-            <button class="paper-add" @click="addPaper(p)">整卷加入试题篮</button>
+            <button class="paper-add" :disabled="!!adding[p.id]" @click="addPaper(p)">
+              <LoadingState v-if="adding[p.id] === 'loading'" compact label="正在获取整卷题目…" />
+              <template v-else>{{ adding[p.id] === 'done' ? '已加入试题篮' : '整卷加入试题篮' }}</template>
+            </button>
           </div>
           <RouterLink v-if="papers?.length" :to="{ path: '/papers', query: { stage, subject } }" class="more">在试卷选题中查看全部 ›</RouterLink>
         </div>

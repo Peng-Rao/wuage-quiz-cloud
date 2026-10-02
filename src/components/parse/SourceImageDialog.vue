@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { SourceImage } from '@/api/parse'
 import ModalDialog from '@/components/ModalDialog.vue'
+import LoadingState from '@/components/LoadingState.vue'
 
 defineProps<{ title: string; images: SourceImage[] | null }>()
 const open = defineModel<boolean>({ required: true })
@@ -16,7 +17,7 @@ const boxStyle = (b: [number, number, number, number]) => ({
 
 <template>
   <ModalDialog v-model="open" :title="title" :width="620">
-    <p v-if="!images" class="muted">加载中…</p>
+    <LoadingState v-if="!images" label="正在加载原卷图片…" />
     <div v-else class="pages">
       <figure v-for="img in images" :key="img.page" class="page">
         <div class="sheet">

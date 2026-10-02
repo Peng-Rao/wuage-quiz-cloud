@@ -11,6 +11,7 @@ import { fromBank, useBasketStore } from '@/stores/basket'
 import QuestionCard from '@/components/bank/QuestionCard.vue'
 import DifficultyBar from '@/components/DifficultyBar.vue'
 import ModalDialog from '@/components/ModalDialog.vue'
+import LoadingState from '@/components/LoadingState.vue'
 
 const props = defineProps<{ id: string }>()
 const router = useRouter()
@@ -94,7 +95,7 @@ function replaceAndGo() {
     <RouterLink to="/papers" class="back">‹ 试卷选题</RouterLink>
 
     <div v-if="error" class="card empty err">{{ error }}</div>
-    <div v-else-if="!paper" class="card empty">加载中…</div>
+    <LoadingState v-else-if="!paper" class="card" label="正在加载整份试卷…" detail="正在获取题目、配图与答案解析" :rows="3" />
 
     <template v-else>
       <section class="card head">

@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import type { JobListItem } from '@/api/parse'
 import { STAGE_SHORT, STATUS_LABELS } from '@/utils/stages'
+import LoadingState from '@/components/LoadingState.vue'
 
-defineProps<{ jobs: JobListItem[]; total: number; active: number; busy: Set<string> }>()
+defineProps<{ jobs: JobListItem[]; total: number; active: number; busy: Set<string>; loading?: boolean }>()
 defineEmits<{ open: [id: string]; retry: [id: string]; cancel: [id: string] }>()
 
 const DATE = new Intl.DateTimeFormat('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })
@@ -27,7 +28,8 @@ function meta(j: JobListItem): string {
       <span v-if="active" class="live">{{ active }} 份进行中</span>
       <span v-else-if="total" class="muted small">共 {{ total }} 份</span>
     </div>
-    <p v-if="!jobs.length" class="muted small">暂无记录。可一次拖入多份试卷，在后台依次解析。</p>
+    <LoadingState v-if="loading && !jobs.length" compact class="small" label="正在加载解析任务…" />
+    <p v-else-if="!jobs.length" class="muted small">暂无记录。可一次拖入多份试卷，在后台依次解析。</p>
     <ul v-else class="list">
       <li v-for="j in jobs" :key="j.id" class="item" :class="j.status">
         <button class="main" :title="j.fileName" @click="$emit('open', j.id)">
