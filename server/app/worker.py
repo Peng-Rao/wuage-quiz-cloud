@@ -289,6 +289,7 @@ class Worker:
         self.local: LocalQueue | None = None
         self.redis: RedisQueue | None = None
         self.consumer: RedisConsumer | None = None
+        self.price_task: asyncio.Task | None = None
 
     def _put(self, kind: str, job_id: str) -> None:
         if self.redis is not None:
@@ -316,6 +317,9 @@ class Worker:
         concurrency = max(1, s.worker_concurrency)
         if not s.redis_url or s.run_worker:
             size_executor(concurrency)
+        # 网页服务也定时抓取单价（Worker 停止时单价照常更新）；多个进程由数据库中的抓取时间去重
+        if s.price_refresh_hours > 0:
+            self.price_task = asyncio.get_running_loop().create_task(price_refresh_loop())
         if not s.redis_url:
             # 队列绑定创建它的事件循环；每次启动（如测试中多次启动应用）都需要新建
             self.local = LocalQueue()
@@ -327,6 +331,9 @@ class Worker:
             asyncio.get_running_loop().create_task(self.consumer.start())
 
     async def stop(self) -> None:
+        if self.price_task is not None:
+            self.price_task.cancel()
+            self.price_task = None
         if self.local is not None:
             await self.local.stop()
         if self.consumer is not None:
@@ -342,6 +349,26 @@ class Worker:
 
 
 worker = Worker()
+
+# 检查是否到了抓取单价的时间（实际间隔由 PRICE_REFRESH_HOURS 决定，多个 Worker 只有一个执行）
+PRICE_CHECK_INTERVAL = 3600
+
+
+async def price_refresh_loop() -> None:
+    """定时抓取模型单价写入 model_price；失败只记日志，下次再试。"""
+    from .pricing import claim_refresh, refresh
+
+    while True:
+        try:
+            s = get_settings()
+            if await asyncio.to_thread(claim_refresh, s):
+                lines = await asyncio.to_thread(refresh, s)
+                log.info("已更新模型单价：%s", "；".join(lines))
+        except asyncio.CancelledError:
+            raise
+        except Exception:  # noqa: BLE001
+            log.exception("更新模型单价失败")
+        await asyncio.sleep(PRICE_CHECK_INTERVAL)
 
 
 def size_executor(concurrency: int) -> None:
@@ -365,8 +392,11 @@ async def _serve() -> None:
     for sig in (signal.SIGTERM, signal.SIGINT):
         loop.add_signal_handler(sig, stop.set)
     await consumer.start()
+    prices = asyncio.create_task(price_refresh_loop()) if s.price_refresh_hours > 0 else None
     await stop.wait()
     log.info("正在停止 Worker %s", consumer.name)
+    if prices is not None:
+        prices.cancel()
     await consumer.stop()
 
 

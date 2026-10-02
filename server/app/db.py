@@ -163,7 +163,31 @@ class AiUsage(Base):
     # 服务端未返回用量时按字符数估算
     estimated: Mapped[bool] = mapped_column(default=False)
     status: Mapped[str] = mapped_column(String(8), default="ok")  # ok / error
+    # 按调用时的单价（model_price）计算的定价成本，记录时写入；未找到单价时为空
+    cost: Mapped[float | None] = mapped_column(Float, nullable=True)
+    currency: Mapped[str | None] = mapped_column(String(8), nullable=True)  # USD / CNY
+    price_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+
+
+class ModelPrice(Base):
+    """模型单价历史：定时从官方定价页 / OpenRouter / 手动配置获取，价格变化时新增一条，未变化只更新 checked_at。
+    tiers：[{max_input, input, output, input_offpeak, output_offpeak, cached_input, mode}]，单位为每百万 token；
+    MinerU 为 [{per_page}]。"""
+
+    __tablename__ = "model_price"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    provider: Mapped[str] = mapped_column(String(16))  # llm / mineru
+    model: Mapped[str] = mapped_column(String(64), index=True)
+    source: Mapped[str] = mapped_column(String(16))  # aliyun / openrouter / manual
+    currency: Mapped[str] = mapped_column(String(8))
+    tiers: Mapped[list[Any]] = mapped_column(JSON)
+    # 缓存命中的输入 token 按输入单价的该比例计费（tiers 中给出 cached_input 时以其为准）
+    cache_ratio: Mapped[float | None] = mapped_column(Float, nullable=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+    checked_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
 class BankQuestion(Base):
