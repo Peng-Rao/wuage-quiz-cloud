@@ -112,8 +112,26 @@ docker run -d -p 8000:8000 --env-file server/.env -v fg-quiz-data:/data fg-quiz-
   `docker compose up -d --scale worker=3`，总并发 = Worker 数 × `WORKER_CONCURRENCY`（默认 2）。
   同一任务不会重复执行；Worker 崩溃或被强制停止时，其手上的任务约 2 分钟后由其他 Worker 接手重做，正常停止时立即交还。
   `GET /api/health` 的 `worker` 字段显示在线 Worker 数、排队和执行中的任务数。
-- 上传文件与页面图保存在本机的 `fg-quiz-data` 卷中，`app` 与各 `worker` 共用，因此所有容器需在同一台机器上；
-  跨机器部署需先把存储换成对象存储。
+- 默认（`STORAGE_BACKEND=local`）上传文件与页面图保存在本机的 `fg-quiz-data` 卷中，`app` 与各 `worker` 共用，
+  因此所有容器需在同一台机器上；跨机器部署改用对象存储（腾讯云 COS 或阿里云 OSS），见下方「对象存储」。
+
+### 对象存储（腾讯云 COS / 阿里云 OSS）
+
+在 `server/.env` 中设置 `STORAGE_BACKEND=cos` 及 `COS_*` 配置（阿里云为 `STORAGE_BACKEND=oss` 及 `OSS_*`，见 `server/.env.example`）后，上传的试卷、页面图、题目配图都存入对象存储：
+
+- 浏览器用预签名地址直传对象存储（不经过本服务）；页面上的配图仍请求 `/api/files/…`，校验登录与题目权限后跳转到 10 分钟有效的签名地址。存储桶保持**私有读写**。
+- 存储桶需配置跨域（CORS）规则：来源 `*`，方法 `GET`、`PUT`、`HEAD`，允许头 `*`，暴露头 `ETag`。
+  下载 Word 时浏览器经重定向读取配图，跨域跳转后的来源为 `null`，因此来源须为 `*`；访问仍受签名保护。
+- 已有本地文件先上传：`uv run python -m app.migrate_storage --to cos`（Docker：`docker compose exec app python -m app.migrate_storage --to cos`），再切换配置并重启。
+- 腾讯云 COS：存储桶名称带 APPID（如 `fg-quiz-1250000000`），地域如 `ap-guangzhou`；默认域名在同地域腾讯云服务器上自动走内网，无需额外配置。
+  密钥建议使用只授权该存储桶读写的 CAM 子用户。
+- 阿里云 OSS：与本服务同地域的 ECS 可把 `OSS_ENDPOINT` 设为内网地址（不收流量费），同时设置公网的 `OSS_PUBLIC_ENDPOINT` 供签名地址使用。
+
+### 大模型看图
+
+设置 `VISION_MODEL`（如通义千问 `qwen3-vl-plus`）后，AI 生成答案时含配图的题改用看图模型，并按顺序附上题目配图（每题最多 `VISION_MAX_IMAGES` 张）。
+使用对象存储时传图片签名地址，由模型服务下载；本地存储时以 base64 内嵌。未设置时大模型看不到图片，含图题的答案会标注「AI 未看到图片」。
+看图模型的用量按模型名单独统计，单价在 `LLM_PRICES` 中按模型名配置。
 - 服务以非 root 用户（uid 10001）运行，自带健康检查（`GET /api/health`）。
 
 ### 不同芯片架构

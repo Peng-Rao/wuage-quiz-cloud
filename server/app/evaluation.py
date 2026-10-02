@@ -261,5 +261,5 @@ def _file_type(s: Session, sample: EvalSample) -> str:
 def config_snapshot() -> dict[str, Any]:
     st = get_settings()
     return {"parserChain": st.parser_chain, "mineruModel": st.mineru_model_version if st.mineru_token else None,
-            "llmModel": st.llm_model if st.llm_enabled else None, "embeddingModel": st.embedding_model or None,
+            "llmModel": st.text_models[0] if st.llm_enabled else None, "embeddingModel": st.embedding_model or None,
             "calibration": difficulty.get_calibration()}

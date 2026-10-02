@@ -203,7 +203,9 @@ _settings.data_dir.mkdir(parents=True, exist_ok=True)
 if not _settings.db_url.startswith("postgresql"):
     raise RuntimeError("DATABASE_URL 须为 PostgreSQL 地址，如 postgresql+psycopg://user:pass@host:5432/fg_quiz")
 # 会话时区固定为 UTC，读出的时间与数据库服务器的时区设置无关；pool_pre_ping 在数据库重启后自动丢弃失效连接
-engine = create_engine(_settings.db_url, connect_args={"options": "-c timezone=UTC"}, pool_pre_ping=True)
+# 每个执行槽都可能同时用到连接，另留给网页请求
+engine = create_engine(_settings.db_url, connect_args={"options": "-c timezone=UTC"}, pool_pre_ping=True,
+                       pool_size=max(5, _settings.worker_concurrency + 5))
 
 SessionLocal = sessionmaker(engine, expire_on_commit=False)
 

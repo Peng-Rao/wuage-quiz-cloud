@@ -10,14 +10,14 @@ from sqlalchemy import delete
 from ..config import get_settings
 from ..db import DraftQuestion, ParseBlock, ParseJob, SessionLocal
 from ..similar import dedupe_job
-from ..storage import get_store
+from ..storage import ObjectStore, get_store
 from ..usage import current_job
 from . import difficulty
 from .classify import classify
 from .files import normalize, pdf_page_count, render_pages
 from .knowledge import tag_job
 from .ir import Block
-from .parsers.router import AllParsersFailed, parse_with_fallback
+from .parsers.router import AllParsersFailed, build_parser, parse_with_fallback
 from .segment import segment, units_from_blocks
 
 log = logging.getLogger(__name__)
@@ -85,6 +85,21 @@ def _meta_note(meta: dict) -> str:
     return " · ".join(p for p in parts if p) or "未识别"
 
 
+# 同时上传的文件数（对象存储为网络请求，逐个上传较慢）
+PUT_CONCURRENCY = 8
+
+
+async def put_all(store: ObjectStore, items: list[tuple[str, bytes]]) -> None:
+    """在线程中保存文件，不阻塞事件循环（Worker 心跳等在同一事件循环中）。"""
+    sem = asyncio.Semaphore(PUT_CONCURRENCY)
+
+    async def one(key: str, data: bytes) -> None:
+        async with sem:
+            await asyncio.to_thread(store.put, key, data)
+
+    await asyncio.gather(*(one(k, d) for k, d in items))
+
+
 async def run_job(job_id: str) -> None:
     settings = get_settings()
     store = get_store()
@@ -103,42 +118,52 @@ async def run_job(job_id: str) -> None:
 
     # ---- ocr：文档解析 ----
     ctx.stage("ocr", "running")
-    files = [(f["name"], store.get(f["key"])) for f in files_info]
+    files = [(f["name"], await asyncio.to_thread(store.get, f["key"])) for f in files_info]
     src = await asyncio.to_thread(normalize, files)
 
     async def on_progress(frac: float) -> None:
         ctx.progress("ocr", frac * 0.9)
 
-    try:
-        doc, parser, w = await parse_with_fallback(
-            src, ocr=options.get("ocr", True) or file_type == "image", settings=settings, on_progress=on_progress,
-        )
-    except AllParsersFailed as e:
-        raise UserFacingError(str(e)) from e
-    warnings += w
-    page_count = doc.page_count or (pdf_page_count(doc.pdf) if doc.pdf else 0)
+    async def ocr(exclude: tuple[str, ...] = ()) -> tuple[Any, list[str], dict[str, Block], str]:
+        """解析文档并保存版面单元、配图与页面图。exclude 中的引擎跳过（本地解析无法识别时改用 MinerU）。"""
+        names = settings.docx_parser_chain if src.kind == "docx" else settings.parser_chain
+        parsers = [build_parser(n, settings) for n in names if n not in exclude] if exclude else None
+        if parsers == []:
+            raise UserFacingError("没有可用的解析引擎")
+        try:
+            doc, parser, w = await parse_with_fallback(
+                src, ocr=options.get("ocr", True) or file_type == "image", settings=settings,
+                on_progress=on_progress, parsers=parsers,
+            )
+        except AllParsersFailed as e:
+            raise UserFacingError(str(e)) from e
+        warnings.extend(w)
+        page_count = doc.page_count or (pdf_page_count(doc.pdf) if doc.pdf else 0)
 
-    block_ids = [f"b{job_id}_{b.seq}" for b in doc.blocks]
-    blocks_by_id = dict(zip(block_ids, doc.blocks))
-    with SessionLocal() as s:
-        s.execute(delete(DraftQuestion).where(DraftQuestion.job_id == job_id))
-        s.execute(delete(ParseBlock).where(ParseBlock.job_id == job_id))
-        for bid, b in blocks_by_id.items():
-            image_key = None
-            if b.image:
-                image_key = f"jobs/{job_id}/blocks/{bid}.{b.image_ext}"
-                store.put(image_key, b.image)
-            s.add(ParseBlock(id=bid, job_id=job_id, seq=b.seq, page=b.page, bbox=list(b.bbox), type=b.type,
-                             content=b.content, image_key=image_key, score=b.score))
-        s.commit()
-    if doc.pdf:
-        pages = await asyncio.to_thread(render_pages, doc.pdf, settings.page_dpi)
-        for i, png in enumerate(pages, 1):
-            store.put(f"jobs/{job_id}/pages/{i}.png", png)
-    else:
-        warnings.append("解析结果不含原始 PDF，无法查看原图")
-    ctx.update(parser=parser, page_count=page_count)
-    ctx.stage("ocr", "done", f"识别 {page_count} 页")
+        block_ids = [f"b{job_id}_{b.seq}" for b in doc.blocks]
+        blocks_by_id = dict(zip(block_ids, doc.blocks))
+        image_keys = {bid: f"jobs/{job_id}/blocks/{bid}.{b.image_ext}" for bid, b in blocks_by_id.items() if b.image}
+        # 先保存图片再写入版面单元：题目引用的配图一定已存在
+        await put_all(store, [(image_keys[bid], blocks_by_id[bid].image) for bid in image_keys])
+        with SessionLocal() as s:
+            s.execute(delete(DraftQuestion).where(DraftQuestion.job_id == job_id))
+            s.execute(delete(ParseBlock).where(ParseBlock.job_id == job_id))
+            for bid, b in blocks_by_id.items():
+                s.add(ParseBlock(id=bid, job_id=job_id, seq=b.seq, page=b.page, bbox=list(b.bbox), type=b.type,
+                                 content=b.content, image_key=image_keys.get(bid), score=b.score))
+            s.commit()
+        if doc.pdf:
+            if "解析结果不含原始 PDF，无法查看原图" in warnings:
+                warnings.remove("解析结果不含原始 PDF，无法查看原图")
+            pages = await asyncio.to_thread(render_pages, doc.pdf, settings.page_dpi)
+            await put_all(store, [(f"jobs/{job_id}/pages/{i}.png", png) for i, png in enumerate(pages, 1)])
+        elif "解析结果不含原始 PDF，无法查看原图" not in warnings:
+            warnings.append("解析结果不含原始 PDF，无法查看原图")
+        ctx.update(parser=parser, page_count=page_count)
+        ctx.stage("ocr", "done", f"识别 {page_count} 页")
+        return doc, block_ids, blocks_by_id, parser
+
+    doc, block_ids, blocks_by_id, parser = await ocr()
 
     # ---- classify：试卷分类 ----
     ctx.stage("classify", "running")
@@ -158,6 +183,15 @@ async def run_job(job_id: str) -> None:
     ctx.stage("segment", "running")
     units = units_from_blocks(doc.blocks, block_ids)
     seg = await segment(units, settings, with_answer=options.get("answer", True))
+    if not seg.questions and parser == "docx":
+        # 本地解析的内容识别不出题目（如排版特殊、题号是图片）：改用解析链中的其他引擎（MinerU）重新识别
+        log.info("任务 %s 本地 Word 解析未识别到题目，改用其他解析引擎", job_id)
+        warnings.append("本地 Word 解析未识别到题目，已改用 MinerU 识别")
+        ctx.stage("ocr", "running")
+        doc, block_ids, blocks_by_id, parser = await ocr(exclude=("docx",))
+        ctx.stage("segment", "running")
+        units = units_from_blocks(doc.blocks, block_ids)
+        seg = await segment(units, settings, with_answer=options.get("answer", True))
     warnings += seg.warnings
     if not seg.questions:
         raise UserFacingError("未识别到题目，请确认上传的是试卷，或检查题号格式")

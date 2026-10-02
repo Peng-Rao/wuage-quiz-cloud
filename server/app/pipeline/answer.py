@@ -1,7 +1,8 @@
 """AI 生成答案：为缺少答案的草稿题生成答案与解析。
 
 - 每道题单独请求，便于逐题展示进度、单题失败不影响其他题；并发数由 ANSWER_CONCURRENCY 控制。
-- 大模型看不到题目配图；含图的题会注明「答案可能不准确」，由老师核对。
+- 配置了看图模型（VISION_MODEL）时，含图的题改用该模型并附上配图；未配置时大模型看不到图片，
+  含图的题会注明「答案可能不准确」，由老师核对。
 - 结果写入 answer / analysis，并标记 answer_source=ai；老师修改后变为 manual。
 """
 
@@ -16,6 +17,7 @@ from ..config import get_settings
 from ..db import DraftQuestion, ParseJob, SessionLocal
 from ..usage import current_job
 from .llm import LLMError, chat_json, describe
+from .vision import image_inputs
 
 log = logging.getLogger(__name__)
 
@@ -29,22 +31,24 @@ SYSTEM = """你是经验丰富的中国中小学{subject}教师，请为下面�
 2. 填空题 answer 按空的顺序写出每空答案，多个空用「；」分隔。
 3. 解答题 answer 写各小问的最终结论，如「（1）…；（2）…」；analysis 写关键解题步骤，条理清楚、简洁。
 4. 数学、物理、化学公式用 LaTeX，行内公式用 $...$ 包裹；化学式可直接写，如 H₂O 或 $\\mathrm{{H_2O}}$。
-5. 题目依赖你看不到的图片、表格或材料，或题目文字不完整导致无法确定答案时，仍给出最可能的答案，
+5. 题目的配图（如有）按顺序附在题目文字之后，请结合图片作答。题目依赖你看不到的图片、表格或材料，或题目文字不完整导致无法确定答案时，仍给出最可能的答案，
    并将 uncertain 设为 true，在 reason 中用一句话说明原因。
 6. 不要编造题目中没有给出的条件。"""
 
 
-def _question_payload(q: DraftQuestion) -> str:
+def _question_payload(q: DraftQuestion, with_images: int = 0) -> str:
     lines = [f"题型：{q.type}", f"题干：{q.stem}"]
     if q.options:
         lines.append("选项：")
         lines += [f"{LETTERS[i]}．{o}" for i, o in enumerate(q.options)]
-    if q.images:
+    if with_images:
+        lines.append(f"（本题配图 {with_images} 张，按顺序附在后面）")
+    elif q.images:
         lines.append(f"（本题含 {len(q.images)} 张配图，你无法看到图片内容）")
     return "\n".join(lines)
 
 
-def _normalize(q: DraftQuestion, data: Any) -> tuple[str, str | None, str | None]:
+def _normalize(q: DraftQuestion, data: Any, saw_images: bool = False) -> tuple[str, str | None, str | None]:
     """校验并整理大模型输出，返回 (答案, 解析, 提示)。"""
     if not isinstance(data, dict) or not str(data.get("answer") or "").strip():
         raise ValueError("大模型未返回答案")
@@ -60,7 +64,7 @@ def _normalize(q: DraftQuestion, data: Any) -> tuple[str, str | None, str | None
             answer = letters
     if data.get("uncertain"):
         notes.append(str(data.get("reason") or "").strip() or "AI 无法确定答案")
-    elif q.images:
+    elif q.images and not saw_images:
         notes.append("题目含图，AI 未看到图片，答案可能不准确")
     return answer, analysis, "；".join(notes) or None
 
@@ -94,10 +98,17 @@ async def _answer_one(qid: str, meta: dict, overwrite: bool, sem: asyncio.Semaph
                 return True  # 已被删除（合并 / 拆分）或期间已有答案，跳过
             system = SYSTEM.format(subject=meta.get("subject") or "", stage=meta.get("stage") or "",
                                    grade=meta.get("grade") or "")
-            payload = _question_payload(q)
+            keys = list(q.images) if settings.vision_enabled else []
+        images: list[str] = []
+        if keys:
+            try:
+                images = await asyncio.to_thread(image_inputs, keys, settings)
+            except Exception as e:  # noqa: BLE001  读图失败时退回纯文字作答
+                log.warning("第 %s 题配图读取失败，按纯文字作答：%s", qid, describe(e))
+        payload = _question_payload(q, len(images))
         try:
-            data = await chat_json(system, payload, settings, purpose="answer")
-            answer, analysis, note = _normalize(q, data)
+            data = await chat_json(system, payload, settings, purpose="answer", images=images or None)
+            answer, analysis, note = _normalize(q, data, saw_images=bool(images))
         except (LLMError, ValueError) as e:
             log.warning("AI 解答第 %s 题失败：%s", qid, describe(e))
             return False

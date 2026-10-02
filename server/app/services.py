@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session, object_session
 
 from .db import DraftQuestion, EvalSample, ParseJob, UploadOwner
 from .auth import require_subject
+from .config import get_settings
 from .pipeline.files import validate_kinds
 from .schemas import (
     PARSE_STAGES, REVIEW_CONFIDENCE, DraftQuestionOut, JobListItem, ParseJobOut, ParseOptions, QuestionSource,
@@ -100,7 +101,11 @@ def new_job(s: Session, file_keys: list[str], file_names: list[str], options: Pa
                 raise HTTPException(403, "无权使用该上传文件")
         if not key.startswith("uploads/") or not store.exists(key):
             raise HTTPException(400, "文件尚未上传完成")
-        sizes.append(store.size(key))
+        size = store.size(key)
+        # 直传对象存储时服务端无法在上传过程中限制大小，这里补查
+        if size > get_settings().max_file_mb * 1024 * 1024:
+            raise HTTPException(400, f"单个文件不超过 {get_settings().max_file_mb} MB")
+        sizes.append(size)
     from .bank import compute_file_hash  # 避免循环导入
 
     job = ParseJob(

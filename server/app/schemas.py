@@ -321,6 +321,8 @@ class UploadRequest(Model):
 
 class UploadTicket(Model):
     upload_url: str
+    # 上传时必须原样携带的请求头（对象存储签名包含这些头）
+    upload_headers: dict[str, str] = {}
     file_key: str
 
 
