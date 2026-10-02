@@ -523,6 +523,20 @@ def _overlap(a: list[str], b: list[str]) -> float:
     return len(sa & sb) / max(1, len(sa | sb))
 
 
+# 题内答案：解析版试卷在每题之后紧跟【答案】【解析】等，规则切分把它们算进该题，大模型则放在 answer_units
+INLINE_ANSWER_RE = re.compile(r"^\s*(【(答案|解析|分析|详解|点评|解答|小问\d*详解|知识点|考点)】|故选|故答案为)")
+
+
+def question_part(unit_ids: list[str], text_of) -> list[str]:  # noqa: ANN001
+    """规则切分的题目单元去掉题内答案部分（从第一个【答案】【解析】等开始），用于与大模型的题目单元比对。"""
+    out: list[str] = []
+    for i, uid in enumerate(unit_ids):
+        if i and INLINE_ANSWER_RE.match(text_of(uid) or ""):
+            break
+        out.append(uid)
+    return out
+
+
 async def segment(units: list[Unit], settings: Settings, *, with_answer: bool) -> Segmentation:
     rule = rule_segment(units, with_answer=with_answer)
     if not settings.llm_enabled:
@@ -576,7 +590,8 @@ async def segment(units: list[Unit], settings: Settings, *, with_answer: bool) -
         if g["repaired"]:
             q.confidence = round(max(0.3, q.confidence - 0.25), 2)
             q.flags.append("大模型分组有误，已自动修正")
-        elif ref and _overlap(ref.unit_ids, g["units"]) >= 0.8:
+        elif ref and _overlap(question_part(ref.unit_ids, lambda i: known[i].text if i in known else ""),
+                              g["units"]) >= 0.8:
             q.confidence = round(min(0.99, q.confidence + 0.03), 2)
         else:
             q.confidence = round(max(0.3, q.confidence - 0.25), 2)

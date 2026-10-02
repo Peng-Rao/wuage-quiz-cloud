@@ -311,3 +311,18 @@ def test_region_skips_instruction_text():
     text = "2025年普通高等学校招生全国统一考试\n注意事项：考生务必将自己所在的市（县、区）、学校填写在答题卡上。"
     assert rule_classify(text).region == ""
     assert rule_classify("2026年福建省厦门市初三二检 化学").region == "福建 · 厦门"
+
+
+async def test_inline_answers_do_not_lower_confidence(monkeypatch):
+    # 解析版：每题之后紧跟【答案】【解析】；大模型把它们放进 answer_units，与规则切分实为一致
+    us = [Unit(f"u{i}", i, 1, "text", t) for i, t in enumerate([
+        "一、单选题", "1．实数 2024 的相反数是（ ）", "A．2024 B．-2024 C．1 D．0", "【答案】B", "【解析】",
+        "【详解】解：2024 的相反数是 -2024，", "故选：B．",
+        "2．下列各数中最小的是（ ）", "A．0 B．1 C．-1 D．2", "【答案】C", "【详解】-1 最小，故选 C．",
+    ])]
+    groups = [{"type": "单选题", "score": 0, "units": ["u1", "u2"], "answer_units": ["u3", "u4", "u5", "u6"]},
+              {"type": "单选题", "score": 0, "units": ["u7", "u8"], "answer_units": ["u9", "u10"]}]
+    _mock_llm(monkeypatch, lambda _: _reply({"questions": groups}))
+    seg = await segment(us, _llm_settings(), with_answer=True)
+    assert [q.answer for q in seg.questions] == ["B", "C"]
+    assert all(q.confidence >= 0.8 and "规则与大模型切分不一致" not in q.flags for q in seg.questions)
