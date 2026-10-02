@@ -19,6 +19,7 @@ import socket
 import sys
 import time
 from collections.abc import Awaitable, Callable
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 from sqlalchemy import select
@@ -313,6 +314,8 @@ class Worker:
         """网页服务启动时调用：未配置 Redis 时在本进程执行任务；配置了 Redis 时默认只入队（RUN_WORKER=true 时也在本进程执行）。"""
         s = get_settings()
         concurrency = max(1, s.worker_concurrency)
+        if not s.redis_url or s.run_worker:
+            size_executor(concurrency)
         if not s.redis_url:
             # 队列绑定创建它的事件循环；每次启动（如测试中多次启动应用）都需要新建
             self.local = LocalQueue()
@@ -341,12 +344,22 @@ class Worker:
 worker = Worker()
 
 
+def size_executor(concurrency: int) -> None:
+    """存储读写、页面渲染等都在 asyncio 默认线程池中执行（默认最多 CPU 数 + 4 个线程），
+    并发任务多时会互相排队；按执行槽数放大，每个槽最多 PUT_CONCURRENCY 个并行上传。"""
+    from .pipeline.run import PUT_CONCURRENCY
+
+    workers = max(min(32, (os.cpu_count() or 1) + 4), concurrency * PUT_CONCURRENCY + 8)
+    asyncio.get_running_loop().set_default_executor(ThreadPoolExecutor(workers, thread_name_prefix="fg-quiz"))
+
+
 # ---------------- 独立 Worker 进程 ----------------
 
 async def _serve() -> None:
     s = get_settings()
     queue = RedisQueue.from_url(s.redis_url, s.redis_prefix)
     consumer = RedisConsumer(queue, async_client(s.redis_url), max(1, s.worker_concurrency))
+    size_executor(consumer.concurrency)
     stop = asyncio.Event()
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGTERM, signal.SIGINT):

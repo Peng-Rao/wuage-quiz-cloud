@@ -109,49 +109,146 @@ def _log_usage(model: str, purpose: str, prompt_text: str, content: str, u: Usag
     )
 
 
+# ---------------- 模型池 ----------------
+
+# 模型暂停使用到的时间（time.monotonic）与原因；进程内共享
+_cooldown: dict[str, tuple[float, str]] = {}
+# 预算用量缓存：模型 → (查询时间, 已用 token)
+_spent_cache: dict[str, tuple[float, int]] = {}
+RATE_LIMIT_COOLDOWN = 60
+UNAVAILABLE_COOLDOWN = 600
+_QUOTA_WORDS = ("quota", "free tier", "freetier", "exhausted", "insufficient", "arrearage", "billing", "额度", "余额", "欠费")
+_UNAVAILABLE_WORDS = ("model_not_found", "model not found", "does not exist", "not exist", "not support", "unsupported",
+                      "restricted", "invalid_parameter", "access denied", "no permission", "not activated")
+
+
+class _Switch(Exception):
+    """当前模型暂不可用（额度、限流、不支持请求），换池中的下一个模型。"""
+
+    def __init__(self, reason: str, cooldown: float):
+        super().__init__(reason)
+        self.reason, self.cooldown = reason, cooldown
+
+
+def _classify_http(status: int, text: str, settings: Settings) -> Exception:
+    low = text.lower()
+    if status == 401 or (status == 403 and ("apikey" in low.replace(" ", "") or "api key" in low)):
+        return LLMError("大模型 API Key 无效")
+    if status == 402 or (status in (403, 429) and any(w in low for w in _QUOTA_WORDS)):
+        return _Switch("额度已用完", settings.llm_exhausted_cooldown)
+    if status == 429:
+        return _Switch("请求过于频繁", RATE_LIMIT_COOLDOWN)
+    if status in (403, 404) or (status == 400 and any(w in low for w in _UNAVAILABLE_WORDS)):
+        return _Switch(f"模型不可用（HTTP {status}）", UNAVAILABLE_COOLDOWN)
+    return httpx.HTTPStatusError(f"HTTP {status}：{text[:200]}", request=None, response=None)  # type: ignore[arg-type]
+
+
+def _spent(model: str, settings: Settings) -> int:
+    """本服务记录的该模型 token 用量（自 LLM_BUDGET_SINCE 起），缓存 30 秒。"""
+    now = time.monotonic()
+    hit = _spent_cache.get(model)
+    if hit and now - hit[0] < 30:
+        return hit[1]
+    from sqlalchemy import func, select
+
+    from ..db import AiUsage, SessionLocal
+
+    q = select(func.coalesce(func.sum(AiUsage.prompt_tokens + AiUsage.completion_tokens), 0)).where(
+        AiUsage.provider == "llm", AiUsage.model == model)
+    if settings.llm_budget_since:
+        q = q.where(AiUsage.created_at >= settings.llm_budget_since)
+    try:
+        with SessionLocal() as s:
+            spent = int(s.scalar(q) or 0)
+    except Exception:  # noqa: BLE001 — 统计失败不影响调用
+        spent = 0
+    _spent_cache[model] = (now, spent)
+    return spent
+
+
+def available_models(pool: list[str], settings: Settings) -> tuple[list[str], dict[str, str]]:
+    """池中当前可用的模型（保持顺序），以及不可用模型的原因。"""
+    now = time.monotonic()
+    ok, skipped = [], {}
+    for m in pool:
+        until = _cooldown.get(m)
+        if until and until[0] > now:
+            skipped[m] = until[1]
+            continue
+        budget = settings.llm_model_budget.get(m)
+        if budget is not None and _spent(m, settings) >= budget:
+            skipped[m] = "已达到用量预算"
+            continue
+        ok.append(m)
+    return ok, skipped
+
+
+def _extra_for(model: str, base: dict[str, Any], settings: Settings) -> dict[str, Any]:
+    merged = {**base, **settings.llm_model_extra_body.get(model, {})}
+    return {k: v for k, v in merged.items() if v is not None}
+
+
 async def chat_json(system: str, user: str, settings: Settings, *, purpose: str = "other", retries: int = 1,
                     images: list[str] | None = None) -> Any:
-    """images 为图片地址（http(s) 或 data:image/...;base64,...）；非空时改用看图模型（VISION_MODEL），按题目顺序附在文字之后。"""
+    """images 为图片地址（http(s) 或 data:image/...;base64,...）；非空时改用看图模型池，按题目顺序附在文字之后。
+    模型池按顺序使用：额度用完、限流、模型不可用或超出预算时换下一个；其他错误在同一模型上重试。"""
     if images:
         if not settings.vision_enabled:
             raise LLMError("未配置看图模型")
-        model = settings.vision_model
+        pool = settings.vision_model_pool
         base_url = settings.vision_base_url or settings.llm_base_url
         api_key = settings.vision_api_key or settings.llm_api_key
-        extra = settings.llm_extra_body if settings.vision_extra_body is None else settings.vision_extra_body
+        base_extra = settings.llm_extra_body if settings.vision_extra_body is None else settings.vision_extra_body
         content: Any = [{"type": "text", "text": user}] + [{"type": "image_url", "image_url": {"url": u}} for u in images]
         # 部分看图模型不支持 response_format，依靠提示词约束输出 JSON，解析时容忍前后说明文字
         fmt: dict[str, Any] = {}
     else:
         if not settings.llm_enabled:
             raise LLMError("未配置大模型")
-        model, base_url, api_key, extra = settings.llm_model, settings.llm_base_url, settings.llm_api_key, settings.llm_extra_body
+        pool, base_url, api_key, base_extra = settings.text_models, settings.llm_base_url, settings.llm_api_key, \
+            settings.llm_extra_body
         content = user
         fmt = {"response_format": {"type": "json_object"}}
+
+    models, skipped = available_models(pool, settings)
+    for model in models:
+        body = {
+            "model": model,
+            "messages": [{"role": "system", "content": system}, {"role": "user", "content": content}],
+            "temperature": 0,
+            **fmt,
+            "stream": True,
+            "stream_options": {"include_usage": True},
+            **_extra_for(model, base_extra, settings),
+        }
+        try:
+            return await _call(model, base_url, api_key, body, system + user, settings, purpose, retries)
+        except _Switch as e:
+            _cooldown[model] = (time.monotonic() + e.cooldown, e.reason)
+            skipped[model] = e.reason
+            log.warning("模型 %s %s，换下一个模型", model, e.reason)
+    if len(pool) == 1 and skipped:
+        raise LLMError(f"大模型 {pool[0]} {skipped[pool[0]]}")
+    raise LLMError("模型池中没有可用的模型：" + "；".join(f"{m} {r}" for m, r in skipped.items()))
+
+
+async def _call(model: str, base_url: str, api_key: str, body: dict[str, Any], prompt_text: str, settings: Settings,
+                purpose: str, retries: int) -> Any:
     url = base_url.rstrip("/") + "/chat/completions"
-    body = {
-        "model": model,
-        "messages": [{"role": "system", "content": system}, {"role": "user", "content": content}],
-        "temperature": 0,
-        **fmt,
-        "stream": True,
-        "stream_options": {"include_usage": True},
-        **extra,
-    }
     headers = {"Authorization": f"Bearer {api_key}"}
     last: Exception | None = None
     async with httpx.AsyncClient(timeout=settings.llm_timeout, transport=transport) as client:
-        prompt_text = system + user
         for attempt in range(retries + 1):
             started = time.monotonic()
             content, used = "", None
             try:
                 async with client.stream("POST", url, json=body, headers=headers) as r:
-                    if r.status_code in (401, 403):
-                        raise LLMError("大模型 API Key 无效")
                     if r.status_code >= 400:
                         await r.aread()
-                        raise httpx.HTTPStatusError(f"HTTP {r.status_code}：{r.text[:200]}", request=r.request, response=r)
+                        err = _classify_http(r.status_code, r.text, settings)
+                        if isinstance(err, httpx.HTTPStatusError):
+                            err = httpx.HTTPStatusError(str(err), request=r.request, response=r)
+                        raise err
                     if r.headers.get("content-type", "").startswith("text/event-stream"):
                         content, used = await _read_stream(r)
                     else:  # 不支持流式的服务直接返回完整 JSON
@@ -164,6 +261,8 @@ async def chat_json(system: str, user: str, settings: Settings, *, purpose: str 
                 result = _parse_json(content)
                 _log_usage(model, purpose, prompt_text, content, used, started, "ok")
                 return result
+            except _Switch:
+                raise
             except LLMError as e:
                 if "Key" in str(e):
                     raise
@@ -172,5 +271,5 @@ async def chat_json(system: str, user: str, settings: Settings, *, purpose: str 
                 last = e
             # 请求已发出即可能计费，失败也记一笔
             _log_usage(model, purpose, prompt_text, content, used, started, "error")
-            log.warning("大模型调用失败（第 %d 次）：%s", attempt + 1, describe(last))
+            log.warning("大模型 %s 调用失败（第 %d 次）：%s", model, attempt + 1, describe(last))
     raise LLMError(f"大模型调用失败：{describe(last)}")  # type: ignore[arg-type]

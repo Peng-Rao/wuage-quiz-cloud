@@ -190,3 +190,36 @@ def test_async_client_timeout_longer_than_block(monkeypatch):
     monkeypatch.setattr(w, "BLOCK_MS", BLOCK_MS)
     c = w.async_client("redis://localhost:6379/0")
     assert c.connection_pool.connection_kwargs["socket_timeout"] >= BLOCK_MS / 1000 + 5
+
+
+# ---------------- 并发上限与线程池 ----------------
+
+def test_worker_concurrency_range():
+    from pydantic import ValidationError
+
+    from app.config import Settings
+
+    assert Settings(worker_concurrency=10).worker_concurrency == 10
+    for bad in (0, 11):
+        with pytest.raises(ValidationError):
+            Settings(worker_concurrency=bad)
+
+
+async def test_size_executor_scales_with_concurrency():
+    from app.pipeline.run import PUT_CONCURRENCY
+    from app.worker import size_executor
+
+    loop = asyncio.get_running_loop()
+    size_executor(10)
+    seen: set[str] = set()
+
+    def slow() -> None:
+        import threading
+        import time
+        seen.add(threading.current_thread().name)
+        time.sleep(0.2)
+
+    # 默认线程池（CPU 数 + 4）放不下的并行量也能同时执行
+    n = 10 * PUT_CONCURRENCY
+    await asyncio.gather(*(loop.run_in_executor(None, slow) for _ in range(n)))
+    assert len(seen) == n and all(x.startswith("fg-quiz") for x in seen)

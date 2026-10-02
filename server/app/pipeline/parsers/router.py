@@ -5,6 +5,7 @@ import logging
 from ...config import ParserName, Settings
 from ..ir import ParsedDocument
 from .base import DocParser, ParserFailed, ParserUnavailable, ProgressFn, SourceFile
+from .docx_native import DocxParser
 from .lite import LiteParser
 from .mineru_cloud import MinerUCloudParser
 
@@ -26,6 +27,8 @@ def build_parser(name: ParserName, settings: Settings) -> DocParser:
         return MinerUCloudParser(settings)
     if name == "lite":
         return LiteParser()
+    if name == "docx":
+        return DocxParser()
     return NotImplementedParser(name)
 
 
@@ -37,7 +40,8 @@ async def parse_with_fallback(
     src: SourceFile, *, ocr: bool, settings: Settings, on_progress: ProgressFn | None = None,
     parsers: list[DocParser] | None = None,
 ) -> tuple[ParsedDocument, str, list[str]]:
-    chain = parsers or [build_parser(n, settings) for n in settings.parser_chain]
+    names = settings.docx_parser_chain if src.kind == "docx" else settings.parser_chain
+    chain = parsers or [build_parser(n, settings) for n in names]
     warnings: list[str] = []
     reasons: list[str] = []
     for p in chain:
