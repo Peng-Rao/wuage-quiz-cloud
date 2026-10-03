@@ -243,6 +243,12 @@ export const mockBankApi: BankApi = {
     return clone<PaperDetail>({ ...summary(p), questions: QS.filter((q) => q.paperId === id) })
   },
 
+  async updateQuestion(id, patch) {
+    await sleep(120)
+    const q = QS.find((x) => x.id === id)
+    if (!q) throw new Error('题目不存在')
+    return Object.assign(q, patch)
+  },
   async removePaper(id) {
     await sleep(120)
     const i = SEEDS.findIndex((s) => s.id === id)

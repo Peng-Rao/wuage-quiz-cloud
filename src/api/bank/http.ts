@@ -19,6 +19,7 @@ export const httpBankApi: BankApi = {
     category: p.category?.join(','), q: p.q, limit: p.limit, offset: p.offset,
   })}`),
   getPaper: (id) => request<PaperDetail>('GET', `/api/papers/${encodeURIComponent(id)}`),
+  updateQuestion: (id, patch) => request<BankQuestion>('PATCH', `/api/bank/questions/${encodeURIComponent(id)}`, patch),
   removePaper: (id) => request<void>('DELETE', `/api/papers/${encodeURIComponent(id)}`),
   generateAnswers: (id, questionIds) =>
     request<AnswerTask>('POST', `/api/papers/${encodeURIComponent(id)}/generate-answers`, { questionIds }),

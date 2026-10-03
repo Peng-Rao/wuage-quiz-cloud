@@ -7,13 +7,14 @@ from ..bank import (
     SORTS, BankFilter, PaperFilter, bank_out, chapter_counts, knowledge_counts, list_papers, paper_detail,
     question_facets, remove_paper, search_questions,
 )
-from ..auth import require_subject, staff
+from ..auth import admin, require_subject, staff
 from ..chapters import versions
 from ..db import BankQuestion, DraftQuestion, KnowledgeTree, get_session
+from ..knowledge_tree import resolve_kps
 from ..pipeline.answer import pick_bank_questions
 from ..schemas import (
-    AnswerTask, BankQuestionPage, GenerateBankAnswersRequest, Model, PaperDetail, PaperPage, QuestionFacets,
-    TextbookVersion,
+    AnswerTask, BankQuestionOut, BankQuestionPage, DraftQuestionPatch, GenerateBankAnswersRequest, Model, PaperDetail,
+    PaperPage, QuestionFacets, TextbookVersion,
 )
 from ..services import current_school, get_job, not_found
 from .jobs import check_answer_task, queue_answer_task
@@ -49,6 +50,43 @@ def search_bank(
                    q=(q or "").strip() or None, paper_id=paper_id)
     rows, total = search_questions(s, current_school(), f, sort=sort, limit=limit, offset=offset)
     return BankQuestionPage(items=[bank_out(b) for b in rows], total=total)
+
+
+@router.patch("/api/bank/questions/{qid}", response_model=BankQuestionOut, dependencies=[Depends(admin)])
+def update_bank_question(qid: str, patch: DraftQuestionPatch, s: Session = Depends(get_session)) -> BankQuestionOut:
+    """管理员直接修改已入库的题。同步改到来源草稿题，在核对页重新入库时不会被旧内容覆盖；
+    审核与归属保持不变（管理员修改即视为已核对）。"""
+    b = s.get(BankQuestion, qid)
+    if b is None or b.school_id != current_school():
+        raise not_found("题目")
+    fields = patch.model_dump(exclude_unset=True)
+    stem = fields.get("stem", b.stem) or ""
+    material = fields.get("material", b.material) or ""
+    if not stem.strip() and not material.strip():
+        raise HTTPException(422, "题干与阅读材料不能都为空")
+    if "knowledge_points" in fields:
+        fields["knowledge_points"] = resolve_kps(s, b.source_job_id, fields["knowledge_points"])
+    # 只处理实际变化的字段（编辑弹窗会带上全部字段）
+    changed = {k: v for k, v in fields.items() if getattr(b, k) != v}
+    if not changed:
+        return bank_out(b)
+    if {"answer", "analysis"} & changed.keys():
+        changed["answer_source"] = "manual" if changed.get("answer", b.answer) else None
+        changed["answer_note"] = None
+    if {"stem", "options"} & changed.keys():
+        # 向量按旧题干算出，作废后相似题检索改用文字比对
+        changed["embedding"], changed["embedding_model"] = None, None
+    d = s.get(DraftQuestion, b.source_draft_id)
+    for row in (b, d):
+        if row is not None:
+            for k, v in changed.items():
+                setattr(row, k, v)
+    if d is not None:
+        d.confidence = 1.0
+        if "coef" in changed:
+            d.difficulty_source = "manual"
+    s.commit()
+    return bank_out(b)
 
 
 @router.get("/api/bank/knowledge-counts", response_model=dict[str, int])

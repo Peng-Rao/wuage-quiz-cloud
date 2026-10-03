@@ -1,7 +1,7 @@
 /**
  * 校本题库选题与试卷库接口契约，与后端 server/app/schemas.py 对应。
  */
-import type { AnswerTask, KnowledgePointRef, PaperMeta, QuestionSource, QuestionType } from '../parse/types'
+import type { AnswerTask, DraftQuestionPatch, KnowledgePointRef, PaperMeta, QuestionSource, QuestionType } from '../parse/types'
 
 /** 已入库的题目 */
 export interface BankQuestion {
@@ -212,6 +212,8 @@ export interface BankApi {
   knowledgeCounts(treeId: string): Promise<Record<string, number>>
   listPapers(query: PaperQuery): Promise<PaperPage>
   getPaper(paperId: string): Promise<PaperDetail>
+  /** 修改已入库的题（仅管理员），同步到原卷草稿题；审核与归属不变 */
+  updateQuestion(questionId: string, patch: DraftQuestionPatch): Promise<BankQuestion>
   /** 移出试卷库：删除该卷已入库的题，原卷草稿题恢复为未保存，可在试卷解析中重新保存 */
   removePaper(paperId: string): Promise<void>
   /** 为本卷已入库、缺少答案的题（或其中指定的题）生成 AI 答案，直接写入题库；生成后需重新审核（仅管理员、组长） */
