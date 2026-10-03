@@ -34,6 +34,7 @@ uv run uvicorn app.main:app --port 8000 --reload
 - `GET /api/review-recipients`：管理员/组长可分配的用户。
 - `POST /api/bank/review`：管理员/组长提交 `{questionIds, ownerId, approved}`，最多 100 题。
 - `PATCH /api/bank/questions/{id}`：仅管理员，直接修改已入库的题（字段同草稿题编辑），同步到原卷草稿题；审核与归属不变。
+- `PUT /api/papers/{id}/meta`：仅管理员，修改试卷属性（字段同 `PUT /api/parse-jobs/{id}/meta`，学段与学科不能为空），同步到原卷与本卷已入库的题；改了学科的题撤销审核。返回试卷详情。
 - `POST /api/compose`：AI 组卷，仅管理员/组长；提交 `{stage, subject, total, difficulty, messages}`（完整对话），组长只能为授权学科组卷，候选题同样受数据权限过滤。
 - 上传创建任务时 `options.subject` 为当前学科，组长必填且必须属于授权学科。上传凭证绑定创建者，不能复用他人的上传文件。
 - 历史题目不会自动开放给普通用户，需在试卷详情重新审核并分配。

@@ -344,3 +344,30 @@ def test_admin_edits_bank_question(client, data):
 
     assert client.patch(f"/api/bank/questions/{qid}", json={"stem": " ", "material": None}).status_code == 422
     assert client.patch("/api/bank/questions/missing", json={"stem": "x"}).status_code == 404
+
+
+def test_admin_edits_paper_meta(client):
+    with SessionLocal() as s:
+        pid = _paper(s, {**MATH_META, "title": "属性编辑测试卷"}, [{"type": "单选题", "score": 5, "stem": "属性编辑题", "coef": 0.4}])
+        b = s.scalars(select(BankQuestion).where(BankQuestion.source_job_id == pid)).one()
+        b.reviewed_at, b.reviewed_by, b.owner_id = b.created_at, "test-admin", "test-admin"
+        s.commit()
+        qid = b.id
+
+    meta = {**{k: v for k, v in MATH_META.items() if k not in ("paper_type", "school_year")},
+            "paperType": "月考", "schoolYear": "2026—2027", "title": " 属性编辑测试卷（改） ", "school": "属性编辑测试中学"}
+    r = client.put(f"/api/papers/{pid}/meta", json=meta)
+    assert r.status_code == 200, r.text
+    out = r.json()
+    assert out["title"] == "属性编辑测试卷（改）" and out["meta"]["paperType"] == "月考"
+    assert out["questions"][0]["source"]["title"] == "属性编辑测试卷（改）"
+    assert out["questions"][0]["reviewedAt"] is not None  # 学科未变，审核保留
+    assert [p["id"] for p in client.get("/api/papers", params={"school": "属性编辑测试中学"}).json()["items"]] == [pid]
+
+    assert client.put(f"/api/papers/{pid}/meta", json={**meta, "subject": "物理"}).status_code == 200
+    with SessionLocal() as s:
+        b, job = s.get(BankQuestion, qid), s.get(ParseJob, pid)
+        assert job.meta["subject"] == b.meta["subject"] == "物理" and b.reviewed_at is None  # 改学科须重新审核
+
+    assert client.put(f"/api/papers/{pid}/meta", json={**meta, "subject": " "}).status_code == 422
+    assert client.put("/api/papers/missing/meta", json=meta).status_code == 404

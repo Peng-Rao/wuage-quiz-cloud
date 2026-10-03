@@ -92,13 +92,13 @@ const SEEDS: Seed[] = [
   },
 ]
 
+const sourceOf = (p: Seed, no: number | null): BankQuestion['source'] => ({
+  title: p.meta.title, fileName: p.meta.title + '.pdf', schoolYear: p.meta.schoolYear, region: p.meta.region,
+  grade: p.meta.grade, paperType: p.meta.paperType, subject: p.meta.subject, no, page: 1,
+  label: `${p.meta.schoolYear} · ${p.meta.region} · ${p.meta.grade}${p.meta.paperType}《${p.meta.title}》第 ${no} 题`,
+})
 const QS: BankQuestion[] = SEEDS.flatMap((p) => p.items.map((q, i) => ({
-  ...q, paperId: p.id, createdAt: p.date,
-  source: {
-    title: p.meta.title, fileName: p.meta.title + '.pdf', schoolYear: p.meta.schoolYear, region: p.meta.region,
-    grade: p.meta.grade, paperType: p.meta.paperType, subject: p.meta.subject, no: i + 1, page: 1,
-    label: `${p.meta.schoolYear} · ${p.meta.region} · ${p.meta.grade}${p.meta.paperType}《${p.meta.title}》第 ${i + 1} 题`,
-  },
+  ...q, paperId: p.id, createdAt: p.date, source: sourceOf(p, i + 1),
 })))
 
 const metaOf = (q: BankQuestion) => SEEDS.find((s) => s.id === q.paperId)!.meta
@@ -248,6 +248,14 @@ export const mockBankApi: BankApi = {
     const q = QS.find((x) => x.id === id)
     if (!q) throw new Error('题目不存在')
     return Object.assign(q, patch)
+  },
+  async updatePaperMeta(id, meta) {
+    await sleep(120)
+    const p = SEEDS.find((s) => s.id === id)
+    if (!p) throw new Error('试卷不存在')
+    p.meta = { ...meta }
+    for (const q of QS) if (q.paperId === id && q.source) q.source = sourceOf(p, q.source.no)
+    return this.getPaper(id)
   },
   async removePaper(id) {
     await sleep(120)

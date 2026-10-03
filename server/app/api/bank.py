@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from ..bank import (
     SORTS, BankFilter, PaperFilter, bank_out, chapter_counts, knowledge_counts, list_papers, paper_detail,
-    question_facets, remove_paper, search_questions,
+    question_facets, remove_paper, search_questions, sync_meta,
 )
 from ..auth import admin, require_subject, staff
 from ..chapters import versions
@@ -14,7 +14,7 @@ from ..knowledge_tree import resolve_kps
 from ..pipeline.answer import pick_bank_questions
 from ..schemas import (
     AnswerTask, BankQuestionOut, BankQuestionPage, DraftQuestionPatch, GenerateBankAnswersRequest, Model, PaperDetail,
-    PaperPage, QuestionFacets, TextbookVersion,
+    PaperMeta, PaperPage, QuestionFacets, TextbookVersion,
 )
 from ..services import current_school, get_job, not_found
 from .jobs import check_answer_task, queue_answer_task
@@ -162,6 +162,23 @@ def paper(paper_id: str, s: Session = Depends(get_session)) -> PaperDetail:
     if got is None:
         raise not_found("试卷")
     return got
+
+
+@router.put("/api/papers/{paper_id}/meta", response_model=PaperDetail, dependencies=[Depends(admin)])
+def update_paper_meta(paper_id: str, meta: PaperMeta, s: Session = Depends(get_session)) -> PaperDetail:
+    """管理员修改试卷属性（名称、学段学科、年级、学校等），同步到原卷解析结果与本卷已入库的题；
+    改了学科的题撤销审核，需按新学科重新分配。"""
+    if s.scalar(select(BankQuestion.id).where(BankQuestion.school_id == current_school(),
+                                              BankQuestion.source_job_id == paper_id).limit(1)) is None:
+        raise not_found("试卷")
+    meta = meta.model_copy(update={k: v.strip() for k, v in meta.model_dump().items()})
+    if not meta.stage or not meta.subject:
+        raise HTTPException(422, "学段与学科不能为空")
+    job = get_job(s, paper_id)
+    job.meta = meta.model_dump()
+    sync_meta(s, job)
+    s.commit()
+    return paper_detail(s, current_school(), paper_id)
 
 
 @router.post("/api/papers/{paper_id}/generate-answers", response_model=AnswerTask, status_code=202,
