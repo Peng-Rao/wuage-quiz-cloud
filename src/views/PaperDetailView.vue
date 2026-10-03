@@ -11,6 +11,7 @@ import { useAppStore } from '@/stores/app'
 import { fromBank, useBasketStore } from '@/stores/basket'
 import QuestionCard from '@/components/bank/QuestionCard.vue'
 import BankEditDialog from '@/components/bank/BankEditDialog.vue'
+import PaperMetaDialog from '@/components/bank/PaperMetaDialog.vue'
 import DifficultyBar from '@/components/DifficultyBar.vue'
 import ModalDialog from '@/components/ModalDialog.vue'
 import LoadingState from '@/components/LoadingState.vue'
@@ -82,6 +83,12 @@ function onEdited(q: BankQuestion) {
   // 题型、分值可能变化，重新加载以更新题型统计与总分
   if (paper.value) paper.value = { ...paper.value, questions: paper.value.questions.map((x) => (x.id === q.id ? q : x)) }
   reloadPaper()
+}
+// 管理员编辑试卷属性：题目来源随之更新，同步试题篮中的快照
+const metaOpen = ref(false)
+function onMetaSaved(p: PaperDetail) {
+  paper.value = p
+  for (const q of p.questions) if (basket.has(q.id)) basket.refresh(fromBank(q))
 }
 const diffCount = (d: string) => qs.value.filter((q) => coefToDiff(q.coef) === d).length
 const types = computed(() => TYPE_ORDER.filter((t) => paper.value?.typeCounts[t])
@@ -225,7 +232,10 @@ function replaceAndGo() {
             {{ inBasket === qs.length ? '已全部加入试题篮' : '整卷加入试题篮' }}
           </button>
           <span class="basket-note">本卷 {{ inBasket }} / {{ qs.length }} 题在试题篮中</span>
-          <button v-if="auth.isStaff" class="btn-link remove" @click="removeOpen = true">移出试卷库</button>
+          <div v-if="auth.isStaff" class="minor-ops">
+            <button v-if="auth.isAdmin" class="btn-link" @click="metaOpen = true">编辑属性</button>
+            <button class="btn-link remove" @click="removeOpen = true">移出试卷库</button>
+          </div>
         </div>
       </section>
 
@@ -264,6 +274,7 @@ function replaceAndGo() {
     </template>
 
     <BankEditDialog v-model="editOpen" :q="editing?.q ?? null" :no="editing?.no" @saved="onEdited" />
+    <PaperMetaDialog v-model="metaOpen" :paper="paper" @saved="onMetaSaved" />
 
     <ReviewPanel v-if="auth.isStaff && paper" :questions="qs" @updated="reloadPaper" />
 
@@ -307,8 +318,10 @@ function replaceAndGo() {
 .partial { margin: 0; font-size: 12px; color: #B5661B; }
 .head-ops { flex: 0 0 200px; display: flex; flex-direction: column; gap: 10px; justify-content: center; }
 .head-ops .btn:disabled { opacity: .55; cursor: default; }
-.remove { align-self: center; font-size: 12px; color: var(--c-text-4); }
-.remove:hover { color: var(--c-hard); }
+.minor-ops { display: flex; justify-content: center; gap: 16px; }
+.minor-ops .btn-link { font-size: 12px; color: var(--c-text-4); }
+.minor-ops .btn-link:hover { color: var(--c-primary); }
+.minor-ops .remove:hover { color: var(--c-hard); }
 .btn-danger { background: var(--c-hard); border-color: var(--c-hard); color: #fff; }
 .basket-note { font-size: 12px; color: var(--c-text-4); text-align: center; }
 

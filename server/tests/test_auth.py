@@ -327,3 +327,11 @@ def test_edit_bank_question_requires_admin(accounts, data, role):
     assert sign_in(accounts[role]).patch(f"/api/bank/questions/{qid}", json={"stem": "改"}).status_code == 403
     with SessionLocal() as s:
         assert s.get(BankQuestion, qid).stem == "权限题0"
+
+
+@pytest.mark.parametrize("role", ["leader", "member"])
+def test_edit_paper_meta_requires_admin(accounts, data, role):
+    meta = {"subject": "数学", "stage": "高中", "title": "改名"}
+    assert sign_in(accounts[role]).put(f"/api/papers/{data['math']}/meta", json=meta).status_code == 403
+    with SessionLocal() as s:
+        assert s.get(ParseJob, data['math']).meta["title"] == '权限数学卷'

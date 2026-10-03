@@ -1,18 +1,10 @@
 <script setup lang="ts">
 import { computed, nextTick, ref } from 'vue'
 import type { PaperMeta } from '@/api/parse'
-import { STAGES } from '@/data/mock'
+import { GRADES, PAPER_TYPES, STAGES, TEXTBOOKS } from '@/data/mock'
 
 const props = defineProps<{ meta: PaperMeta }>()
 const emit = defineEmits<{ change: [meta: PaperMeta] }>()
-
-const GRADES: Record<string, string[]> = {
-  小学: ['一年级', '二年级', '三年级', '四年级', '五年级', '六年级'],
-  初中: ['初一', '初二', '初三'],
-  高中: ['高一', '高二', '高三'],
-}
-const PAPER_TYPES = ['期中考试', '期末考试', '月考', '单元测试', '模拟考试', '高考真题', '中考真题']
-const TEXTBOOKS = ['人教A版（2019）', '人教B版（2019）', '北师大版（2019）', '苏教版（2019）', '湘教版（2019）']
 
 const FIELDS: { key: keyof PaperMeta; label: string }[] = [
   { key: 'title', label: '试卷名称' },
