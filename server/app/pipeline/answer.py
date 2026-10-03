@@ -99,7 +99,7 @@ def _save_bank(s: Session, b: BankQuestion, answer: str, analysis: str | None, n
     # 题目内容有变化，需老师核对后重新审核（与重新入库一致），归属保留
     b.reviewed_at, b.reviewed_by = None, None
     d = s.get(DraftQuestion, b.source_draft_id)
-    if d is not None and not d.answer:
+    if d is not None and not (d.answer or "").strip():
         # 草稿题状态不变：已保存的仍与题库一致
         d.answer, d.analysis = answer, analysis
         d.answer_source, d.answer_note = "ai", note
@@ -111,7 +111,7 @@ async def _answer_one(qid: str, meta: dict, overwrite: bool, sem: asyncio.Semaph
     async with sem:
         with SessionLocal() as s:
             q = s.get(model, qid)
-            if q is None or (q.answer and not overwrite):
+            if q is None or ((q.answer or "").strip() and not overwrite):
                 return True  # 已被删除（合并 / 拆分）或期间已有答案，跳过
             system = SYSTEM.format(subject=meta.get("subject") or "", stage=meta.get("stage") or "",
                                    grade=meta.get("grade") or "")
@@ -131,7 +131,7 @@ async def _answer_one(qid: str, meta: dict, overwrite: bool, sem: asyncio.Semaph
             return False
         with SessionLocal() as s:
             q = s.get(model, qid)
-            if q is None or (q.answer and not overwrite):
+            if q is None or ((q.answer or "").strip() and not overwrite):
                 return True
             if isinstance(q, BankQuestion):
                 _save_bank(s, q, answer, analysis, note)
@@ -181,7 +181,7 @@ def pick_questions(job_id: str, question_ids: list[str] | None, overwrite: bool)
     with SessionLocal() as s:
         qs = list(s.scalars(select(DraftQuestion).where(DraftQuestion.job_id == job_id).order_by(DraftQuestion.no)))
     wanted = set(question_ids) if question_ids else None
-    return [q.id for q in qs if (wanted is None or q.id in wanted) and (overwrite or not q.answer)]
+    return [q.id for q in qs if (wanted is None or q.id in wanted) and (overwrite or not (q.answer or "").strip())]
 
 
 def pick_bank_questions(s: Session, paper_id: str, question_ids: list[str] | None) -> list[str]:

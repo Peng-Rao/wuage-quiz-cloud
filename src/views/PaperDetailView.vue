@@ -29,6 +29,8 @@ const answerStarting = ref(false)
 const isRunning = (t: AnswerTask) => t.status === 'queued' || t.status === 'running'
 const answering = computed(() => !!answerTask.value && isRunning(answerTask.value))
 let answerTimer: ReturnType<typeof setTimeout> | null = null
+let disposed = false
+const isCurrentPaper = (id: string) => !disposed && props.id === id
 
 watch(() => props.id, async (id) => {
   paper.value = null
@@ -37,17 +39,18 @@ watch(() => props.id, async (id) => {
   answerTask.value = null
   answerNotice.value = ''
   answerError.value = ''
+  answerStarting.value = false
   try {
     const p = await bankApi.getPaper(id)
-    if (props.id === id) paper.value = p
+    if (isCurrentPaper(id)) paper.value = p
   } catch (e) {
-    if (props.id === id) error.value = (e as Error).message
+    if (isCurrentPaper(id)) error.value = (e as Error).message
   }
-  if (auth.isStaff && props.id === id) {
+  if (auth.isStaff && isCurrentPaper(id)) {
     // 接着显示进行中的生成任务（如刷新页面前发起的）
     try {
       const t = await bankApi.answerTask(id)
-      if (props.id === id && t && isRunning(t)) {
+      if (isCurrentPaper(id) && t && isRunning(t)) {
         answerTask.value = t
         pollAnswers(id, t.done + t.failed)
       }
@@ -56,7 +59,13 @@ watch(() => props.id, async (id) => {
 }, { immediate: true })
 
 async function reloadPaper() {
-  try { paper.value = await bankApi.getPaper(props.id) } catch (e) { error.value = (e as Error).message }
+  const id = props.id
+  try {
+    const p = await bankApi.getPaper(id)
+    if (isCurrentPaper(id)) paper.value = p
+  } catch (e) {
+    if (isCurrentPaper(id)) error.value = (e as Error).message
+  }
 }
 
 const qs = computed(() => paper.value?.questions ?? [])
@@ -83,7 +92,10 @@ function stopAnswerPoll() {
   if (answerTimer) clearTimeout(answerTimer)
   answerTimer = null
 }
-onBeforeUnmount(stopAnswerPoll)
+onBeforeUnmount(() => {
+  disposed = true
+  stopAnswerPoll()
+})
 
 async function generateAnswers() {
   const id = props.id
@@ -92,13 +104,13 @@ async function generateAnswers() {
   answerStarting.value = true
   try {
     const t = await bankApi.generateAnswers(id)
-    if (props.id !== id) return
+    if (!isCurrentPaper(id)) return
     answerTask.value = t
     pollAnswers(id, 0)
   } catch (e) {
-    if (props.id === id) answerError.value = (e as Error).message
+    if (isCurrentPaper(id)) answerError.value = (e as Error).message
   } finally {
-    answerStarting.value = false
+    if (isCurrentPaper(id)) answerStarting.value = false
   }
 }
 
@@ -107,20 +119,20 @@ function pollAnswers(id: string, lastFinished: number) {
   stopAnswerPoll()
   answerTimer = setTimeout(async () => {
     answerTimer = null
-    if (props.id !== id) return
+    if (!isCurrentPaper(id)) return
     let t: AnswerTask | null
     try {
       t = await bankApi.answerTask(id)
     } catch {
-      if (props.id === id) pollAnswers(id, lastFinished)
+      if (isCurrentPaper(id)) pollAnswers(id, lastFinished)
       return
     }
-    if (props.id !== id) return
+    if (!isCurrentPaper(id)) return
     answerTask.value = t
     const finished = t ? t.done + t.failed : 0
     const running = !!t && isRunning(t)
     if (finished !== lastFinished || !running) await reloadPaper()
-    if (props.id !== id) return
+    if (!isCurrentPaper(id)) return
     if (running) return pollAnswers(id, finished)
     if (!t) return
     if (t.scope === 'bank') for (const qid of t.questionIds) ansOpen[qid] = true

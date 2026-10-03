@@ -6,7 +6,7 @@ import pytest
 from sqlalchemy import select, text
 
 from app.config import get_settings
-from app.db import AiUsage, DraftQuestion, SessionLocal, add_missing_columns
+from app.db import AiUsage, BankQuestion, DraftQuestion, SessionLocal, add_missing_columns
 from app.pipeline import llm
 from app.pipeline.answer import _normalize
 
@@ -37,8 +37,10 @@ def test_migration_adds_new_nullable_columns(scratch_engine):
     eng = scratch_engine
     with eng.begin() as c:  # 模拟升级前的旧表结构
         c.execute(text("CREATE TABLE draft_question (id VARCHAR(48) PRIMARY KEY, answer TEXT)"))
+        c.execute(text("CREATE TABLE bank_question (id VARCHAR(48) PRIMARY KEY, answer TEXT)"))
     added = add_missing_columns(eng)
     assert "draft_question.answer_source" in added and "draft_question.answer_note" in added
+    assert "bank_question.answer_note" in added
     assert add_missing_columns(eng) == []  # 幂等
 
 
@@ -140,6 +142,11 @@ def test_generate_answers_for_bank(client, parsed, llm_on):  # noqa: F811
     bank = {b["source"]["no"]: b for b in client.get(f"/api/papers/{job_id}").json()["questions"]}
     b2, b8 = bank[qs[1]["no"]], bank[qs[7]["no"]]
     assert b2["answer"] is None and b8["answer"] is None
+    # 空白答案仍属于缺答案，必须实际生成并同步，不能计为成功后原样跳过。
+    with SessionLocal() as s:
+        s.get(BankQuestion, b2["id"]).answer = " \n "
+        s.get(DraftQuestion, qs[1]["id"]).answer = " \n "
+        s.commit()
     r = client.post("/api/bank/review", json={"questionIds": [b2["id"]], "ownerId": "test-admin", "approved": True})
     assert r.status_code == 200
 
