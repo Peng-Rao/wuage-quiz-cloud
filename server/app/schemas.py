@@ -49,6 +49,7 @@ class PaperMeta(Model):
     region: str = ""
     school_year: str = ""
     textbook: str = ""
+    school: str = ""  # 命题学校，如「厦门双十中学」；联考等没有学校的为空
 
 
 class UsageSummary(Model):
@@ -576,7 +577,7 @@ class PaperFacets(Model):
     grades: list[FacetCount]
     subjects: list[FacetCount]
     paper_types: list[FacetCount]
-    textbooks: list[FacetCount] = []
+    schools: list[FacetCount] = []
 
 
 class PaperPage(Model):

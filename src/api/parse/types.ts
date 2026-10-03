@@ -345,6 +345,7 @@ export interface PaperMeta {
   region: string       // 地区
   schoolYear: string   // 学年
   textbook: string     // 教材版本
+  school: string       // 命题学校；联考等没有学校的为空
 }
 
 // ---------- 文档解析中间表示（IR） ----------

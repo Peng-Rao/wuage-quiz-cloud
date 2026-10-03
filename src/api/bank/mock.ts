@@ -71,19 +71,19 @@ const fromSample = (id: number, score: number): Seed['items'][number] => {
 const SEEDS: Seed[] = [
   {
     id: 'demo-haidian',
-    meta: { title: '北京市海淀区 2026—2027 学年高一上学期期中数学试题', stage: '高中', subject: '数学', grade: '高一', paperType: '期中考试', region: '北京 · 海淀', schoolYear: '2026—2027', textbook: '人教A版' },
+    meta: { title: '北京市海淀区 2026—2027 学年高一上学期期中数学试题', stage: '高中', subject: '数学', grade: '高一', paperType: '期中考试', region: '北京 · 海淀', schoolYear: '2026—2027', textbook: '人教A版', school: '北京一零一中学' },
     date: '2026-09-24T09:30:00Z',
     items: [fromSample(1, 5), fromSample(5, 5), fromSample(4, 5), fromSample(2, 5)],
   },
   {
     id: 'demo-gaokao',
-    meta: { title: '2026 年普通高等学校招生全国统一考试（新高考Ⅰ卷）数学', stage: '高中', subject: '数学', grade: '高三', paperType: '高考真题', region: '全国', schoolYear: '2025—2026', textbook: '' },
+    meta: { title: '2026 年普通高等学校招生全国统一考试（新高考Ⅰ卷）数学', stage: '高中', subject: '数学', grade: '高三', paperType: '高考真题', region: '全国', schoolYear: '2025—2026', textbook: '', school: '' },
     date: '2026-06-10T08:00:00Z',
     items: [fromSample(3, 6), fromSample(6, 12)],
   },
   {
     id: 'demo-chem',
-    meta: { title: '厦门市 2025—2026 学年九年级上学期化学 10 月月考', stage: '初中', subject: '化学', grade: '九年级', paperType: '月考', region: '福建 · 厦门', schoolYear: '2025—2026', textbook: '人教版' },
+    meta: { title: '厦门市 2025—2026 学年九年级上学期化学 10 月月考', stage: '初中', subject: '化学', grade: '九年级', paperType: '月考', region: '福建 · 厦门', schoolYear: '2025—2026', textbook: '人教版', school: '厦门双十中学' },
     date: '2025-10-20T10:00:00Z',
     items: [
       { id: 'c1', type: '单选题', score: 2, stem: '下列变化中，属于化学变化的是（　　）', options: ['冰雪融化', '酒精挥发', '铁锅生锈', '玻璃破碎'], answer: 'C', analysis: '铁锅生锈生成了新物质铁锈，属于化学变化。', answerSource: 'paper', knowledgePoints: [{ id: 'kp:c1', name: '物理变化与化学变化', path: null, inTree: false }], coef: 0.12, images: [] },
@@ -219,9 +219,9 @@ export const mockBankApi: BankApi = {
       && (!p.grade || skip === 'grade' || (x.meta.grade || '未分类') === p.grade)
       && (!p.subject || skip === 'subject' || (x.meta.subject || '未分类') === p.subject)
       && (!p.paperType || skip === 'paperType' || (x.meta.paperType || '未分类') === p.paperType)
-      && (!p.textbook || skip === 'textbook' || (x.meta.textbook || '未分类') === p.textbook)
+      && (!p.school || skip === 'school' || (x.meta.school || '未分类') === p.school)
       && (!p.category?.length || p.category.some((k) => (x.meta.paperType + x.title).includes(k)))
-      && (!p.q || [x.title, x.meta.region, x.meta.schoolYear].join(' ').includes(p.q))
+      && (!p.q || [x.title, x.meta.region, x.meta.schoolYear, x.meta.school].join(' ').includes(p.q))
     const items = all.filter((x) => match(x))
     const offset = p.offset ?? 0
     return clone({
@@ -231,7 +231,7 @@ export const mockBankApi: BankApi = {
         grades: facet(all.filter((x) => match(x, 'grade')), 'grade'),
         subjects: facet(all.filter((x) => match(x, 'subject')), 'subject'),
         paperTypes: facet(all.filter((x) => match(x, 'paperType')), 'paperType'),
-        textbooks: facet(all.filter((x) => match(x, 'textbook')), 'textbook'),
+        schools: facet(all.filter((x) => match(x, 'school')), 'school'),
       },
     })
   },

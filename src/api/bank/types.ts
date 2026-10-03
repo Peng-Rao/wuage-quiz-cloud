@@ -94,8 +94,8 @@ export interface PaperFacets {
   grades: FacetCount[]
   subjects: FacetCount[]
   paperTypes: FacetCount[]
-  /** 教材版本 */
-  textbooks: FacetCount[]
+  /** 命题学校 */
+  schools: FacetCount[]
 }
 
 /** 选题「更多」筛选的可选值 */
@@ -151,8 +151,8 @@ export interface PaperQuery {
   grade?: string
   subject?: string
   paperType?: string
-  /** 教材版本 */
-  textbook?: string
+  /** 命题学校 */
+  school?: string
   /** 试卷分类（同步教学、阶段测试等）：试卷类型或名称含任一关键词 */
   category?: string[]
   q?: string

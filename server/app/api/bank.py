@@ -98,14 +98,14 @@ def bank_chapter_counts(book_id: str = Query(alias="bookId"), s: Session = Depen
 @router.get("/api/papers", response_model=PaperPage)
 def papers(
     stage: str | None = None, grade: str | None = None, subject: str | None = None,
-    paper_type: str | None = Query(None, alias="paperType"), textbook: str | None = None,
+    paper_type: str | None = Query(None, alias="paperType"), school: str | None = None,
     category: str | None = Query(None, description="试卷分类关键词，逗号分隔，试卷类型或名称含任一即可"),
     q: str | None = Query(None, max_length=50),
     limit: int = Query(20, ge=1, le=100), offset: int = Query(0, ge=0),
     s: Session = Depends(get_session),
 ) -> PaperPage:
     """试卷库：已入库的整卷，最近入库的在前；facets 为各维度的试卷数，用于按年级、学科浏览。"""
-    f = PaperFilter(stage=stage, grade=grade, subject=subject, paper_type=paper_type, textbook=textbook,
+    f = PaperFilter(stage=stage, grade=grade, subject=subject, paper_type=paper_type, school=school,
                     category=_split(category), q=(q or "").strip() or None)
     return list_papers(s, current_school(), f, limit=limit, offset=offset)
 

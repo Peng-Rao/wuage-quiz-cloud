@@ -13,7 +13,7 @@ from app.services import current_school
 MATH_META = {"title": "题库测试高一期中数学卷", "stage": "高中", "subject": "数学", "grade": "高一", "paper_type": "期中考试",
              "region": "北京", "school_year": "2026—2027", "textbook": ""}
 CHEM_META = {"title": "题库测试初三化学月考卷", "stage": "初中", "subject": "化学", "grade": "初三", "paper_type": "月考",
-             "region": "厦门", "school_year": "2024—2025", "textbook": ""}
+             "region": "厦门", "school_year": "2024—2025", "textbook": "", "school": "厦门双十中学"}
 
 
 def _node(s, tree: KnowledgeTree, name: str) -> KnowledgeNode:
@@ -138,6 +138,11 @@ def test_paper_library(client, data):
     grades = {f["name"]: f["count"] for f in page["facets"]["grades"]}
     assert grades == {"高一": 1, "初三": 1}
     assert {f["name"] for f in page["facets"]["subjects"]} == {"化学"}
+
+    # 按学校筛选；名称中没有学校的记为「未分类」
+    page = client.get("/api/papers", params={"q": "题库测试", "school": "厦门双十中学"}).json()
+    assert [p["id"] for p in page["items"]] == [data["chem"]]
+    assert {f["name"]: f["count"] for f in page["facets"]["schools"]} == {"厦门双十中学": 1, "未分类": 1}
 
     detail = client.get(f"/api/papers/{data['math']}").json()
     assert [q["stem"][:2] for q in detail["questions"]] == ["集合", "求 ", "讨论"]

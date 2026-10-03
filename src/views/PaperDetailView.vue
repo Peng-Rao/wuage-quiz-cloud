@@ -75,7 +75,7 @@ const types = computed(() => TYPE_ORDER.filter((t) => paper.value?.typeCounts[t]
 const inBasket = computed(() => qs.value.filter((q) => basket.has(q.id)).length)
 const tags = computed(() => {
   const m = paper.value?.meta
-  return m ? [m.stage, m.grade, m.subject, m.paperType, m.region, m.schoolYear, m.textbook].filter(Boolean) : []
+  return m ? [m.stage, m.grade, m.subject, m.paperType, m.region, m.schoolYear, m.school, m.textbook].filter(Boolean) : []
 })
 
 const allAns = ref(false)

@@ -15,7 +15,7 @@ export const httpBankApi: BankApi = {
   chapterCounts: (bookId) => request<Record<string, number>>('GET', `/api/bank/chapter-counts?${query({ bookId })}`),
   knowledgeCounts: (treeId) => request<Record<string, number>>('GET', `/api/bank/knowledge-counts?${query({ treeId })}`),
   listPapers: (p) => request<PaperPage>('GET', `/api/papers?${query({
-    stage: p.stage, grade: p.grade, subject: p.subject, paperType: p.paperType, textbook: p.textbook,
+    stage: p.stage, grade: p.grade, subject: p.subject, paperType: p.paperType, school: p.school,
     category: p.category?.join(','), q: p.q, limit: p.limit, offset: p.offset,
   })}`),
   getPaper: (id) => request<PaperDetail>('GET', `/api/papers/${encodeURIComponent(id)}`),
