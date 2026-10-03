@@ -218,6 +218,7 @@ class BankQuestion(Base):
     answer: Mapped[str | None] = mapped_column(Text, nullable=True)
     analysis: Mapped[str | None] = mapped_column(Text, nullable=True)
     answer_source: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    answer_note: Mapped[str | None] = mapped_column(Text, nullable=True)
     knowledge_points: Mapped[list[Any]] = mapped_column(JSON, default=list)
     coef: Mapped[float] = mapped_column(Float)
     images: Mapped[list[Any]] = mapped_column(JSON, default=list)

@@ -8,6 +8,7 @@ import {
   type DraftQuestionPatch,
   type GenerateAnswersOptions,
   type JobListItem,
+  type JobStatus,
   type JobUsage,
   type PaperMeta,
   type ParseJob,
@@ -18,6 +19,14 @@ import {
 } from '@/api/parse'
 
 export type ParsePhase = 'idle' | 'uploading' | 'parsing' | 'done' | 'failed'
+export type JobFilter = '全部' | '进行中' | '已完成' | '需处理'
+
+const JOB_FILTER_STATUS: Record<JobFilter, JobStatus[] | undefined> = {
+  全部: undefined,
+  进行中: ['uploading', 'queued', 'running'],
+  已完成: ['done'],
+  需处理: ['failed', 'cancelled'],
+}
 
 /** 试卷解析：上传 → 进度订阅 → 草稿题核对 → 入库 */
 export const useParseJobStore = defineStore('parseJob', () => {
@@ -39,6 +48,10 @@ export const useParseJobStore = defineStore('parseJob', () => {
   const jobsTotal = ref(0)
   const jobsActive = ref(0)
   const jobsLoading = ref(false)
+  const jobsPage = ref(1)
+  const jobsPageSize = 5
+  const jobsFilter = ref<JobFilter>('全部')
+  const jobsError = ref('')
   const openingJob = ref<string | null>(null)
   let openSeq = 0
   const batchUploading = ref(false)
@@ -84,28 +97,61 @@ export const useParseJobStore = defineStore('parseJob', () => {
 
   // ---------- 任务列表 ----------
 
-  const JOBS_PAGE = 20
-
   function refreshJobs(): Promise<void> {
     if (jobsRequest) return jobsRequest
     if (jobsTimer) clearTimeout(jobsTimer)
     jobsTimer = null
     jobsLoading.value = true
+    jobsError.value = ''
     jobsRequest = Promise.resolve().then(async () => {
-      try {
-        const page = await parseApi.listJobs({ limit: JOBS_PAGE })
-        jobList.value = page.items
-        jobsTotal.value = page.total
-        jobsActive.value = page.active
-      } catch {
-        // 列表刷新失败不打断当前操作，下次轮询重试
-      } finally {
-        jobsLoading.value = false
-        jobsRequest = null
-        scheduleJobs()
+      // 查询变化时丢弃旧响应，在同一轮请求中加载新页，避免轮询覆盖翻页结果。
+      while (true) {
+        const requestedPage = jobsPage.value
+        const requestedFilter = jobsFilter.value
+        try {
+          const page = await parseApi.listJobs({
+            limit: jobsPageSize,
+            offset: (requestedPage - 1) * jobsPageSize,
+            status: JOB_FILTER_STATUS[requestedFilter],
+          })
+          if (requestedPage !== jobsPage.value || requestedFilter !== jobsFilter.value) continue
+          jobsTotal.value = page.total
+          jobsActive.value = page.active
+          const lastPage = Math.max(1, Math.ceil(page.total / jobsPageSize))
+          if (requestedPage > lastPage) {
+            jobsPage.value = lastPage
+            continue
+          }
+          jobList.value = page.items
+        } catch {
+          if (requestedPage !== jobsPage.value || requestedFilter !== jobsFilter.value) continue
+          jobsError.value = '任务列表加载失败，请重试'
+        }
+        break
       }
+    }).finally(() => {
+      jobsLoading.value = false
+      jobsRequest = null
+      scheduleJobs()
     })
     return jobsRequest
+  }
+
+  function setJobsPage(page: number) {
+    const lastPage = Math.max(1, Math.ceil(jobsTotal.value / jobsPageSize))
+    const next = Math.max(1, Math.min(lastPage, page))
+    if (next === jobsPage.value) return
+    jobsPage.value = next
+    jobList.value = []
+    return refreshJobs()
+  }
+
+  function setJobsFilter(filter: JobFilter) {
+    if (filter === jobsFilter.value) return
+    jobsFilter.value = filter
+    jobsPage.value = 1
+    jobList.value = []
+    return refreshJobs()
   }
 
   /** 有排队或解析中的任务时，每 2 秒刷新列表 */
@@ -459,8 +505,9 @@ export const useParseJobStore = defineStore('parseJob', () => {
   return {
     phase, options, uploadPct, overallPct, job, questions, selected, recent, error, busy, savedCount, commitResult,
     usage, loadUsage,
-    jobList, jobsTotal, jobsActive, jobsLoading, openingJob, batchUploading, batchPct, notice,
-    refreshJobs, watchJobs, openJob, backToList, retryJob, cancelJob, getSimilar, markEvalSample,
+    jobList, jobsTotal, jobsActive, jobsLoading, jobsPage, jobsPageSize, jobsFilter, jobsError,
+    openingJob, batchUploading, batchPct, notice,
+    refreshJobs, setJobsPage, setJobsFilter, watchJobs, openJob, backToList, retryJob, cancelJob, getSimilar, markEvalSample,
     missingAnswerCount, answerTask, answering, isAnswering, generateAnswers,
     missingKnowledgeCount, knowledgeRunning, tagKnowledge,
     reviewCount, selectedCount, allSelected, isLow,

@@ -1,9 +1,11 @@
-"""AI 生成答案：为缺少答案的草稿题生成答案与解析。
+"""AI 生成答案：为缺少答案的草稿题生成答案与解析；入库后也可为题库中缺少答案的题补生成。
 
 - 每道题单独请求，便于逐题展示进度、单题失败不影响其他题；并发数由 ANSWER_CONCURRENCY 控制。
 - 配置了看图模型（VISION_MODEL）时，含图的题改用该模型并附上配图；未配置时大模型看不到图片，
   含图的题会注明「答案可能不准确」，由老师核对。
 - 结果写入 answer / analysis，并标记 answer_source=ai；老师修改后变为 manual。
+- 已入库的题（任务 scope=bank）按题库中的内容作答，答案直接写入题库并撤销审核，由老师核对后重新审核；
+  原草稿题缺答案时一并写入，之后重新入库不会冲掉生成的答案。
 """
 
 import asyncio
@@ -12,9 +14,10 @@ import re
 from typing import Any
 
 from sqlalchemy import select
+from sqlalchemy.orm import Session
 
 from ..config import get_settings
-from ..db import DraftQuestion, ParseJob, SessionLocal
+from ..db import BankQuestion, DraftQuestion, ParseJob, SessionLocal
 from ..usage import current_job
 from .llm import LLMError, chat_json, describe
 from .vision import image_inputs
@@ -36,7 +39,7 @@ SYSTEM = """你是经验丰富的中国中小学{subject}教师，请为下面�
 6. 不要编造题目中没有给出的条件。"""
 
 
-def _question_payload(q: DraftQuestion, with_images: int = 0) -> str:
+def _question_payload(q: DraftQuestion | BankQuestion, with_images: int = 0) -> str:
     # 阅读理解、完形填空等须结合材料作答
     lines = ([f"阅读材料：\n{q.material}"] if q.material else []) + [f"题型：{q.type}", f"题干：{q.stem}"]
     if q.options:
@@ -49,7 +52,7 @@ def _question_payload(q: DraftQuestion, with_images: int = 0) -> str:
     return "\n".join(lines)
 
 
-def _normalize(q: DraftQuestion, data: Any, saw_images: bool = False) -> tuple[str, str | None, str | None]:
+def _normalize(q: DraftQuestion | BankQuestion, data: Any, saw_images: bool = False) -> tuple[str, str | None, str | None]:
     """校验并整理大模型输出，返回 (答案, 解析, 提示)。"""
     if not isinstance(data, dict) or not str(data.get("answer") or "").strip():
         raise ValueError("大模型未返回答案")
@@ -90,12 +93,25 @@ def _task_incr(job_id: str, key: str) -> None:
         s.commit()
 
 
-async def _answer_one(qid: str, meta: dict, overwrite: bool, sem: asyncio.Semaphore) -> bool:
+def _save_bank(s: Session, b: BankQuestion, answer: str, analysis: str | None, note: str | None) -> None:
+    b.answer, b.analysis = answer, analysis
+    b.answer_source, b.answer_note = "ai", note
+    # 题目内容有变化，需老师核对后重新审核（与重新入库一致），归属保留
+    b.reviewed_at, b.reviewed_by = None, None
+    d = s.get(DraftQuestion, b.source_draft_id)
+    if d is not None and not (d.answer or "").strip():
+        # 草稿题状态不变：已保存的仍与题库一致
+        d.answer, d.analysis = answer, analysis
+        d.answer_source, d.answer_note = "ai", note
+
+
+async def _answer_one(qid: str, meta: dict, overwrite: bool, sem: asyncio.Semaphore, bank: bool = False) -> bool:
     settings = get_settings()
+    model = BankQuestion if bank else DraftQuestion
     async with sem:
         with SessionLocal() as s:
-            q = s.get(DraftQuestion, qid)
-            if q is None or (q.answer and not overwrite):
+            q = s.get(model, qid)
+            if q is None or ((q.answer or "").strip() and not overwrite):
                 return True  # 已被删除（合并 / 拆分）或期间已有答案，跳过
             system = SYSTEM.format(subject=meta.get("subject") or "", stage=meta.get("stage") or "",
                                    grade=meta.get("grade") or "")
@@ -114,8 +130,12 @@ async def _answer_one(qid: str, meta: dict, overwrite: bool, sem: asyncio.Semaph
             log.warning("AI 解答第 %s 题失败：%s", qid, describe(e))
             return False
         with SessionLocal() as s:
-            q = s.get(DraftQuestion, qid)
-            if q is None or (q.answer and not overwrite):
+            q = s.get(model, qid)
+            if q is None or ((q.answer or "").strip() and not overwrite):
+                return True
+            if isinstance(q, BankQuestion):
+                _save_bank(s, q, answer, analysis, note)
+                s.commit()
                 return True
             q.answer, q.analysis = answer, analysis
             q.answer_source, q.answer_note = "ai", note
@@ -139,9 +159,10 @@ async def run_answer_task(job_id: str) -> None:
     qids: list[str] = task.get("questionIds") or []
     _task_update(job_id, status="running", done=0, failed=0, error=None)
     sem = asyncio.Semaphore(max(1, settings.answer_concurrency))
+    bank = task.get("scope") == "bank"
 
     async def one(qid: str) -> None:
-        ok = await _answer_one(qid, meta, bool(task.get("overwrite")), sem)
+        ok = await _answer_one(qid, meta, bool(task.get("overwrite")), sem, bank=bank)
         _task_incr(job_id, "done" if ok else "failed")
 
     try:
@@ -160,4 +181,11 @@ def pick_questions(job_id: str, question_ids: list[str] | None, overwrite: bool)
     with SessionLocal() as s:
         qs = list(s.scalars(select(DraftQuestion).where(DraftQuestion.job_id == job_id).order_by(DraftQuestion.no)))
     wanted = set(question_ids) if question_ids else None
-    return [q.id for q in qs if (wanted is None or q.id in wanted) and (overwrite or not q.answer)]
+    return [q.id for q in qs if (wanted is None or q.id in wanted) and (overwrite or not (q.answer or "").strip())]
+
+
+def pick_bank_questions(s: Session, paper_id: str, question_ids: list[str] | None) -> list[str]:
+    """本卷已入库、缺少答案的题（指定时只取其中的题），按原卷题号排列。查询受当前账号的数据范围限制。"""
+    qs = s.scalars(select(BankQuestion).where(BankQuestion.source_job_id == paper_id).order_by(BankQuestion.source_no))
+    wanted = set(question_ids) if question_ids else None
+    return [b.id for b in qs if (wanted is None or b.id in wanted) and not (b.answer or "").strip()]

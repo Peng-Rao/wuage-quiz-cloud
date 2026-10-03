@@ -10,8 +10,13 @@ from ..bank import (
 from ..auth import require_subject, staff
 from ..chapters import versions
 from ..db import BankQuestion, DraftQuestion, KnowledgeTree, get_session
-from ..schemas import Model, BankQuestionPage, PaperDetail, PaperPage, QuestionFacets, TextbookVersion
-from ..services import current_school, not_found
+from ..pipeline.answer import pick_bank_questions
+from ..schemas import (
+    AnswerTask, BankQuestionPage, GenerateBankAnswersRequest, Model, PaperDetail, PaperPage, QuestionFacets,
+    TextbookVersion,
+)
+from ..services import current_school, get_job, not_found
+from .jobs import check_answer_task, queue_answer_task
 
 router = APIRouter()
 
@@ -119,6 +124,23 @@ def paper(paper_id: str, s: Session = Depends(get_session)) -> PaperDetail:
     if got is None:
         raise not_found("试卷")
     return got
+
+
+@router.post("/api/papers/{paper_id}/generate-answers", response_model=AnswerTask, status_code=202,
+             dependencies=[Depends(staff)])
+def generate_paper_answers(paper_id: str, req: GenerateBankAnswersRequest, s: Session = Depends(get_session)) -> AnswerTask:
+    """为本卷已入库、缺少答案的题（或其中指定的题）生成 AI 答案，直接写入题库；进度见 answer-task。
+    生成答案的题撤销审核，老师核对后重新审核。"""
+    job = get_job(s, paper_id)  # 组长只能查到授权学科的试卷
+    check_answer_task(job)
+    return queue_answer_task(s, job, pick_bank_questions(s, paper_id, req.question_ids), scope="bank")
+
+
+@router.get("/api/papers/{paper_id}/answer-task", response_model=AnswerTask | None, dependencies=[Depends(staff)])
+def paper_answer_task(paper_id: str, s: Session = Depends(get_session)) -> AnswerTask | None:
+    """本卷最近一次 AI 生成答案任务的进度（含在试卷解析页发起的）。"""
+    job = get_job(s, paper_id)
+    return AnswerTask.model_validate(job.answer_task) if job.answer_task else None
 
 
 class BasketCheck(Model):

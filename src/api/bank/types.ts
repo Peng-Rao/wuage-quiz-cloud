@@ -1,7 +1,7 @@
 /**
  * 校本题库选题与试卷库接口契约，与后端 server/app/schemas.py 对应。
  */
-import type { KnowledgePointRef, PaperMeta, QuestionSource, QuestionType } from '../parse/types'
+import type { AnswerTask, KnowledgePointRef, PaperMeta, QuestionSource, QuestionType } from '../parse/types'
 
 /** 已入库的题目 */
 export interface BankQuestion {
@@ -20,6 +20,8 @@ export interface BankQuestion {
   answer: string | null
   analysis: string | null
   answerSource: 'paper' | 'ai' | 'manual' | null
+  /** AI 生成答案的提示，如「题目含图，AI 未看到图片，答案可能不准确」 */
+  answerNote?: string | null
   knowledgePoints: KnowledgePointRef[]
   /** 难度系数 0–1，越高越难 */
   coef: number
@@ -212,6 +214,10 @@ export interface BankApi {
   getPaper(paperId: string): Promise<PaperDetail>
   /** 移出试卷库：删除该卷已入库的题，原卷草稿题恢复为未保存，可在试卷解析中重新保存 */
   removePaper(paperId: string): Promise<void>
+  /** 为本卷已入库、缺少答案的题（或其中指定的题）生成 AI 答案，直接写入题库；生成后需重新审核（仅管理员、组长） */
+  generateAnswers(paperId: string, questionIds?: string[]): Promise<AnswerTask>
+  /** 本卷最近一次 AI 生成答案任务的进度，没有时为 null */
+  answerTask(paperId: string): Promise<AnswerTask | null>
   /** AI 组卷：按学生情况与要求从题库选题并赋分；多轮修改时传入完整对话，整份试卷重新生成 */
   compose(req: ComposeRequest): Promise<ComposeResult>
 }

@@ -87,24 +87,33 @@ def read_job(job_id: str, s: Session = Depends(get_session)) -> ParseJobOut:
     return job_out(s, get_job(s, job_id))
 
 
-@router.post("/{job_id}/generate-answers", response_model=AnswerTask, status_code=202)
-def generate_answers(job_id: str, req: GenerateAnswersRequest, s: Session = Depends(get_session)) -> AnswerTask:
-    """为缺少答案的题（或指定的题）排队生成 AI 答案，进度见 ParseJob.answerTask。"""
-    job = get_job(s, job_id)
+def check_answer_task(job: ParseJob) -> None:
+    """能否发起 AI 生成答案：本卷同一时间只有一个生成答案任务（草稿题与已入库的题共用）。"""
     if job.status != "done":
         raise HTTPException(400, "解析尚未完成")
     if not get_settings().llm_enabled:
         raise HTTPException(400, "未配置大模型，无法生成答案")
     if (job.answer_task or {}).get("status") in ("queued", "running"):
         raise HTTPException(409, "正在生成答案，请等待当前任务完成")
-    qids = pick_questions(job_id, req.question_ids, req.overwrite)
+
+
+def queue_answer_task(s: Session, job: ParseJob, qids: list[str], overwrite: bool = False,
+                      scope: str = "draft") -> AnswerTask:
     if not qids:
         raise HTTPException(400, "没有需要生成答案的题目")
     job.answer_task = {"status": "queued", "total": len(qids), "done": 0, "failed": 0, "error": None,
-                       "questionIds": qids, "overwrite": req.overwrite}
+                       "questionIds": qids, "overwrite": overwrite, "scope": scope}
     s.commit()
-    worker.enqueue_answers(job_id)
+    worker.enqueue_answers(job.id)
     return AnswerTask.model_validate(job.answer_task)
+
+
+@router.post("/{job_id}/generate-answers", response_model=AnswerTask, status_code=202)
+def generate_answers(job_id: str, req: GenerateAnswersRequest, s: Session = Depends(get_session)) -> AnswerTask:
+    """为缺少答案的题（或指定的题）排队生成 AI 答案，进度见 ParseJob.answerTask。"""
+    job = get_job(s, job_id)
+    check_answer_task(job)
+    return queue_answer_task(s, job, pick_questions(job_id, req.question_ids, req.overwrite), req.overwrite)
 
 
 @router.post("/{job_id}/tag-knowledge", response_model=ParseJobOut, status_code=202)

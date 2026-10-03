@@ -58,7 +58,7 @@ const paperTitle = computed(() => props.q.source?.title || props.q.source?.fileN
     <div v-if="showAnswer" class="qc-answer">
       <div><b>【答案】</b><MathText v-if="q.answer" :text="q.answer" /><span v-else class="none">暂无</span></div>
       <div v-if="q.analysis"><b>【解析】</b><MathText :text="q.analysis" /></div>
-      <div v-if="q.answerSource === 'ai'" class="ai">答案由 AI 生成，请核对后使用</div>
+      <div v-if="q.answerSource === 'ai'" class="ai">答案由 AI 生成，请核对后使用<template v-if="q.answerNote">（{{ q.answerNote }}）</template></div>
     </div>
     <div class="qc-foot">
       <span>{{ dateLabel(q.createdAt) }}</span>

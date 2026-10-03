@@ -6,7 +6,7 @@ import pytest
 from sqlalchemy import select, text
 
 from app.config import get_settings
-from app.db import AiUsage, DraftQuestion, SessionLocal, add_missing_columns
+from app.db import AiUsage, BankQuestion, DraftQuestion, SessionLocal, add_missing_columns
 from app.pipeline import llm
 from app.pipeline.answer import _normalize
 
@@ -37,8 +37,10 @@ def test_migration_adds_new_nullable_columns(scratch_engine):
     eng = scratch_engine
     with eng.begin() as c:  # 模拟升级前的旧表结构
         c.execute(text("CREATE TABLE draft_question (id VARCHAR(48) PRIMARY KEY, answer TEXT)"))
+        c.execute(text("CREATE TABLE bank_question (id VARCHAR(48) PRIMARY KEY, answer TEXT)"))
     added = add_missing_columns(eng)
     assert "draft_question.answer_source" in added and "draft_question.answer_note" in added
+    assert "bank_question.answer_note" in added
     assert add_missing_columns(eng) == []  # 幂等
 
 
@@ -116,6 +118,64 @@ def test_generate_answers_flow(client, parsed, llm_on):  # noqa: F811
     with SessionLocal() as s:
         rows = list(s.scalars(select(AiUsage).where(AiUsage.job_id == job_id, AiUsage.purpose == "answer")))
     assert len(rows) == 3 and rows[0].prompt_tokens == 300
+
+
+def wait_paper_answers(client, paper_id: str, timeout: float = 10) -> dict:  # noqa: ANN001
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        t = client.get(f"/api/papers/{paper_id}/answer-task").json()
+        if t and t["status"] in ("done", "failed"):
+            return t
+        time.sleep(0.05)
+    raise AssertionError("生成答案超时")
+
+
+def test_generate_answers_for_bank(client, parsed, llm_on):  # noqa: F811
+    """入库后为缺答案的题补生成：写入题库与草稿题，撤销审核但保留归属，重新入库不会冲掉答案。"""
+    job_id = parsed["id"]
+    qs = client.get(f"/api/parse-jobs/{job_id}/questions").json()
+    for x in (qs[1], qs[7]):
+        client.patch(f"/api/draft-questions/{x['id']}", json={"answer": None, "analysis": None})
+    ids = [x["id"] for x in qs]
+    assert client.post(f"/api/parse-jobs/{job_id}/commit", json={"questionIds": ids, "force": True}).json()["savedCount"] == len(ids)
+
+    bank = {b["source"]["no"]: b for b in client.get(f"/api/papers/{job_id}").json()["questions"]}
+    b2, b8 = bank[qs[1]["no"]], bank[qs[7]["no"]]
+    assert b2["answer"] is None and b8["answer"] is None
+    # 空白答案仍属于缺答案，必须实际生成并同步，不能计为成功后原样跳过。
+    with SessionLocal() as s:
+        s.get(BankQuestion, b2["id"]).answer = " \n "
+        s.get(DraftQuestion, qs[1]["id"]).answer = " \n "
+        s.commit()
+    r = client.post("/api/bank/review", json={"questionIds": [b2["id"]], "ownerId": "test-admin", "approved": True})
+    assert r.status_code == 200
+
+    # 指定已有答案的题：没有需要生成的
+    r = client.post(f"/api/papers/{job_id}/generate-answers", json={"questionIds": [bank[qs[0]["no"]]["id"]]})
+    assert r.status_code == 400 and "没有需要" in r.json()["message"]
+
+    r = client.post(f"/api/papers/{job_id}/generate-answers", json={})
+    assert r.status_code == 202 and r.json()["scope"] == "bank" and r.json()["questionIds"] == [b2["id"], b8["id"]]
+    task = wait_paper_answers(client, job_id)
+    assert (task["status"], task["done"], task["failed"]) == ("done", 2, 0)
+
+    after = {b["id"]: b for b in client.get(f"/api/papers/{job_id}").json()["questions"]}
+    assert (after[b2["id"]]["answer"], after[b2["id"]]["answerSource"]) == ("C", "ai")
+    assert after[b8["id"]]["answer"].startswith("（1）")
+    # 生成答案后需重新审核，归属不变；其他题不受影响
+    assert after[b2["id"]]["reviewedAt"] is None and after[b2["id"]]["ownerId"] == "test-admin"
+    assert after[bank[qs[0]["no"]]["id"]]["answerSource"] == "paper"
+
+    # 草稿题同步写入，仍为已保存
+    drafts = {x["id"]: x for x in client.get(f"/api/parse-jobs/{job_id}/questions").json()}
+    assert (drafts[qs[1]["id"]]["answer"], drafts[qs[1]["id"]]["status"]) == ("C", "saved")
+    client.post(f"/api/parse-jobs/{job_id}/commit", json={"questionIds": [qs[1]["id"]], "force": True})
+    assert client.get(f"/api/papers/{job_id}").json()["questions"][1]["answer"] == "C"
+
+    r = client.post(f"/api/papers/{job_id}/generate-answers", json={})
+    assert r.status_code == 400 and "没有需要" in r.json()["message"]
+    # 移出试卷库，避免后续用例入库同一份试卷时被判为重复
+    assert client.delete(f"/api/papers/{job_id}").status_code == 204
 
 
 def test_generate_answers_requires_llm(client, parsed):  # noqa: F811

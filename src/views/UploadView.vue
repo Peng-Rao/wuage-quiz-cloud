@@ -64,11 +64,14 @@ function leaveJob() {
   else store.backToList()
 }
 
-const UP_OPT_LABELS: [keyof ParseOptions, string][] = [
-  ['ocr', '图片 / 扫描件文字识别'], ['answer', '识别并关联答案解析'], ['dedupe', '与题库查重，合并重复题'], ['knowledge', '自动标注知识点'],
+const UP_OPT_LABELS: [keyof ParseOptions, string, string][] = [
+  ['ocr', '文字识别', '提取图片与扫描件中的题目文字'],
+  ['answer', '答案与解析', '识别并关联试卷中的答案解析'],
+  ['dedupe', '题库查重', '对比已有题目，合并重复内容'],
+  ['knowledge', '知识点标注', '自动匹配题目对应的知识点'],
 ]
 
-const STEPS = ['1 上传试卷', '2 智能解析', '3 核对入库']
+const STEPS = ['上传试卷', '智能解析', '核对入库']
 const stepIdx = computed(() => ({ idle: 0, uploading: 1, parsing: 1, failed: 1, done: 2 })[phase.value])
 
 // ---- 上传 ----
@@ -83,6 +86,7 @@ function formatSize(bytes: number) {
 }
 
 function onFiles(list: FileList | null | undefined) {
+  if (store.batchUploading) return
   const files = [...(list ?? [])]
   if (!files.length) return
   picked.value = {
@@ -90,6 +94,10 @@ function onFiles(list: FileList | null | undefined) {
     size: formatSize(files.reduce((a, f) => a + f.size, 0)),
   }
   store.start(files)
+}
+
+function selectFiles() {
+  if (!store.batchUploading) fileInput.value?.click()
 }
 
 function onDrop(e: DragEvent) {
@@ -206,52 +214,56 @@ async function forceCommit() {
         <RouterLink to="/upload/knowledge">知识树管理</RouterLink>
         <RouterLink v-if="auth.isAdmin" to="/upload/eval">解析评测</RouterLink>
       </nav>
-      <div class="steps">
-        <span
-          v-for="(s, i) in STEPS" :key="s" class="step"
-          :class="{ cur: i === stepIdx, past: i < stepIdx }"
-        >{{ s }}</span>
-      </div>
     </div>
+    <ol class="steps" aria-label="试卷解析流程">
+      <li
+        v-for="(s, i) in STEPS" :key="s" class="step"
+        :class="{ cur: i === stepIdx, past: i < stepIdx }"
+        :aria-current="i === stepIdx ? 'step' : undefined"
+      ><span class="step-number">{{ i + 1 }}</span><span>{{ s }}</span></li>
+    </ol>
 
     <!-- 1 上传 -->
     <div v-if="store.openingJob" class="card">
       <LoadingState label="正在打开解析结果…" detail="正在获取整卷题目与核对信息" :rows="3" />
       <button class="btn" @click="leaveJob">返回任务列表</button>
     </div>
-    <div v-else-if="phase === 'idle'" class="row">
-      <div
-        class="drop" :class="{ dragging }" role="button" tabindex="0"
-        @click="fileInput?.click()" @keydown.enter.prevent="fileInput?.click()" @keydown.space.prevent="fileInput?.click()"
-        @dragover.prevent="dragging = true" @dragleave="dragging = false" @drop.prevent="onDrop"
-      >
-        <div class="drop-icon">＋</div>
-        <span class="drop-title">拖拽试卷到此处，或点击选择文件</span>
-        <span class="drop-desc">
-          支持 Word（.docx）、PDF、图片（JPG / PNG，可多张拍照）<br>
-          可一次选择多份 PDF / Word，在后台依次解析 · 单个文件不超过 {{ MAX_MB }} MB
-        </span>
-        <button type="button" class="btn btn-primary pick-btn" :disabled="store.batchUploading">
-          <LoadingState v-if="store.batchUploading" compact :label="store.batchPct >= 100 ? '上传完成，正在创建批量任务…' : `批量上传中 ${store.batchPct}%`" />
-          <template v-else>选择文件</template>
-        </button>
-        <span v-if="error" class="drop-err">{{ error }}</span>
-        <span v-else-if="notice" class="drop-ok">{{ notice }}</span>
-      </div>
-      <input
-        ref="fileInput" type="file" :accept="ACCEPT" multiple hidden
-        @change="onFiles(($event.target as HTMLInputElement).files); ($event.target as HTMLInputElement).value = ''"
-      >
-      <div class="up-side">
-        <div class="card panel">
-          <span class="card-title">解析选项</span>
-          <ToggleSwitch v-for="[k, l] in UP_OPT_LABELS" :key="k" v-model="options[k]" :label="l" />
+    <div v-else-if="phase === 'idle'" class="upload-workspace">
+      <div class="upload-grid">
+        <div
+          class="drop" :class="{ dragging, 'is-uploading': store.batchUploading }" :aria-busy="store.batchUploading"
+          @click="selectFiles"
+          @dragover.prevent="dragging = true" @dragleave="dragging = false" @drop.prevent="onDrop"
+        >
+          <div class="drop-icon" aria-hidden="true">
+            <svg viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M20 5h-9a3 3 0 0 0-3 3v16a3 3 0 0 0 3 3h10a3 3 0 0 0 3-3V10Z"/><path d="M19 5v6h5M16 23V14m-4 4 4-4 4 4"/></svg>
+          </div>
+          <h2 class="drop-title">拖拽试卷到此处</h2>
+          <span class="drop-desc">或选择文件，开始智能解析</span>
+          <button type="button" class="btn btn-primary pick-btn" :disabled="store.batchUploading" @click.stop="selectFiles">
+            <LoadingState v-if="store.batchUploading" compact :label="store.batchPct >= 100 ? '上传完成，正在创建批量任务…' : `批量上传中 ${store.batchPct}%`" />
+            <template v-else><svg aria-hidden="true" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13V3m-3 3 3-3 3 3M4 12v4a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1v-4"/></svg>选择文件</template>
+          </button>
+          <div class="file-formats" aria-label="支持的文件格式"><span>PDF</span><span>Word</span><span>JPG / PNG</span></div>
+          <span class="drop-hint">支持批量上传 · 图片可多张拍照 · 单个文件不超过 {{ MAX_MB }} MB</span>
+          <span v-if="error" class="drop-err" role="alert">{{ error }}</span>
+          <span v-else-if="notice" class="drop-ok" role="status">{{ notice }}</span>
         </div>
-        <JobListPanel
-          :jobs="jobList" :total="store.jobsTotal" :active="store.jobsActive" :busy="busy" :loading="store.jobsLoading"
-          @open="openJob" @retry="store.retryJob" @cancel="store.cancelJob"
-        />
+        <input
+          ref="fileInput" type="file" :accept="ACCEPT" multiple hidden
+          @change="onFiles(($event.target as HTMLInputElement).files); ($event.target as HTMLInputElement).value = ''"
+        >
+        <div class="card options-panel">
+          <div class="options-head"><h2 class="card-title">解析选项</h2><span>按需调整</span></div>
+          <ToggleSwitch v-for="[k, l, d] in UP_OPT_LABELS" :key="k" v-model="options[k]" :label="l" :description="d" />
+        </div>
       </div>
+      <JobListPanel
+        :jobs="jobList" :total="store.jobsTotal" :active="store.jobsActive" :busy="busy" :loading="store.jobsLoading"
+        :page="store.jobsPage" :page-size="store.jobsPageSize" :filter="store.jobsFilter" :error="store.jobsError"
+        @open="openJob" @retry="store.retryJob" @cancel="store.cancelJob"
+        @page="store.setJobsPage" @filter="store.setJobsFilter" @reload="store.refreshJobs"
+      />
     </div>
 
     <!-- 2 上传 / 解析中 -->
@@ -369,41 +381,59 @@ async function forceCommit() {
 </template>
 
 <style scoped>
-.upload { width: 100%; padding-top: 24px; padding-bottom: 56px; display: flex; flex-direction: column; gap: 18px; }
-.top { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px; }
-.intro { display: flex; flex-direction: column; gap: 6px; }
-.intro h1 { margin: 0; font-size: 24px; font-weight: 700; }
-.intro span { font-size: 14px; color: var(--c-text-3); }
-.tools { margin-left: auto; display: flex; gap: 14px; font-size: 13px; }
+.upload { width: 100%; padding-top: 32px; padding-bottom: 56px; display: flex; flex-direction: column; gap: 24px; }
+.top { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; }
+.intro { display: flex; flex-direction: column; gap: 8px; }
+.intro h1 { margin: 0; font-size: 28px; font-weight: 700; letter-spacing: -.7px; }
+.intro span { font-size: 13px; color: var(--c-text-3); line-height: 1.7; }
+.tools { margin-left: auto; display: flex; gap: 8px; font-size: 12px; }
+.tools a { padding: 8px 12px; border: 1px solid var(--c-border); border-radius: 8px; background: var(--c-surface); }
 .tools a { color: var(--c-text-2); }
-.tools a:hover { color: var(--c-primary); }
-.steps { display: flex; gap: 6px; font-size: 13px; }
-.step { padding: 5px 12px; border-radius: 14px; background: var(--c-divider); color: var(--c-text-3); }
-.step.past { background: var(--c-primary-soft); color: var(--c-primary-dark); }
-.step.cur { background: var(--c-primary); color: #fff; }
+.tools a:hover { color: var(--c-primary); border-color: var(--c-primary-line); text-decoration: none; }
+.steps { display: flex; list-style: none; margin: 0; padding: 16px 24px; border: 1px solid var(--c-border); border-radius: 12px; background: var(--c-surface); }
+.step { flex: 1; display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--c-text-3); }
+.step:not(:last-child)::after { content: ''; flex: 1; height: 1px; background: var(--c-divider); margin: 0 24px 0 14px; }
+.step-number { width: 28px; height: 28px; display: grid; place-items: center; flex-shrink: 0; border-radius: 50%; background: var(--c-surface-2); border: 1px solid var(--c-border); font-size: 12px; font-weight: 600; }
+.step.past { color: var(--c-primary-dark); }
+.step.past .step-number { background: var(--c-primary-soft); border-color: var(--c-primary-line); }
+.step.cur { color: var(--c-primary); font-weight: 600; }
+.step.cur .step-number { background: var(--c-primary); border-color: var(--c-primary); color: #fff; }
 
 .row { display: flex; flex-wrap: wrap; gap: 18px; align-items: flex-start; }
 .muted-2 { color: var(--c-text-3); }
 .panel { padding: 18px; display: flex; flex-direction: column; gap: 12px; }
 
 /* 上传区 */
+.upload-workspace { display: flex; flex-direction: column; gap: 24px; min-width: 0; }
+.upload-grid { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 20px; }
 .drop {
-  flex: 999 1 520px; min-height: 340px; background: #fff; border: 2px dashed var(--c-primary-line); border-radius: 14px;
-  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; cursor: pointer;
-  padding: 32px; text-align: center; transition: background .15s, border-color .15s;
+  min-width: 0; min-height: 306px; background: var(--c-surface); border: 1.5px dashed var(--c-primary-line); border-radius: 14px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; cursor: pointer;
+  padding: 24px; text-align: center; transition: background .18s, border-color .18s;
 }
 .drop:hover, .drop.dragging { background: #FDF6F0; border-color: var(--c-primary); }
+.drop.is-uploading { cursor: progress; }
 .drop-icon {
-  width: 56px; height: 56px; border-radius: 14px; background: var(--c-primary-soft); color: var(--c-primary);
-  display: flex; align-items: center; justify-content: center; font-size: 28px;
+  width: 52px; height: 52px; border-radius: 16px; background: var(--c-primary-soft); color: var(--c-primary);
+  display: grid; place-items: center; margin-bottom: 2px;
 }
-.drop-title { font-size: 17px; font-weight: 600; }
+.drop-icon svg { width: 32px; height: 32px; }
+.drop-title { margin: 0; font-size: 20px; font-weight: 600; letter-spacing: -.3px; }
 .drop-desc { font-size: 13px; color: var(--c-text-3); line-height: 1.7; }
-.pick-btn { margin-top: 6px; height: 40px; padding: 0 24px; font-size: 14px; }
+.pick-btn { display: inline-flex; justify-content: center; align-items: center; gap: 8px; margin: 4px 0 2px; min-height: 42px; height: auto; padding: 10px 24px; font-size: 14px; box-shadow: 0 3px 8px #B8561F18; }
+.pick-btn svg { width: 18px; height: 18px; }
+.pick-btn:focus-visible, .tools a:focus-visible { outline: 3px solid var(--c-primary-line); outline-offset: 3px; }
+.file-formats { display: flex; gap: 6px; margin-top: 2px; }
+.file-formats span { padding: 3px 8px; border: 1px solid var(--c-divider); border-radius: 5px; font-size: 10px; font-weight: 600; color: var(--c-text-3); background: var(--c-surface-2); }
+.drop-hint { font-size: 11px; line-height: 1.7; color: var(--c-text-3); }
 .drop-err { font-size: 13px; color: #A0301F; }
 .drop-ok { font-size: 13px; color: #3F7340; }
 .pick-btn:disabled { opacity: .7; cursor: progress; }
-.up-side { flex: 1 0 300px; display: flex; flex-direction: column; gap: 14px; }
+.options-panel { padding: 20px 24px; display: flex; flex-direction: column; justify-content: space-between; }
+.options-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+.options-head > span { font-size: 11px; color: var(--c-text-3); }
+.options-panel :deep(.row) { padding: 10px 0; border-top: 1px solid var(--c-divider); }
+.options-panel :deep(.label) { font-weight: 500; }
 
 /* 核对 · 左侧 */
 .review-side { flex: 1 0 280px; max-width: 320px; display: flex; flex-direction: column; gap: 14px; }
@@ -463,9 +493,24 @@ async function forceCommit() {
 .ab-btn.primary { border: none; background: var(--c-primary); color: #fff; font-weight: 600; padding: 0 16px; }
 
 @media (max-width: 800px) {
+  .upload-grid { grid-template-columns: minmax(0, 1fr) 300px; gap: 16px; }
+  .options-panel { padding: 18px; }
   .sticky-side { position: static; }
   .review-side.sticky-side { max-height: none; overflow: visible; }
   .review-side { max-width: none; }
   .steps { margin-left: 0; }
+}
+@media (max-width: 640px) {
+  .upload { padding: 24px 16px 36px; gap: 18px; }
+  .intro h1 { font-size: 25px; }
+  .tools { margin-left: 0; }
+  .steps { padding: 14px 12px; }
+  .step { gap: 6px; font-size: 12px; }
+  .step-number { width: 24px; height: 24px; font-size: 11px; }
+  .step:not(:last-child)::after { margin: 0 8px; }
+  .upload-grid { grid-template-columns: minmax(0, 1fr); }
+  .drop { min-height: 286px; padding: 22px 16px; }
+  .upload-workspace { gap: 18px; }
+  .options-panel { padding: 18px 20px; }
 }
 </style>
