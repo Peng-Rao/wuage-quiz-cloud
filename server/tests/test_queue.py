@@ -96,6 +96,32 @@ async def test_failed_task_is_acknowledged(clients):
     assert q.put("parse", "bad") is True
 
 
+async def test_read_timeout_is_retried_quietly(clients, caplog):
+    # 宿主机睡眠唤醒后，阻塞中的读取会超时：只记警告（不带堆栈），之后照常取任务
+    import redis.exceptions
+    q, factory = clients
+    r = factory()
+    real = r.xautoclaim
+    calls = 0
+
+    async def flaky(*args, **kwargs):  # noqa: ANN002, ANN003, ANN202
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise redis.exceptions.TimeoutError("Timeout reading from redis:6379")
+        return await real(*args, **kwargs)
+
+    r.xautoclaim = flaky
+    done: list = []
+    c = w.RedisConsumer(q, r, 1, name="w", task_runner=recorder(done))
+    await c.start()
+    q.put("parse", "j1")
+    await until(lambda: done == [("parse", "j1")])
+    await c.stop()
+    timeouts = [rec for rec in caplog.records if "超时或连接中断" in rec.getMessage()]
+    assert len(timeouts) == 1 and timeouts[0].levelname == "WARNING" and timeouts[0].exc_info is None
+
+
 async def test_task_of_lost_worker_is_reclaimed(clients, monkeypatch):
     q, factory = clients
     monkeypatch.setattr(w, "RECLAIM_IDLE_MS", 100)
