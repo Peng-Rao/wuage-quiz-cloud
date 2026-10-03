@@ -26,7 +26,7 @@ const size = ref<(typeof SIZES)[number]>('A4')
 const TITLE = '2026—2027学年高一上学期期中考试'
 const subjectTitle = computed(() => `${[...subject.value].join(' ')} 试 卷`)
 
-/** 大题：按试题篮中的大题顺序与题序连续编号 */
+/** 大题：按试题篮中的大题顺序与题序连续编号；同一篇阅读材料下相邻的题，材料只在第一题前印一次 */
 const sections = computed(() => {
   let no = 0
   return basket.sections.map((s, i) => {
@@ -36,7 +36,12 @@ const sections = computed(() => {
       : s.each !== null
         ? `${CN_NUM[i]}、${s.type}：本题共 ${n} 小题，每小题 ${s.each} 分，共 ${s.score} 分。`
         : `${CN_NUM[i]}、${s.type}：本题共 ${n} 小题，共 ${s.score} 分。`
-    return { ...s, title: `${CN_NUM[i]}、${s.type}`, heading, items: s.items.map((x) => ({ ...x, no: ++no })) }
+    return {
+      ...s, title: `${CN_NUM[i]}、${s.type}`, heading,
+      items: s.items.map((x, j) => ({
+        ...x, no: ++no, material: x.q.material && x.q.material !== s.items[j - 1]?.q.material ? x.q.material : null,
+      })),
+    }
   })
 })
 
@@ -68,6 +73,7 @@ async function downloadWord() {
         heading: s.heading,
         items: s.items.map((it) => ({
           no: it.no, scoreMark: opts.score && s.each === null ? `（${it.score} 分）` : '', stem: it.q.stem,
+          material: it.material,
           options: it.q.options, images: it.q.images, answer: it.q.answer, analysis: it.q.analysis,
         })),
       })),
@@ -95,6 +101,8 @@ function genCard() {
 
 /** 结构行摘要：独立公式转行内、压成一行，交给 MathText 渲染（行高受限，放不下独立公式） */
 const brief = (stem: string) => stem.replace(/\$\$([\s\S]+?)\$\$/g, (_, tex: string) => `$${tex}$`).replace(/\s+/g, ' ').trim()
+/** 结构行文字：完形填空等题题干为空，用选项代替 */
+const rowText = (q: { stem: string; options: string[] }) => q.stem.trim() || q.options.join(' / ')
 const num = (e: Event) => (e.target as HTMLInputElement).valueAsNumber
 
 /** 同一大题内拖动排序 */
@@ -155,7 +163,7 @@ function focusRow(id: string) {
             >
               <span class="grip" aria-hidden="true">⋮⋮</span>
               <span class="row-no">{{ it.no }}</span>
-              <span class="row-stem" :title="plainText(it.q.stem)"><MathText :text="brief(it.q.stem)" :subject="null" /></span>
+              <span class="row-stem" :title="plainText(rowText(it.q))"><MathText :text="brief(rowText(it.q))" :subject="null" /></span>
               <input
                 class="row-score" type="number" min="0" max="200" step="0.5" :value="it.score"
                 :aria-label="`第 ${it.no} 题分值`" @change="basket.setScore(it.q.id, num($event))"
@@ -204,6 +212,7 @@ function focusRow(id: string) {
           <div v-for="s in sections" :key="s.type" class="part">
             <div class="part-head">{{ s.heading }}</div>
             <div v-for="it in s.items" :key="it.q.id" class="item" @click="focusRow(it.q.id)">
+              <div v-if="it.material" class="material"><MathText :text="it.material" block /></div>
               <div class="stem">
                 {{ it.no }}{{ noSep(layout) }}<template v-if="opts.score && s.each === null">（{{ it.score }} 分）</template><MathText :text="it.q.stem" />
               </div>
@@ -341,6 +350,7 @@ function focusRow(id: string) {
 .item { display: flex; flex-direction: column; gap: 6px; font-size: 15px; line-height: 1.9; border-radius: 4px; cursor: pointer; }
 .item:hover { background: #FBFAF6; }
 .stem { text-wrap: pretty; }
+.material { margin-bottom: 4px; }
 .images { display: flex; flex-wrap: wrap; gap: 10px; padding-left: 1.5em; }
 .images img { max-width: min(100%, 320px); max-height: 220px; object-fit: contain; }
 .options { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 0 20px; padding-left: 1.5em; }

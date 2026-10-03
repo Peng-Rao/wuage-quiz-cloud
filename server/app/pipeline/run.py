@@ -205,12 +205,14 @@ async def run_job(job_id: str) -> None:
     coefs = difficulty.estimate(seg.questions)
     with SessionLocal() as s:
         for i, (q, coef) in enumerate(zip(seg.questions, coefs), 1):
-            regions = _regions(q.unit_ids, blocks_by_id)
+            # 阅读材料的配图排在题目配图之前；原图区域先题目后材料（页码取题目所在页）
+            regions = _regions(q.unit_ids, blocks_by_id) + _regions(q.material_unit_ids, blocks_by_id)
             images = [f"jobs/{job_id}/blocks/{bid}.{blocks_by_id[bid].image_ext}"
-                      for bid in q.unit_ids if blocks_by_id[bid].image]
+                      for bid in q.material_unit_ids + q.unit_ids if blocks_by_id[bid].image]
             s.add(DraftQuestion(
                 id="q" + uuid.uuid4().hex[:20], job_id=job_id, no=i, type=q.type, score=q.score,
-                page=regions[0]["page"] if regions else 1, stem=q.stem, options=q.options, answer=q.answer,
+                page=regions[0]["page"] if regions else 1, stem=q.stem, material=q.material, options=q.options,
+                answer=q.answer,
                 answer_source="paper" if q.answer else None,
                 analysis=q.analysis, knowledge_points=[], coef=coef, difficulty_source="baseline", confidence=q.confidence,
                 block_ids=q.unit_ids, regions=regions, images=images, duplicate_of=None, status="draft",

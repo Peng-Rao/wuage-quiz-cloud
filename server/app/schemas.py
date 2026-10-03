@@ -372,6 +372,8 @@ class DraftQuestionOut(Model):
     score: float
     page: int
     stem: str
+    # 阅读材料：英语阅读 / 完形填空原文、语文选文等，同一篇材料下的各题共用
+    material: str | None = None
     options: list[str]
     answer: str | None
     analysis: str | None
@@ -395,7 +397,9 @@ class DraftQuestionOut(Model):
 class DraftQuestionPatch(Model):
     type: QuestionType | None = None
     score: float | None = Field(default=None, ge=0, le=200)
-    stem: str | None = Field(default=None, min_length=1)
+    # 可以为空（完形填空等只有材料和选项的题），但题干与材料不能都为空
+    stem: str | None = None
+    material: str | None = None
     options: list[str] | None = None
     answer: str | None = None
     analysis: str | None = None
@@ -516,6 +520,7 @@ class BankQuestionOut(Model):
     type: QuestionType
     score: float
     stem: str
+    material: str | None = None
     options: list[str]
     answer: str | None
     analysis: str | None

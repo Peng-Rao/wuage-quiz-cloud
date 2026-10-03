@@ -124,6 +124,19 @@ def test_edit_merge_split_commit(client, parsed):
     assert recent[0]["createdAt"].endswith(("Z", "+00:00"))
 
 
+def test_material_edit_and_commit(client, parsed):
+    """阅读材料可编辑；完形填空等题题干可以为空，但题干与材料不能都为空；入库后保留材料。"""
+    job_id = parsed["id"]
+    q = client.get(f"/api/parse-jobs/{job_id}/questions").json()[0]
+    url = f"/api/draft-questions/{q['id']}"
+    r = client.patch(url, json={"material": "Read the passage and answer.", "stem": ""})
+    assert r.status_code == 200 and r.json()["material"] == "Read the passage and answer." and r.json()["stem"] == ""
+    assert client.patch(url, json={"material": ""}).status_code == 422
+    assert client.post(f"/api/parse-jobs/{job_id}/commit", json={"questionIds": [q["id"]]}).json()["savedCount"] == 1
+    bank = client.get("/api/bank/questions", params={"paperId": job_id}).json()["items"]
+    assert any(b["material"] == "Read the passage and answer." for b in bank)
+
+
 def test_upload_validation(client):
     r = client.post("/api/uploads", json={"fileName": "a.exe", "fileSize": 10})
     assert r.status_code == 400 and "仅支持" in r.json()["message"]

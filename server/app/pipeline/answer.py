@@ -37,7 +37,8 @@ SYSTEM = """你是经验丰富的中国中小学{subject}教师，请为下面�
 
 
 def _question_payload(q: DraftQuestion, with_images: int = 0) -> str:
-    lines = [f"题型：{q.type}", f"题干：{q.stem}"]
+    # 阅读理解、完形填空等须结合材料作答
+    lines = ([f"阅读材料：\n{q.material}"] if q.material else []) + [f"题型：{q.type}", f"题干：{q.stem}"]
     if q.options:
         lines.append("选项：")
         lines += [f"{LETTERS[i]}．{o}" for i, o in enumerate(q.options)]

@@ -87,7 +87,8 @@ def _payload(qs: list[DraftQuestion]) -> str:
     for q in qs:
         opts = "；".join(f"{'ABCDEFGH'[i]}．{o}" for i, o in enumerate(q.options))
         head = f"第 {q.no} 题（{q.type}，{q.score:g} 分{'，含配图' if q.images else ''}）"
-        rows.append(f"{head}：{q.stem[:400]}" + (f"\n选项：{opts[:200]}" if opts else ""))
+        material = f"（阅读材料：{q.material[:300]}…）" if q.material else ""
+        rows.append(f"{head}：{material}{q.stem[:400]}" + (f"\n选项：{opts[:200]}" if opts else ""))
     return "\n\n".join(rows)
 
 

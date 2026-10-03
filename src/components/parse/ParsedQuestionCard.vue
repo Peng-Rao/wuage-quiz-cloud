@@ -3,6 +3,7 @@ import { computed, ref, watch } from 'vue'
 import type { DraftQuestion } from '@/api/parse'
 import { coefToDiff, type Difficulty } from '@/data/mock'
 import MathText from '@/components/MathText.vue'
+import MaterialText from '@/components/MaterialText.vue'
 import { optionCols, optionLabel, provideSubject } from '@/utils/subject'
 import { useAppStore } from '@/stores/app'
 
@@ -63,7 +64,9 @@ watch(() => props.q.answerSource, (src, prev) => {
           <span v-if="q.status === 'saved'" class="saved-tag">已入库</span>
         </div>
         <div v-if="q.source" class="src" :title="q.source.fileName">来源：{{ q.source.label }}</div>
-        <div class="pq-stem serif" :class="`lay-${layout}`"><MathText :text="q.stem" /></div>
+        <!-- 同一篇材料下的各题依次排列，核对时先收起，避免重复占位 -->
+        <MaterialText v-if="q.material" :text="q.material" initial="collapsed" />
+        <div v-if="q.stem" class="pq-stem serif" :class="`lay-${layout}`"><MathText :text="q.stem" /></div>
         <div v-if="q.images.length" class="figs">
           <img v-for="src in q.images" :key="src" :src="src" alt="题目配图" loading="lazy">
         </div>

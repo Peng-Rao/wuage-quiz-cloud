@@ -263,7 +263,8 @@ def bank_out(b: BankQuestion) -> BankQuestionOut:
     store = get_store()
     return BankQuestionOut(
         owner_id=b.owner_id, reviewed_by=b.reviewed_by, reviewed_at=b.reviewed_at,
-        id=b.id, type=b.type, score=b.score, stem=b.stem, options=b.options or [], answer=b.answer, analysis=b.analysis,
+        id=b.id, type=b.type, score=b.score, stem=b.stem, material=b.material, options=b.options or [],
+        answer=b.answer, analysis=b.analysis,
         answer_source=b.answer_source, knowledge_points=b.knowledge_points or [], coef=b.coef,
         images=[store.public_url(k) for k in b.images or []],
         source=question_source(b.meta, b.source_file_name, b.source_no, b.source_page),
@@ -490,7 +491,7 @@ def commit_questions(s: Session, job: ParseJob, qs: list[DraftQuestion], owner_i
     for q in qs:
         b = existing.get(q.id) or BankQuestion(id="k" + uuid.uuid4().hex[:20], school_id=job.school_id,
                                                source_job_id=job.id, source_draft_id=q.id)
-        b.type, b.score, b.stem, b.options = q.type, q.score, q.stem, q.options
+        b.type, b.score, b.stem, b.material, b.options = q.type, q.score, q.stem, q.material, q.options
         b.answer, b.analysis, b.knowledge_points, b.coef = q.answer, q.analysis, q.knowledge_points, q.coef
         # Recommitting updates invalidates the previous review/assignment.
         b.owner_id = b.owner_id or owner_id
@@ -511,7 +512,8 @@ def review_reasons(q: DraftQuestion, min_confidence: float, require_answer: bool
     reasons = []
     if q.confidence < min_confidence:
         reasons.append("置信度低")
-    if not (q.stem or "").strip():
+    # 完形填空等题只有材料和选项，题干为空
+    if not (q.stem or "").strip() and not (q.material or "").strip():
         reasons.append("题干为空")
     texts = [q.stem or "", q.answer or "", q.analysis or ""] + [str(o) for o in (q.options or [])]
     if any("[公式]" in x for x in texts):

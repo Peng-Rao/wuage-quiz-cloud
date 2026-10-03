@@ -7,6 +7,7 @@ import { plainText } from '@/utils/math'
 import { noSep, optionCols, optionLabel, provideSubject } from '@/utils/subject'
 import { useAppStore } from '@/stores/app'
 import MathText from '@/components/MathText.vue'
+import MaterialText from '@/components/MaterialText.vue'
 
 /** 选题结果中的一道题：来源简写、题型 | 难度 | 知识点、题干，底部为来源与操作 */
 const props = defineProps<{
@@ -44,6 +45,7 @@ const paperTitle = computed(() => props.q.source?.title || props.q.source?.fileN
       </span>
     </div>
     <div class="qc-body serif" :class="`lay-${layout}`">
+      <MaterialText v-if="q.material" :text="q.material" />
       <div class="stem" :class="{ folded: foldable && !unfolded }"><span class="no">{{ no }}{{ noSep(layout) }}</span><MathText :text="q.stem" /></div>
       <button v-if="foldable" class="fold" @click="unfolded = !unfolded">{{ unfolded ? '收起材料 ▴' : '展开全文 ▾' }}</button>
       <div v-if="q.images.length" class="images">

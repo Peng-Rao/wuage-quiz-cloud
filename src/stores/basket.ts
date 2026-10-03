@@ -12,6 +12,8 @@ export interface BasketQuestion {
   id: string
   type: QuestionType
   stem: string
+  /** 阅读材料；组卷时同一篇材料下相邻的题只印一次 */
+  material: string | null
   /** 选项，不含「A．」前缀 */
   options: string[]
   answer: string | null
@@ -42,14 +44,14 @@ export interface BasketSection {
 
 export function fromBank(q: BankQuestion): BasketQuestion {
   return {
-    id: q.id, type: q.type, stem: q.stem, options: q.options, answer: q.answer, analysis: q.analysis, coef: q.coef,
+    id: q.id, type: q.type, stem: q.stem, material: q.material ?? null, options: q.options, answer: q.answer, analysis: q.analysis, coef: q.coef,
     knowledge: q.knowledgePoints.map((k) => k.name), images: q.images, source: q.source?.label ?? '', score: q.score,
   }
 }
 
 export function fromDraft(q: DraftQuestion): BasketQuestion {
   return {
-    id: q.id, type: q.type, stem: q.stem, options: q.options, answer: q.answer, analysis: q.analysis, coef: q.coef,
+    id: q.id, type: q.type, stem: q.stem, material: q.material ?? null, options: q.options, answer: q.answer, analysis: q.analysis, coef: q.coef,
     knowledge: q.knowledgePoints.map((k) => k.name), images: q.images, source: q.source?.label ?? '', score: q.score,
   }
 }

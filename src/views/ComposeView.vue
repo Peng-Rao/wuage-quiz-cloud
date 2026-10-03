@@ -4,6 +4,7 @@ import { storeToRefs } from 'pinia'
 import { useRouter } from 'vue-router'
 import { bankApi, type ComposeMessage, type ComposeResult } from '@/api/bank'
 import MathText from '@/components/MathText.vue'
+import MaterialText from '@/components/MaterialText.vue'
 import LoadingState from '@/components/LoadingState.vue'
 import { CN_NUM, coefToDiff } from '@/data/mock'
 import { useAppStore } from '@/stores/app'
@@ -187,6 +188,7 @@ function toBasket() {
         <section v-for="s in sections" :key="s.type" class="sec">
           <h2>{{ s.heading }}</h2>
           <article v-for="it in s.items" :key="it.question.id" class="q">
+            <MaterialText v-if="it.question.material" :text="it.question.material" initial="collapsed" />
             <div class="q-stem serif" :class="`lay-${layout}`">
               <span class="no">{{ it.no }}{{ noSep(layout) }}</span><span class="score">（{{ it.score }} 分）</span><MathText :text="it.question.stem" />
             </div>

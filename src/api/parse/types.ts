@@ -400,8 +400,10 @@ export interface DraftQuestion {
   score: number
   /** 起始页 */
   page: number
-  /** 题干；行内公式用 $...$ 包裹 */
+  /** 题干；行内公式用 $...$ 包裹。完形填空等题只有材料和选项时为空 */
   stem: string
+  /** 阅读材料：英语阅读 / 完形填空原文、语文选文等，同一篇材料下的各题相同 */
+  material?: string | null
   /** 选项，不含「A．」前缀 */
   options: string[]
   answer: string | null
@@ -431,7 +433,7 @@ export interface DraftQuestion {
 
 /** PATCH 可修改的字段 */
 export type DraftQuestionPatch = Partial<
-  Pick<DraftQuestion, 'type' | 'score' | 'stem' | 'options' | 'answer' | 'analysis' | 'knowledgePoints' | 'coef'>
+  Pick<DraftQuestion, 'type' | 'score' | 'stem' | 'material' | 'options' | 'answer' | 'analysis' | 'knowledgePoints' | 'coef'>
 >
 
 export interface SourceImage {

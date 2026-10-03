@@ -121,6 +121,8 @@ class DraftQuestion(Base):
     score: Mapped[float] = mapped_column(Float)
     page: Mapped[int] = mapped_column(Integer)
     stem: Mapped[str] = mapped_column(Text)
+    # 阅读材料（英语阅读 / 完形填空原文、语文选文等），同一篇材料下的各题相同
+    material: Mapped[str | None] = mapped_column(Text, nullable=True)
     options: Mapped[list[Any]] = mapped_column(JSON, default=list)
     answer: Mapped[str | None] = mapped_column(Text, nullable=True)
     analysis: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -211,6 +213,7 @@ class BankQuestion(Base):
     type: Mapped[str] = mapped_column(String(8))
     score: Mapped[float] = mapped_column(Float)
     stem: Mapped[str] = mapped_column(Text)
+    material: Mapped[str | None] = mapped_column(Text, nullable=True)
     options: Mapped[list[Any]] = mapped_column(JSON, default=list)
     answer: Mapped[str | None] = mapped_column(Text, nullable=True)
     analysis: Mapped[str | None] = mapped_column(Text, nullable=True)
