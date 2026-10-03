@@ -1,6 +1,8 @@
 import JSZip from 'jszip'
 import { latexToOmml } from './omml'
 import { splitMath } from './math'
+import { parseRich, type Inline, type LineRole } from './richtext'
+import { noSep, optionLabel, type TextLayout } from './subject'
 
 /**
  * 生成试卷 .docx：公式为 Word 原生公式（可在 Word 中直接编辑），题目配图嵌入文档。
@@ -32,10 +34,11 @@ export interface DocxPaper {
   size: 'A4' | 'A3 双栏' | 'B4'
   /** 装订线：左侧留出装订边距 */
   binding: boolean
+  /** 学科排版：语文、英语按卷面结构分段（见 richtext.ts），其余学科题干为一段 */
+  layout?: TextLayout
 }
 
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!)
-const LETTERS = 'ABCDEFGH'
 
 // ---------- 页面 ----------
 
@@ -64,16 +67,21 @@ function sectPr(p: DocxPaper): string {
 
 // ---------- 段落与文字 ----------
 
-interface RunStyle { bold?: boolean; size?: number; color?: string; spacing?: number; font?: 'hei' }
+interface RunStyle { bold?: boolean; size?: number; color?: string; spacing?: number; font?: 'hei' | 'kai'; underline?: boolean }
 interface ParaStyle {
-  align?: 'center' | 'left'; before?: number; after?: number; indent?: number; keepNext?: boolean
+  align?: 'center' | 'left' | 'both'; before?: number; after?: number; indent?: number; keepNext?: boolean
   tabs?: number[]; border?: boolean
+  /** 首行缩进 / 悬挂缩进（twips） */
+  firstLine?: number; hanging?: number
 }
+
+const FONTS = { hei: '黑体', kai: '楷体' }
 
 function rPr(s: RunStyle = {}): string {
   const parts = [
-    s.font === 'hei' ? '<w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman" w:eastAsia="黑体"/>' : '',
+    s.font ? `<w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman" w:eastAsia="${FONTS[s.font]}"/>` : '',
     s.bold ? '<w:b/><w:bCs/>' : '',
+    s.underline ? '<w:u w:val="single"/>' : '',
     s.color ? `<w:color w:val="${s.color}"/>` : '',
     s.spacing ? `<w:spacing w:val="${s.spacing}"/>` : '',
     s.size ? `<w:sz w:val="${s.size * 2}"/><w:szCs w:val="${s.size * 2}"/>` : '',
@@ -102,8 +110,10 @@ function para(content: string, s: ParaStyle = {}): string {
     s.border ? '<w:pBdr><w:top w:val="single" w:sz="4" w:space="4" w:color="999999"/><w:left w:val="single" w:sz="4" w:space="4" w:color="999999"/><w:bottom w:val="single" w:sz="4" w:space="4" w:color="999999"/><w:right w:val="single" w:sz="4" w:space="4" w:color="999999"/></w:pBdr>' : '',
     s.tabs?.length ? `<w:tabs>${s.tabs.map((t) => `<w:tab w:val="left" w:pos="${t}"/>`).join('')}</w:tabs>` : '',
     s.before || s.after ? `<w:spacing w:before="${s.before ?? 0}" w:after="${s.after ?? 0}"/>` : '',
-    s.indent ? `<w:ind w:left="${s.indent}"/>` : '',
-    s.align ? `<w:jc w:val="${s.align === 'center' ? 'center' : 'left'}"/>` : '',
+    s.indent || s.firstLine || s.hanging
+      ? `<w:ind w:left="${s.indent ?? 0}"${s.firstLine ? ` w:firstLine="${s.firstLine}"` : ''}${s.hanging ? ` w:hanging="${s.hanging}"` : ''}/>`
+      : '',
+    s.align ? `<w:jc w:val="${s.align}"/>` : '',
   ].join('')
   return `<w:p>${pPr ? `<w:pPr>${pPr}</w:pPr>` : ''}${content}</w:p>`
 }
@@ -115,7 +125,7 @@ function optionWidth(o: string): number {
   return splitMath(o).reduce((a, s) => a + (s.math ? Math.ceil(s.text.length / 2) : [...s.text].length), 0) + 3
 }
 
-function optionParas(options: string[], width: number): string {
+function optionParas(options: string[], width: number, layout: TextLayout): string {
   const INDENT = 420
   const chars = (width - INDENT) / 210 // 五号字约 210 twips
   const max = Math.max(...options.map(optionWidth))
@@ -124,10 +134,54 @@ function optionParas(options: string[], width: number): string {
   const tabs = Array.from({ length: perLine - 1 }, (_, i) => INDENT + col * (i + 1))
   const out: string[] = []
   for (let i = 0; i < options.length; i += perLine) {
-    const row = options.slice(i, i + perLine).map((o, j) => (j ? '<w:r><w:tab/></w:r>' : '') + textRuns(`${LETTERS[i + j]}．`) + richRuns(o))
+    const row = options.slice(i, i + perLine).map((o, j) => (j ? '<w:r><w:tab/></w:r>' : '') + textRuns(optionLabel(layout, i + j)) + richRuns(o))
     out.push(para(row.join(''), { indent: INDENT, tabs }))
   }
   return out.join('')
+}
+
+// ---------- 语文、英语题干 ----------
+
+const CHAR = 210 // 五号字约 210 twips
+
+function inlineRuns(x: Inline, s: RunStyle): string {
+  switch (x.kind) {
+    case 'text': case 'ipa': return textRuns(x.text, s)
+    case 'math': return latexToOmml(x.tex, x.display) ?? textRuns(`$${x.tex}$`, s)
+    // 填空横线：带下划线的全角空格；完形填空空号写在横线中间
+    case 'blank': return x.label
+      ? textRuns(`\u2002${x.label}\u2002`, { ...s, underline: true })
+      : textRuns('\u3000'.repeat(Math.ceil(x.width)), { ...s, underline: true })
+  }
+}
+
+const LINE_STYLE: Record<LineRole, { para: ParaStyle; run?: RunStyle }> = {
+  para: { para: { firstLine: CHAR * 2 } },
+  plain: { para: {} },
+  sub: { para: { indent: CHAR * 2, hanging: CHAR * 2 } },
+  turn: { para: { indent: CHAR, hanging: CHAR } },
+  verse: { para: { align: 'center' }, run: { font: 'kai' } },
+  title: { para: { align: 'center', before: 60 }, run: { font: 'hei', bold: true } },
+  byline: { para: { align: 'center' }, run: { size: 9 } },
+  display: { para: { align: 'center' } },
+}
+
+/** 题干分段：首行是正文、小问等时接在题号后，否则题号单独一行 */
+function stemParas(prefix: string, stem: string, layout: TextLayout): string {
+  if (layout === 'plain') return para(textRuns(prefix) + richRuns(stem), { before: 60 })
+  const lines = parseRich(stem, layout)
+  const out: string[] = []
+  lines.forEach((l, i) => {
+    const st = LINE_STYLE[l.role]
+    const runs = l.inlines.map((x) => inlineRuns(x, st.run ?? {})).join('')
+    const lead = i === 0 && ['para', 'plain', 'sub', 'turn'].includes(l.role)
+    const align = layout === 'zh' && !st.para.align ? 'both' : st.para.align
+    if (i === 0 && !lead) out.push(para(textRuns(prefix), { before: 60 }))
+    out.push(lead
+      ? para(textRuns(prefix) + runs, { before: 60, align })
+      : para(runs, { ...st.para, align }))
+  })
+  return out.join('') || para(textRuns(prefix), { before: 60 })
 }
 
 // ---------- 图片 ----------
@@ -214,6 +268,7 @@ const SETTINGS = `${XML}<w:settings xmlns:w="http://schemas.openxmlformats.org/w
 
 export async function buildDocx(p: DocxPaper): Promise<Blob> {
   const width = textWidth(p)
+  const layout = p.layout ?? 'plain'
   const body: string[] = []
 
   // 卷头
@@ -236,10 +291,10 @@ export async function buildDocx(p: DocxPaper): Promise<Blob> {
   for (const s of p.sections) {
     body.push(para(textRuns(s.heading, { bold: true, font: 'hei' }), { before: 200, after: 80, keepNext: true }))
     for (const q of s.items) {
-      body.push(para(textRuns(`${q.no}．${q.scoreMark ?? ''}`) + richRuns(q.stem), { before: 60 }))
+      body.push(stemParas(`${q.no}${noSep(layout)}${q.scoreMark ?? ''}`, q.stem, layout))
       const imgs = q.images.map((u) => media.get(u)).filter((m): m is Media => !!m)
       if (imgs.length) body.push(para(imgs.map((m) => imageRun(m, drawingId++)).join(textRuns('　')), { indent: 420 }))
-      if (q.options.length) body.push(optionParas(q.options, width))
+      if (q.options.length) body.push(optionParas(q.options, width, layout))
       if (p.showAnswer) {
         const style = { size: 9, color: '1F4E79' }
         const ans = textRuns('【答案】', { ...style, bold: true }) + richRuns(q.answer || '略', style)

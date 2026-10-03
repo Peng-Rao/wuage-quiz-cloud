@@ -3,6 +3,8 @@ import { computed, ref, watch } from 'vue'
 import type { DraftQuestion } from '@/api/parse'
 import { coefToDiff, type Difficulty } from '@/data/mock'
 import MathText from '@/components/MathText.vue'
+import { optionCols, optionLabel, provideSubject } from '@/utils/subject'
+import { useAppStore } from '@/stores/app'
 
 const props = defineProps<{
   q: DraftQuestion
@@ -26,7 +28,9 @@ defineEmits<{
 }>()
 
 const D_CLASS: Record<Difficulty, string> = { 容易: 'easy', 适中: 'mid', 较难: 'hard' }
-const LETTERS = 'ABCDEFGH'
+const app = useAppStore()
+const layout = provideSubject(() => props.q.source?.subject || app.subject)
+const cols = computed(() => optionCols(props.q.options))
 
 const diff = computed(() => coefToDiff(props.q.coef))
 const filled = computed(() => Math.max(1, Math.round(props.q.coef * 5)))
@@ -59,12 +63,12 @@ watch(() => props.q.answerSource, (src, prev) => {
           <span v-if="q.status === 'saved'" class="saved-tag">已入库</span>
         </div>
         <div v-if="q.source" class="src" :title="q.source.fileName">来源：{{ q.source.label }}</div>
-        <div class="pq-stem serif"><MathText :text="q.stem" /></div>
+        <div class="pq-stem serif" :class="`lay-${layout}`"><MathText :text="q.stem" /></div>
         <div v-if="q.images.length" class="figs">
           <img v-for="src in q.images" :key="src" :src="src" alt="题目配图" loading="lazy">
         </div>
-        <div v-if="q.options.length" class="opts serif">
-          <span v-for="(o, i) in q.options" :key="i"><b>{{ LETTERS[i] }}．</b><MathText :text="o" /></span>
+        <div v-if="q.options.length" class="opts serif" :class="[`lay-${layout}`, layout !== 'plain' && ['opt-fixed', `cols-${cols}`]]">
+          <span v-for="(o, i) in q.options" :key="i"><b>{{ optionLabel(layout, i) }}</b><MathText :text="o" /></span>
         </div>
         <div v-if="showAnswer && hasAnswer" class="ans" :class="{ ai: q.answerSource === 'ai' }">
           <span v-if="q.answerSource === 'ai'" class="ai-tag">AI 生成 · 请核对</span>

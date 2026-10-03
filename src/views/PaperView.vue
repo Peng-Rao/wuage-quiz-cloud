@@ -9,9 +9,12 @@ import { useBasketStore } from '@/stores/basket'
 import MathText from '@/components/MathText.vue'
 import { plainText } from '@/utils/math'
 import ToggleSwitch from '@/components/ToggleSwitch.vue'
+import { noSep, optionCols, optionLabel, provideSubject } from '@/utils/subject'
 
 const basket = useBasketStore()
 const { subject } = storeToRefs(useAppStore())
+/** 试卷按当前学科排版：语文、英语的阅读材料、诗文、对话等按卷面习惯显示 */
+const layout = provideSubject(subject)
 
 const opts = reactive({ showAns: false, binding: true, score: true, card: false })
 const OPT_LABELS: [keyof typeof opts, string][] = [
@@ -19,7 +22,6 @@ const OPT_LABELS: [keyof typeof opts, string][] = [
 ]
 const SIZES = ['A4', 'A3 双栏', 'B4'] as const
 const size = ref<(typeof SIZES)[number]>('A4')
-const LETTERS = 'ABCDEFGH'
 
 const TITLE = '2026—2027学年高一上学期期中考试'
 const subjectTitle = computed(() => `${[...subject.value].join(' ')} 试 卷`)
@@ -70,6 +72,7 @@ async function downloadWord() {
         })),
       })),
       showAnswer: opts.showAns, answerCard: opts.card ? basket.count : 0, size: size.value, binding: opts.binding,
+      layout: layout.value,
     })
     const a = document.createElement('a')
     a.href = URL.createObjectURL(blob)
@@ -152,7 +155,7 @@ function focusRow(id: string) {
             >
               <span class="grip" aria-hidden="true">⋮⋮</span>
               <span class="row-no">{{ it.no }}</span>
-              <span class="row-stem" :title="plainText(it.q.stem)"><MathText :text="brief(it.q.stem)" /></span>
+              <span class="row-stem" :title="plainText(it.q.stem)"><MathText :text="brief(it.q.stem)" :subject="null" /></span>
               <input
                 class="row-score" type="number" min="0" max="200" step="0.5" :value="it.score"
                 :aria-label="`第 ${it.no} 题分值`" @change="basket.setScore(it.q.id, num($event))"
@@ -175,7 +178,7 @@ function focusRow(id: string) {
       </div>
     </aside>
 
-    <section class="sheet serif" :class="{ binding: opts.binding, a3: size === 'A3 双栏' }">
+    <section class="sheet serif" :class="[`lay-${layout}`, { binding: opts.binding, a3: size === 'A3 双栏' }]">
       <div v-if="!basket.count" class="sheet-empty no-print">
         <p>试题篮还是空的，先去挑选题目吧。</p>
         <div class="empty-links">
@@ -202,13 +205,13 @@ function focusRow(id: string) {
             <div class="part-head">{{ s.heading }}</div>
             <div v-for="it in s.items" :key="it.q.id" class="item" @click="focusRow(it.q.id)">
               <div class="stem">
-                {{ it.no }}．<template v-if="opts.score && s.each === null">（{{ it.score }} 分）</template><MathText :text="it.q.stem" />
+                {{ it.no }}{{ noSep(layout) }}<template v-if="opts.score && s.each === null">（{{ it.score }} 分）</template><MathText :text="it.q.stem" />
               </div>
               <div v-if="it.q.images.length" class="images">
                 <img v-for="src in it.q.images" :key="src" :src="src" alt="题目配图">
               </div>
-              <div v-if="it.q.options.length" class="options">
-                <span v-for="(o, i) in it.q.options" :key="i">{{ LETTERS[i] }}．<MathText :text="o" /></span>
+              <div v-if="it.q.options.length" class="options" :class="layout !== 'plain' && ['opt-fixed', `cols-${optionCols(it.q.options)}`]">
+                <span v-for="(o, i) in it.q.options" :key="i">{{ optionLabel(layout, i) }}<MathText :text="o" /></span>
               </div>
               <div v-if="opts.showAns" class="answer">
                 【答案】<MathText :text="it.q.answer || '略'" /><template v-if="it.q.analysis">　【解析】<MathText :text="it.q.analysis" /></template>
