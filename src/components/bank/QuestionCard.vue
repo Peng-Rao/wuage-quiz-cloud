@@ -1,8 +1,11 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { coefToDiff } from '@/data/mock'
 import type { BankQuestion } from '@/api/bank'
 import { dateLabel, shortSource } from '@/utils/source'
+import { plainText } from '@/utils/math'
+import { noSep, optionCols, optionLabel, provideSubject } from '@/utils/subject'
+import { useAppStore } from '@/stores/app'
 import MathText from '@/components/MathText.vue'
 
 /** 选题结果中的一道题：来源简写、题型 | 难度 | 知识点、题干，底部为来源与操作 */
@@ -18,7 +21,12 @@ const props = defineProps<{
 }>()
 defineEmits<{ 'toggle-answer': []; 'toggle-basket': []; similar: [] }>()
 
-const LETTERS = 'ABCDEFGH'
+const app = useAppStore()
+const layout = provideSubject(() => props.q.source?.subject || app.subject)
+const cols = computed(() => optionCols(props.q.options))
+/** 语文、英语的长篇阅读材料在列表中先折叠，展开后看全文 */
+const foldable = computed(() => layout.value !== 'plain' && plainText(props.q.stem).length > (layout.value === 'en' ? 700 : 360))
+const unfolded = ref(false)
 const diff = computed(() => coefToDiff(props.q.coef))
 const tag = computed(() => shortSource(props.q.source))
 const paperTitle = computed(() => props.q.source?.title || props.q.source?.fileName.replace(/\.[^.]+$/, '') || '')
@@ -35,13 +43,14 @@ const paperTitle = computed(() => props.q.source?.title || props.q.source?.fileN
         <span v-for="k in q.knowledgePoints" :key="k.id" :title="k.path ?? k.name">{{ k.name }}</span>
       </span>
     </div>
-    <div class="qc-body serif">
-      <div class="stem"><span class="no">{{ no }}．</span><MathText :text="q.stem" /></div>
+    <div class="qc-body serif" :class="`lay-${layout}`">
+      <div class="stem" :class="{ folded: foldable && !unfolded }"><span class="no">{{ no }}{{ noSep(layout) }}</span><MathText :text="q.stem" /></div>
+      <button v-if="foldable" class="fold" @click="unfolded = !unfolded">{{ unfolded ? '收起材料 ▴' : '展开全文 ▾' }}</button>
       <div v-if="q.images.length" class="images">
         <img v-for="src in q.images" :key="src" :src="src" alt="题目配图" loading="lazy">
       </div>
-      <div v-if="q.options.length" class="options">
-        <span v-for="(o, i) in q.options" :key="i"><b>{{ LETTERS[i] }}．</b><MathText :text="o" /></span>
+      <div v-if="q.options.length" class="options" :class="layout !== 'plain' && ['opt-fixed', `cols-${cols}`]">
+        <span v-for="(o, i) in q.options" :key="i"><b>{{ optionLabel(layout, i) }}</b><MathText :text="o" /></span>
       </div>
     </div>
     <div v-if="showAnswer" class="qc-answer">
@@ -90,6 +99,11 @@ const paperTitle = computed(() => props.q.source?.title || props.q.source?.fileN
 .images img { max-width: min(100%, 320px); max-height: 220px; object-fit: contain; }
 .options { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 2px 20px; padding-left: 1.4em; }
 .options b { font-weight: 400; }
+.lay-en { font-size: 16px; }
+.lay-en .no { font-family: inherit; }
+.stem.folded { max-height: 15em; overflow: hidden; -webkit-mask-image: linear-gradient(#000 70%, transparent); mask-image: linear-gradient(#000 70%, transparent); }
+.fold { align-self: center; margin-top: -6px; border: none; background: none; padding: 2px 10px; font-size: 13px; color: var(--c-primary); font-family: var(--font-sans); }
+.fold:hover { background: var(--c-primary-soft); border-radius: var(--r-sm); }
 .qc-answer {
   margin: 0 22px 14px; padding: 12px 16px; background: var(--c-paper); border-radius: var(--r-md);
   display: flex; flex-direction: column; gap: 6px; font-size: 14px; line-height: 1.8;

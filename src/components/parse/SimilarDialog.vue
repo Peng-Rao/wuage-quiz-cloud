@@ -3,11 +3,15 @@ import type { SimilarQuestion } from '@/api/parse'
 import ModalDialog from '@/components/ModalDialog.vue'
 import MathText from '@/components/MathText.vue'
 import LoadingState from '@/components/LoadingState.vue'
+import { useAppStore } from '@/stores/app'
+import { layoutOf, optionCols, optionLabel } from '@/utils/subject'
 
 defineProps<{ title: string; items: SimilarQuestion[] | null; error?: string }>()
 const open = defineModel<boolean>({ required: true })
 
-const LETTERS = 'ABCDEFGH'
+const app = useAppStore()
+/** 相似题可能来自不同试卷，逐题按出处学科排版 */
+const subj = (s: SimilarQuestion) => s.origin?.subject || app.subject
 const pct = (v: number) => Math.round(v * 100) + '%'
 </script>
 
@@ -27,11 +31,14 @@ const pct = (v: number) => Math.round(v * 100) + '%'
         <div v-if="s.origin?.label || s.fileName" class="from" :title="s.origin?.fileName || s.fileName || ''">
           来源：{{ s.origin?.label || s.fileName }}
         </div>
-        <div class="stem serif"><MathText :text="s.stem" /></div>
-        <div v-if="s.options.length" class="opts serif">
-          <span v-for="(o, i) in s.options" :key="i"><b>{{ LETTERS[i] }}．</b><MathText :text="o" /></span>
+        <div class="stem serif" :class="`lay-${layoutOf(subj(s))}`"><MathText :text="s.stem" :subject="subj(s)" /></div>
+        <div
+          v-if="s.options.length" class="opts serif"
+          :class="[`lay-${layoutOf(subj(s))}`, layoutOf(subj(s)) !== 'plain' && ['opt-fixed', `cols-${optionCols(s.options)}`]]"
+        >
+          <span v-for="(o, i) in s.options" :key="i"><b>{{ optionLabel(layoutOf(subj(s)), i) }}</b><MathText :text="o" :subject="subj(s)" /></span>
         </div>
-        <p v-if="s.answer" class="ans"><b>【答案】</b><MathText :text="s.answer" /></p>
+        <p v-if="s.answer" class="ans"><b>【答案】</b><MathText :text="s.answer" :subject="subj(s)" /></p>
         <div v-if="s.knowledgePoints.length" class="kps">
           <span v-for="k in s.knowledgePoints" :key="k.id">{{ k.name }}</span>
         </div>

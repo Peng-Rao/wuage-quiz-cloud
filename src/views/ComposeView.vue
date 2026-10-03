@@ -7,6 +7,7 @@ import MathText from '@/components/MathText.vue'
 import LoadingState from '@/components/LoadingState.vue'
 import { CN_NUM, coefToDiff } from '@/data/mock'
 import { useAppStore } from '@/stores/app'
+import { noSep, optionCols, optionLabel, provideSubject } from '@/utils/subject'
 import { fromBank, useBasketStore } from '@/stores/basket'
 
 /** AI 组卷（Demo）：老师用文字描述学生情况与要求，AI 整理成组卷蓝图，程序从题库选题并赋分；可多轮修改 */
@@ -19,7 +20,7 @@ const EXAMPLES = [
   '学生基础较好，准备期末考试，出一份偏难的综合卷',
   '只考选择题和填空题，重点练集合与不等式',
 ]
-const LETTERS = 'ABCDEFGH'
+const layout = provideSubject(subject)
 const DIFF_CLASS = { 容易: 'easy', 适中: 'mid', 较难: 'hard' } as const
 
 const messages = ref<ComposeMessage[]>([])
@@ -186,14 +187,17 @@ function toBasket() {
         <section v-for="s in sections" :key="s.type" class="sec">
           <h2>{{ s.heading }}</h2>
           <article v-for="it in s.items" :key="it.question.id" class="q">
-            <div class="q-stem serif">
-              <span class="no">{{ it.no }}．</span><span class="score">（{{ it.score }} 分）</span><MathText :text="it.question.stem" />
+            <div class="q-stem serif" :class="`lay-${layout}`">
+              <span class="no">{{ it.no }}{{ noSep(layout) }}</span><span class="score">（{{ it.score }} 分）</span><MathText :text="it.question.stem" />
             </div>
             <div v-if="it.question.images.length" class="images">
               <img v-for="src in it.question.images" :key="src" :src="src" alt="题目配图" loading="lazy">
             </div>
-            <div v-if="it.question.options.length" class="options serif">
-              <span v-for="(o, i) in it.question.options" :key="i"><b>{{ LETTERS[i] }}．</b><MathText :text="o" /></span>
+            <div
+              v-if="it.question.options.length" class="options serif"
+              :class="[`lay-${layout}`, layout !== 'plain' && ['opt-fixed', `cols-${optionCols(it.question.options)}`]]"
+            >
+              <span v-for="(o, i) in it.question.options" :key="i"><b>{{ optionLabel(layout, i) }}</b><MathText :text="o" /></span>
             </div>
             <div class="q-meta">
               <span :class="DIFF_CLASS[coefToDiff(it.question.coef)]">{{ coefToDiff(it.question.coef) }} {{ it.question.coef.toFixed(2) }}</span>

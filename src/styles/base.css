@@ -26,6 +26,12 @@
 
   --font-sans: "Noto Sans SC", system-ui, sans-serif;
   --font-serif: "Noto Serif SC", "Songti SC", serif;
+  /* 英语题：西文用 Times，夹带的中文回落到宋体 */
+  --font-en: "Times New Roman", Times, "Noto Serif", "Noto Serif SC", "Songti SC", serif;
+  /* 语文诗词 */
+  --font-kai: "Kaiti SC", STKaiti, KaiTi, "楷体", "Noto Serif SC", serif;
+  /* 英语音标 */
+  --font-ipa: "Lucida Sans Unicode", "Arial Unicode MS", "Segoe UI", "Noto Sans", sans-serif;
 
   --r-sm: 6px;
   --r-md: 8px;
@@ -110,3 +116,18 @@ button { cursor: pointer; }
 :root { --sticky-top: 80px; }
 @media (max-width: 1180px) { :root { --sticky-top: 124px; } }
 .sticky-side { position: sticky; top: var(--sticky-top); }
+
+/* 语文、英语题的选项：按最长选项每行排 4 / 2 / 1 个（utils/subject.ts optionCols），折行时悬挂缩进。
+   类名写两遍以盖过各组件 scoped 样式里的 grid-template-columns */
+.opt-fixed.opt-fixed { display: grid; }
+.opt-fixed.opt-fixed.cols-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.opt-fixed.opt-fixed.cols-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.opt-fixed.opt-fixed.cols-1 { grid-template-columns: minmax(0, 1fr); }
+.opt-fixed > span { padding-left: 1.6em; text-indent: -1.6em; }
+.opt-fixed > span > .math-text { text-indent: 0; }
+@media (max-width: 640px) {
+  .opt-fixed.opt-fixed.cols-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .opt-fixed.opt-fixed.cols-2 { grid-template-columns: minmax(0, 1fr); }
+}
+/* 英语题的题号、选项标号用西文字体 */
+.lay-en { font-family: var(--font-en); }
