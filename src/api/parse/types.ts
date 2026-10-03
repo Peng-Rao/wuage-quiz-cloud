@@ -345,6 +345,7 @@ export interface PaperMeta {
   region: string       // 地区
   schoolYear: string   // 学年
   textbook: string     // 教材版本
+  school: string       // 命题学校；联考等没有学校的为空
 }
 
 // ---------- 文档解析中间表示（IR） ----------
@@ -492,6 +493,8 @@ export interface ParseApi {
    */
   createJob(files: File[], options: ParseOptions, onUploadProgress?: (pct: number) => void): Promise<ParseJob>
   getJob(jobId: string): Promise<ParseJob>
+  /** 获取原始 PDF；仅管理员及有该学科权限的组长可读取 */
+  getPdf(jobId: string, signal?: AbortSignal): Promise<Blob>
   /** 订阅任务进度，返回取消订阅函数 */
   subscribe(jobId: string, onEvent: (job: ParseJobEvent) => void): () => void
   updateMeta(jobId: string, meta: PaperMeta): Promise<PaperMeta>

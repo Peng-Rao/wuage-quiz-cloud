@@ -23,6 +23,7 @@ const FIELDS: { key: keyof PaperMeta; label: string }[] = [
   { key: 'region', label: '地区' },
   { key: 'schoolYear', label: '学年' },
   { key: 'textbook', label: '教材版本' },
+  { key: 'school', label: '学校' },
 ]
 
 /** 有候选项的字段用下拉，其余自由输入 */

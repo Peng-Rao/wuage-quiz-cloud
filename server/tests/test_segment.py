@@ -5,7 +5,7 @@ import pytest
 
 from app.config import Settings
 from app.pipeline import llm
-from app.pipeline.classify import rule_classify
+from app.pipeline.classify import rule_classify, rule_school
 from app.pipeline.parsers.base import SourceFile
 from app.pipeline.parsers.lite import LiteParser
 from app.pipeline.segment import (
@@ -75,6 +75,24 @@ def test_rule_classify():
     assert meta.region == "北京 · 海淀"
     assert meta.textbook == "人教A版"
     assert rule_classify("2026 年广东省中考数学真题").paper_type == "中考真题"
+    assert meta.school == ""
+
+
+@pytest.mark.parametrize("title, school", [
+    ("2023-2024学年初三（上）厦门集美中学第二次月考英语", "厦门集美中学"),
+    ("厦门六中2022—2023学年高一年10月月考物理试卷", "厦门六中"),
+    ("2022-2023学年福建省厦门大学附属科技中学高一（上）月考物理试卷（10月份）", "厦门大学附属科技中学"),
+    ("厦门外国语学校2022-2023学年度第一学期期中考试", "厦门外国语学校"),
+    ("2023学年高一上学期厦门一中期中考试", "厦门一中"),
+    ("2024学年初中数学第一学期期中质量检测", ""),
+    ("厦门市2025年中考数学", ""),
+    ("2024年福建省厦门市思明区双十中学九年级上期中", "厦门双十中学"),
+    ("厦门市第一中学2023届高三", "厦门第一中学"),
+    ("厦门市湖里区实验中学2024年月考", "厦门湖里实验中学"),
+    ("思明区莲花中学期末考试", "莲花中学"),
+])
+def test_rule_school(title, school):
+    assert rule_school(title) == school
 
 
 # ---------- 大模型修正 ----------

@@ -42,6 +42,16 @@ _DISTRICT_RE = re.compile(r"(?:省|市)([一-龥]{2,3}?)(?:区|县|市)")
 
 
 _NOT_PLACE = r"[的在各本该我全某所城]"
+# 学校名以这些词结尾：「集美中学」「外国语学校」「厦大附中」「厦门六中」（数字+中，不含「中考」）
+_SCHOOL_END_RE = re.compile(r"中学|小学|学校|附中|[一二三四五六七八九十\d]{1,2}中(?![学考])")
+# 学校名前面常连着的学年、年级、学期，逐个去掉
+_SCHOOL_PREFIX_RE = re.compile(r"^(?:学年度?|年度?|届|第[一二]学期|[上下]学期|[一二三四五六七八九]年级|初[一二三]|高[一二三])")
+# 学校名中的省份、「市」和区县：「福建省厦门市思明区双十中学」→「厦门双十中学」
+_SCHOOL_PROVINCE_RE = re.compile(r"^[一-龥]{2,3}?省")
+_SCHOOL_CITY_RE = re.compile(r"^([一-龥]{2,3}?)市")
+_SCHOOL_DISTRICT_RE = re.compile(r"^([一-龥]{2,3}?)[区县]")
+# 去掉区县后剩下这样的通用名称时保留区县名，避免「湖里区实验中学」变成另一所学校「厦门实验中学」
+_GENERIC_SCHOOL_RE = re.compile(r"^(?:第|实验|[一二三四五六七八九十\d])")
 _TITLE_RE = re.compile(r"试卷|试题|考试|测试|测验|练习|月考|期中|期末|联考|模拟|检测|真题|押题")
 
 
@@ -51,6 +61,30 @@ def rule_title(text: str) -> str:
         if 6 <= len(line) <= 60 and _TITLE_RE.search(line) and not re.search(r"^试卷第|共\s*\d+\s*页|注意事项|本试卷", line):
             return line
     return ""
+
+
+def rule_school(text: str) -> str:
+    """从试卷名称中取命题学校，如「2023-2024学年初三（上）厦门集美中学第二次月考英语」→「厦门集美中学」；联考、统考等没有学校的返回空。"""
+    for run in re.findall(r"[一-龥]+", text):
+        if not (m := _SCHOOL_END_RE.search(run)):
+            continue
+        name = run[:m.end()]
+        while (p := _SCHOOL_PREFIX_RE.match(name)) and p.end() < len(name):
+            name = name[p.end():]
+        if len(name) >= 3 and name not in ("初中", "高中"):
+            return clean_school(name)
+    return ""
+
+
+def clean_school(name: str) -> str:
+    """统一学校名称：去掉省份，去掉城市后的「市」和区县，如「福建省厦门市思明区双十中学」→「厦门双十中学」。"""
+    name = _SCHOOL_PROVINCE_RE.sub("", name.strip())
+    city = ""
+    if m := _SCHOOL_CITY_RE.match(name):
+        city, name = m.group(1), name[m.end():]
+    if (m := _SCHOOL_DISTRICT_RE.match(name)) and len(rest := name[m.end():]) >= 3:
+        name = rest if not _GENERIC_SCHOOL_RE.match(rest) else m.group(1) + rest
+    return city + name
 
 
 def rule_classify(text: str, hint: str = "") -> PaperMeta:
@@ -85,16 +119,18 @@ def rule_classify(text: str, hint: str = "") -> PaperMeta:
         meta.region = region
     if m := _TEXTBOOK_RE.search(text):
         meta.textbook = m.group(1)
+    meta.school = rule_school(title) or rule_school(hint)
     return meta
 
 
 LLM_SYSTEM = f"""你是中国中小学试卷分类助手。根据试卷开头的文字判断试卷属性，只输出 JSON：
-{{"title":"","stage":"","subject":"","grade":"","paperType":"","region":"","schoolYear":"","textbook":""}}
+{{"title":"","stage":"","subject":"","grade":"","paperType":"","region":"","schoolYear":"","textbook":"","school":""}}
 - stage 只能是：{"、".join(STAGES)}
 - subject 必须是该学段的学科：{"; ".join(f"{k}：{'、'.join(v)}" for k, v in STAGES.items())}
 - grade 如：高一、初二、五年级；paperType 只能是：{"、".join(PAPER_TYPES)}
 - title 为试卷名称（卷首标题原文，去掉「绝密★启用前」等前缀）
 - region 如「北京 · 海淀」；schoolYear 如「2026—2027 上」；textbook 如「人教A版（2019）」
+- school 为命题学校名称，按卷首原文，去掉省份，如「厦门双十中学」「厦门六中」；联考、区统考等没有具体学校的留空
 - 输入开头可能附有上传时的文件名，可作为学段、学科、类型、地区、年份的参考；title 以试卷正文为准
 - 无法判断的字段留空字符串，不要猜测。"""
 
@@ -109,6 +145,7 @@ def _valid(meta: PaperMeta) -> PaperMeta:
         meta.grade = ""
     if meta.paper_type not in PAPER_TYPES:
         meta.paper_type = ""
+    meta.school = clean_school(meta.school)
     return meta
 
 

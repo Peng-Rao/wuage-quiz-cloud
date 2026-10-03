@@ -13,7 +13,7 @@ from app.services import current_school
 MATH_META = {"title": "题库测试高一期中数学卷", "stage": "高中", "subject": "数学", "grade": "高一", "paper_type": "期中考试",
              "region": "北京", "school_year": "2026—2027", "textbook": ""}
 CHEM_META = {"title": "题库测试初三化学月考卷", "stage": "初中", "subject": "化学", "grade": "初三", "paper_type": "月考",
-             "region": "厦门", "school_year": "2024—2025", "textbook": ""}
+             "region": "厦门", "school_year": "2024—2025", "textbook": "", "school": "厦门双十中学"}
 
 
 def _node(s, tree: KnowledgeTree, name: str) -> KnowledgeNode:
@@ -138,6 +138,11 @@ def test_paper_library(client, data):
     grades = {f["name"]: f["count"] for f in page["facets"]["grades"]}
     assert grades == {"高一": 1, "初三": 1}
     assert {f["name"] for f in page["facets"]["subjects"]} == {"化学"}
+
+    # 按学校筛选；名称中没有学校的记为「未分类」
+    page = client.get("/api/papers", params={"q": "题库测试", "school": "厦门双十中学"}).json()
+    assert [p["id"] for p in page["items"]] == [data["chem"]]
+    assert {f["name"]: f["count"] for f in page["facets"]["schools"]} == {"厦门双十中学": 1, "未分类": 1}
 
     detail = client.get(f"/api/papers/{data['math']}").json()
     assert [q["stem"][:2] for q in detail["questions"]] == ["集合", "求 ", "讨论"]
@@ -311,3 +316,31 @@ def test_chapter_filter_counts_and_more_filters(client):
     page = client.get("/api/papers", params={"q": "章节筛选测试", "category": "期中,期末"}).json()
     assert [p["id"] for p in page["items"]] == [pid]
     assert client.get("/api/papers", params={"q": "章节筛选测试", "category": "高考"}).json()["total"] == 0
+
+
+def test_admin_edits_bank_question(client, data):
+    with SessionLocal() as s:
+        pid = _paper(s, MATH_META, [{"type": "单选题", "score": 5, "stem": "编辑测试：旧题干", "coef": 0.4}])
+        b = s.scalars(select(BankQuestion).where(BankQuestion.source_job_id == pid)).one()
+        b.reviewed_at, b.reviewed_by, b.owner_id = b.created_at, "test-admin", "test-admin"
+        b.embedding, b.embedding_model, b.answer_source = [0.1, 0.2], "m", "ai"
+        s.commit()
+        qid, did = b.id, b.source_draft_id
+
+    r = client.patch(f"/api/bank/questions/{qid}", json={
+        "stem": "编辑测试：新题干", "options": ["1", "2"], "answer": "B", "coef": 0.7,
+        "knowledgePoints": [{"id": data["subset"], "name": "子集"}, {"id": "kp_y", "name": "树外知识点"}],
+    })
+    assert r.status_code == 200, r.text
+    out = r.json()
+    assert out["stem"] == "编辑测试：新题干" and out["options"] == ["1", "2"] and out["coef"] == 0.7
+    assert out["answerSource"] == "manual" and out["reviewedAt"] is not None  # 管理员修改不撤销审核
+    kps = {k["name"]: k for k in out["knowledgePoints"]}
+    assert kps["子集"]["inTree"] and not kps["树外知识点"]["inTree"]
+    with SessionLocal() as s:
+        b, d = s.get(BankQuestion, qid), s.get(DraftQuestion, did)
+        assert b.embedding is None and d.stem == b.stem and d.answer == "B" and d.status == "saved"
+        assert d.difficulty_source == "manual"
+
+    assert client.patch(f"/api/bank/questions/{qid}", json={"stem": " ", "material": None}).status_code == 422
+    assert client.patch("/api/bank/questions/missing", json={"stem": "x"}).status_code == 404

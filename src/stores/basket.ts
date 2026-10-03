@@ -92,6 +92,10 @@ export const useBasketStore = defineStore('basket', () => {
     if (has(q.id)) remove(q.id)
     else add(q)
   }
+  /** 题目修改后更新试题篮中的快照，分值与题序不变 */
+  function refresh(q: BasketQuestion) {
+    items.value = items.value.map((x) => (x.q.id === q.id ? { ...x, q } : x))
+  }
   function clear() {
     items.value = []
   }
@@ -146,7 +150,7 @@ export const useBasketStore = defineStore('basket', () => {
   }
 
   return {
-    items, typeOrder, count, totalScore, sections, has, add, addMany, remove, toggle, clear, replace,
+    items, typeOrder, count, totalScore, sections, has, add, addMany, remove, toggle, refresh, clear, replace,
     reorder, move, moveSection, setScore, setSectionScore, resetScores,
   }
 })

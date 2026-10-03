@@ -113,6 +113,7 @@ export const MOCK_META: PaperMeta = {
   region: '北京 · 海淀',
   schoolYear: '2026—2027 上',
   textbook: '人教A版（2019）',
+  school: '',
 }
 
 export const MOCK_RECENT: RecentUpload[] = [

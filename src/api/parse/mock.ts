@@ -47,6 +47,7 @@ const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
 const clone = <T>(v: T): T => structuredClone(v)
 
 const jobs = new Map<string, ParseJob>()
+const pdfFiles = new Map<string, File>()
 const questions = new Map<string, DraftQuestion[]>()
 const listeners = new Map<string, Set<(job: ParseJobEvent) => void>>()
 const recent: RecentUpload[] = [...MOCK_RECENT]
@@ -225,6 +226,7 @@ function makeJob(files: File[], options: ParseOptions, batchId: string | null): 
       createdAt: new Date().toISOString(),
   }
   jobs.set(id, job)
+  if (fileType === 'pdf') pdfFiles.set(id, files[0])
   order.push(id)
   return job
 }
@@ -355,6 +357,12 @@ const runs = new Map<string, EvalRun>()
 let calibration: DifficultyCalibration | null = null
 
 export const mockParseApi: ParseApi = {
+  async getPdf(jobId) {
+    requireJob(jobId)
+    const file = pdfFiles.get(jobId)
+    if (!file) throw new Error('没有原始 PDF 文件，请上传 PDF 试卷后预览')
+    return file.slice(0, file.size, 'application/pdf')
+  },
   async listTrees() {
     await sleep(80)
     return [...trees.values()].map(({ nodes: _n, ...t }) => clone(t) as KnowledgeTree)

@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session, defer
 from .db import BankQuestion, DraftQuestion, KnowledgeNode, KnowledgeTree, ParseJob
 from .chapters import book as chapter_book, chapter_node, kps_match
 from .knowledge_tree import PATH_SEP
+from .pipeline.classify import clean_school, rule_school
 from .schemas import (
     BankQuestionOut, CommitResult, CommitSkip, DuplicatePaper, FacetCount, PaperDetail, PaperFacets, PaperMeta,
     PaperPage, PaperSummary,
@@ -280,7 +281,7 @@ class PaperFilter:
     grade: str | None = None
     subject: str | None = None
     paper_type: str | None = None
-    textbook: str | None = None
+    school: str | None = None
     # 试卷分类（同步教学、阶段测试等）：试卷类型或名称含任一关键词
     category: list[str] = field(default_factory=list)
     q: str | None = None
@@ -309,6 +310,8 @@ def _summaries(s: Session, school_id: str, job_ids: list[str] | None = None) -> 
         job = jobs.get(jid)
         meta = PaperMeta.model_validate((job.meta if job else None) or {})
         file_name = job.file_name if job else ""
+        # 早期入库的试卷没有学校，从名称中提取；手动填写的也统一写法，同一学校归为一项
+        meta.school = clean_school(meta.school) or rule_school(meta.title) or rule_school(file_name)
         out.append(PaperSummary(
             id=jid, title=meta.title or file_name.rsplit(".", 1)[0] or "未命名试卷", meta=meta, file_name=file_name,
             question_count=n, source_question_count=max(drafts.get(jid, 0), n), total_score=score or 0,
@@ -324,14 +327,14 @@ UNCLASSIFIED = "未分类"
 def _paper_match(p: PaperSummary, f: PaperFilter, skip: str | None = None) -> bool:
     if f.category and not any(k in (p.meta.paper_type + p.title) for k in f.category):
         return False
-    for dim in ("stage", "grade", "subject", "paper_type", "textbook"):
+    for dim in ("stage", "grade", "subject", "paper_type", "school"):
         want = getattr(f, dim)
         if want and skip != dim and (getattr(p.meta, dim) or UNCLASSIFIED) != want:
             return False
     m = p.meta
     if f.q:
         kw = normalize(f.q)
-        if kw not in normalize(" ".join([p.title, p.file_name, m.region, m.school_year, m.textbook])):
+        if kw not in normalize(" ".join([p.title, p.file_name, m.region, m.school_year, m.school])):
             return False
     return True
 
@@ -354,7 +357,7 @@ def list_papers(s: Session, school_id: str, f: PaperFilter, limit: int = 20, off
     facets = PaperFacets(
         stages=_facet(papers, f, "stage", STAGE_ORDER), grades=_facet(papers, f, "grade", GRADE_ORDER),
         subjects=_facet(papers, f, "subject"), paper_types=_facet(papers, f, "paper_type"),
-        textbooks=_facet(papers, f, "textbook"),
+        schools=_facet(papers, f, "school"),
     )
     return PaperPage(items=matched[offset:offset + limit], total=len(matched), facets=facets)
 

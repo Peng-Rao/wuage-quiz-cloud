@@ -16,6 +16,7 @@ import PaperMetaPanel from '@/components/parse/PaperMetaPanel.vue'
 import ParsedQuestionCard from '@/components/parse/ParsedQuestionCard.vue'
 import EditQuestionDialog from '@/components/parse/EditQuestionDialog.vue'
 import SourceImageDialog from '@/components/parse/SourceImageDialog.vue'
+import PdfPreviewDialog from '@/components/parse/PdfPreviewDialog.vue'
 import UsageCard from '@/components/parse/UsageCard.vue'
 import JobListPanel from '@/components/parse/JobListPanel.vue'
 import SimilarDialog from '@/components/parse/SimilarDialog.vue'
@@ -28,6 +29,8 @@ const { phase, job, questions, selected, error, busy, options, usage, jobList, n
 const basket = useBasketStore()
 const route = useRoute()
 const router = useRouter()
+const pdfOpen = ref(false)
+watch(() => job.value?.id, () => { pdfOpen.value = false })
 
 // 地址栏 ?job= 是当前试卷的唯一来源：打开 / 返回都只改地址栏，由路由驱动 store，刷新后仍停留在同一份试卷
 const routeJob = () => (typeof route.query.job === 'string' ? route.query.job : '')
@@ -211,6 +214,7 @@ async function forceCommit() {
         <span>上传整份试卷，自动识别学科与试卷类型，拆分为单题，并评估每题难度。</span>
       </div>
       <nav class="tools">
+        <button v-if="job?.fileType === 'pdf'" type="button" class="btn" @click="pdfOpen = true">预览 PDF</button>
         <RouterLink to="/upload/knowledge">知识树管理</RouterLink>
         <RouterLink v-if="auth.isAdmin" to="/upload/eval">解析评测</RouterLink>
       </nav>
@@ -365,6 +369,7 @@ async function forceCommit() {
 
     <EditQuestionDialog v-model="editOpen" :job-id="job?.id ?? ''" :q="editing" :saving="!!editing && busy.has(editing.id)" @save="saveEdit" />
     <SourceImageDialog v-model="sourceOpen" :title="sourceTitle" :images="sourceImages" />
+    <PdfPreviewDialog v-model="pdfOpen" :job-id="job?.id ?? ''" :file-name="job?.fileName ?? ''" />
     <SimilarDialog v-model="similarOpen" :title="similarTitle" :items="similarItems" :error="similarError" />
     <ModalDialog v-model="dupOpen" title="这份试卷已在试卷库中" :width="460">
       <div v-if="dupPaper" class="dup-body">

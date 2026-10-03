@@ -9,6 +9,7 @@ import { parseApi, type SimilarQuestion } from '@/api/parse'
 import { fromBank, useBasketStore } from '@/stores/basket'
 import QuestionCard from './QuestionCard.vue'
 import SimilarDialog from '@/components/parse/SimilarDialog.vue'
+import BankEditDialog from './BankEditDialog.vue'
 import LoadingState from '@/components/LoadingState.vue'
 
 /** 选题结果区（章节选题、知识点选题共用）：场景 / 题型 / 难度 / 更多筛选，排序、结果内搜索、题目列表与分页 */
@@ -125,6 +126,17 @@ function toggleAllAns() {
 const pageAllIn = computed(() => result.value.items.length > 0 && result.value.items.every((q) => basket.has(q.id)))
 
 // 相似题
+// 管理员编辑题目
+const editOpen = ref(false)
+const editing = ref<{ q: BankQuestion; no: number } | null>(null)
+function openEdit(q: BankQuestion, no: number) {
+  editing.value = { q, no }
+  editOpen.value = true
+}
+function onEdited(q: BankQuestion) {
+  result.value = { ...result.value, items: result.value.items.map((x) => (x.id === q.id ? q : x)) }
+}
+
 const simOpen = ref(false)
 const simTitle = ref('')
 const simItems = ref<SimilarQuestion[] | null>(null)
@@ -228,6 +240,7 @@ function resetFilters() {
         :show-answer="showAns(q.id)" :in-basket="basket.has(q.id)"
         @toggle-answer="ansOpen[q.id] = !showAns(q.id)" @toggle-basket="basket.toggle(fromBank(q))"
         :can-similar="auth.isStaff" @similar="openSimilar(q, (page - 1) * PAGE_SIZE + i + 1)"
+        :can-edit="auth.isAdmin" @edit="openEdit(q, (page - 1) * PAGE_SIZE + i + 1)"
       />
     </div>
 
@@ -248,6 +261,7 @@ function resetFilters() {
     </nav>
 
     <SimilarDialog v-model="simOpen" :title="simTitle" :items="simItems" :error="simError" />
+    <BankEditDialog v-model="editOpen" :q="editing?.q ?? null" :no="editing?.no" @saved="onEdited" />
   </div>
 </template>
 

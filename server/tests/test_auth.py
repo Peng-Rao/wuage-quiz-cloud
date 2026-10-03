@@ -319,3 +319,11 @@ def test_stale_admin_cannot_change_other_admin(accounts, monkeypatch, change, me
     with SessionLocal() as s:
         remaining = s.get(User, 'test-admin')
         assert remaining and remaining.active and remaining.role == 'admin'
+
+
+@pytest.mark.parametrize("role", ["leader", "member"])
+def test_edit_bank_question_requires_admin(accounts, data, role):
+    qid = data['questions'][0]
+    assert sign_in(accounts[role]).patch(f"/api/bank/questions/{qid}", json={"stem": "改"}).status_code == 403
+    with SessionLocal() as s:
+        assert s.get(BankQuestion, qid).stem == "权限题0"

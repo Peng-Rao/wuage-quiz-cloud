@@ -10,12 +10,12 @@ const route = useRoute()
 const router = useRouter()
 const basket = useBasketStore()
 
-type Dim = 'stage' | 'grade' | 'subject' | 'textbook' | 'paperType'
+type Dim = 'stage' | 'grade' | 'subject' | 'school' | 'paperType'
 const DIMS: { key: Dim; label: string; facet: keyof PaperFacets }[] = [
   { key: 'stage', label: '学段', facet: 'stages' },
   { key: 'grade', label: '年级', facet: 'grades' },
   { key: 'subject', label: '学科', facet: 'subjects' },
-  { key: 'textbook', label: '版本', facet: 'textbooks' },
+  { key: 'school', label: '学校', facet: 'schools' },
   { key: 'paperType', label: '类型', facet: 'paperTypes' },
 ]
 
@@ -32,7 +32,7 @@ const CATEGORIES: { key: string; label: string; kw: string[] }[] = [
 const str = (v: unknown) => (typeof v === 'string' ? v : '')
 const filters = computed(() => ({
   stage: str(route.query.stage), grade: str(route.query.grade), subject: str(route.query.subject),
-  textbook: str(route.query.textbook), paperType: str(route.query.paperType), q: str(route.query.q),
+  school: str(route.query.school), paperType: str(route.query.paperType), q: str(route.query.q),
   cat: str(route.query.cat),
 }))
 const catKw = computed(() => CATEGORIES.find((c) => c.key === filters.value.cat)?.kw ?? [])
@@ -63,7 +63,7 @@ async function load() {
     const f = filters.value
     const r = await bankApi.listPapers({
       stage: f.stage || undefined, grade: f.grade || undefined, subject: f.subject || undefined,
-      textbook: f.textbook || undefined, paperType: f.paperType || undefined,
+      school: f.school || undefined, paperType: f.paperType || undefined,
       category: catKw.value.length ? catKw.value : undefined,
       q: f.q || undefined, limit: PAGE_SIZE, offset: (page.value - 1) * PAGE_SIZE,
     })
@@ -111,7 +111,7 @@ async function addPaper(p: PaperSummary) {
         @click="setQuery({ cat: c.key || undefined })"
       >{{ c.label }}</button>
       <form class="search" role="search" @submit.prevent="setQuery({ q: keyword.trim() || undefined })">
-        <input v-model="keyword" placeholder="试卷名称、地区、学年" aria-label="搜索试卷">
+        <input v-model="keyword" placeholder="试卷名称、学校、地区、学年" aria-label="搜索试卷">
         <button type="submit">搜索</button>
       </form>
     </div>

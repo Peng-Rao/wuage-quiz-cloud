@@ -6,7 +6,19 @@ import MathText from '@/components/MathText.vue'
 import FormulaEditor from '@/components/FormulaEditor.vue'
 import { MATH_RE, mathAt } from '@/utils/math'
 
-const props = defineProps<{ q: DraftQuestion | null; saving: boolean; jobId: string }>()
+/** 草稿题与已入库的题共用：只用到可编辑的字段 */
+type EditableQuestion = Pick<DraftQuestion, 'type' | 'score' | 'material' | 'stem' | 'options' | 'answer' | 'analysis' | 'knowledgePoints'> & { no?: number }
+
+const props = defineProps<{
+  q: EditableQuestion | null
+  saving: boolean
+  /** 知识点联想所用的试卷（解析任务） */
+  jobId: string
+  title?: string
+  /** 表单底部的说明，默认为草稿题的说明 */
+  tip?: string
+  error?: string
+}>()
 const open = defineModel<boolean>({ required: true })
 const emit = defineEmits<{ save: [patch: DraftQuestionPatch] }>()
 
@@ -100,7 +112,7 @@ function save() {
 </script>
 
 <template>
-  <ModalDialog v-model="open" :title="q ? `编辑第 ${q.no} 题` : '编辑题目'" :width="680">
+  <ModalDialog v-model="open" :title="title || (q?.no ? `编辑第 ${q.no} 题` : '编辑题目')" :width="680">
     <form class="form" @submit.prevent="save">
       <div class="row2">
         <label class="field">
@@ -151,7 +163,8 @@ function save() {
           <li v-for="h in hits" :key="h.id"><button type="button" @click="pickHit(h)"><b>{{ h.name }}</b><span>{{ h.path }}</span></button></li>
         </ul>
       </label>
-      <p class="tip">公式以 $…$ 包裹的 LaTeX 保存；把光标放在公式内再点「∑ 公式」可修改该公式。保存后该题视为已人工核对，置信度提示将消失。</p>
+      <p class="tip">公式以 $…$ 包裹的 LaTeX 保存；把光标放在公式内再点「∑ 公式」可修改该公式。{{ tip ?? '保存后该题视为已人工核对，置信度提示将消失。' }}</p>
+      <p v-if="error" class="err" role="alert">{{ error }}</p>
     </form>
     <template #footer>
       <button type="button" class="btn" @click="open = false">取消</button>
@@ -189,6 +202,7 @@ function save() {
 .pv { padding: 8px 12px; background: var(--c-paper); border-radius: var(--r-sm); font-size: 14.5px; line-height: 1.9; color: var(--c-ink); }
 .pv.options { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 2px 16px; }
 .tip { margin: 0; font-size: 12px; color: var(--c-text-4); line-height: 1.6; }
+.err { margin: 0; font-size: 13px; color: var(--c-hard); }
 .save { height: 38px; font-size: 14px; padding: 0 20px; }
 .save:disabled { opacity: .6; cursor: not-allowed; }
 </style>

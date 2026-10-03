@@ -5,11 +5,12 @@ const auth = useAuthStore()
 import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { TYPE_ORDER, coefToDiff } from '@/data/mock'
-import { bankApi, type PaperDetail } from '@/api/bank'
+import { bankApi, type BankQuestion, type PaperDetail } from '@/api/bank'
 import type { AnswerTask } from '@/api/parse'
 import { useAppStore } from '@/stores/app'
 import { fromBank, useBasketStore } from '@/stores/basket'
 import QuestionCard from '@/components/bank/QuestionCard.vue'
+import BankEditDialog from '@/components/bank/BankEditDialog.vue'
 import DifficultyBar from '@/components/DifficultyBar.vue'
 import ModalDialog from '@/components/ModalDialog.vue'
 import LoadingState from '@/components/LoadingState.vue'
@@ -69,13 +70,26 @@ async function reloadPaper() {
 }
 
 const qs = computed(() => paper.value?.questions ?? [])
+
+// 管理员编辑题目
+const editOpen = ref(false)
+const editing = ref<{ q: BankQuestion; no: number } | null>(null)
+function openEdit(q: BankQuestion, no: number) {
+  editing.value = { q, no }
+  editOpen.value = true
+}
+function onEdited(q: BankQuestion) {
+  // 题型、分值可能变化，重新加载以更新题型统计与总分
+  if (paper.value) paper.value = { ...paper.value, questions: paper.value.questions.map((x) => (x.id === q.id ? q : x)) }
+  reloadPaper()
+}
 const diffCount = (d: string) => qs.value.filter((q) => coefToDiff(q.coef) === d).length
 const types = computed(() => TYPE_ORDER.filter((t) => paper.value?.typeCounts[t])
   .map((t) => ({ t, n: paper.value!.typeCounts[t]!, score: qs.value.filter((q) => q.type === t).reduce((a, q) => a + q.score, 0) })))
 const inBasket = computed(() => qs.value.filter((q) => basket.has(q.id)).length)
 const tags = computed(() => {
   const m = paper.value?.meta
-  return m ? [m.stage, m.grade, m.subject, m.paperType, m.region, m.schoolYear, m.textbook].filter(Boolean) : []
+  return m ? [m.stage, m.grade, m.subject, m.paperType, m.region, m.schoolYear, m.school, m.textbook].filter(Boolean) : []
 })
 
 const allAns = ref(false)
@@ -244,9 +258,12 @@ function replaceAndGo() {
           v-for="(q, i) in qs" :key="q.id" :q="q" :no="q.source?.no ?? i + 1" in-paper
           :show-answer="showAns(q.id)" :in-basket="basket.has(q.id)"
           @toggle-answer="ansOpen[q.id] = !showAns(q.id)" @toggle-basket="basket.toggle(fromBank(q))"
+          :can-edit="auth.isAdmin" @edit="openEdit(q, q.source?.no ?? i + 1)"
         />
       </div>
     </template>
+
+    <BankEditDialog v-model="editOpen" :q="editing?.q ?? null" :no="editing?.no" @saved="onEdited" />
 
     <ReviewPanel v-if="auth.isStaff && paper" :questions="qs" @updated="reloadPaper" />
 

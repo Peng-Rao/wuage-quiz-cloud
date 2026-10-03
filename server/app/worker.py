@@ -22,6 +22,8 @@ from collections.abc import Awaitable, Callable
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
+from redis.exceptions import ConnectionError as RedisConnectionError
+from redis.exceptions import TimeoutError as RedisTimeoutError
 from sqlalchemy import select
 
 from .config import get_settings
@@ -206,6 +208,12 @@ class RedisConsumer:
                 nxt = await self._next()
             except asyncio.CancelledError:
                 raise
+            except (RedisTimeoutError, RedisConnectionError) as e:
+                # 宿主机睡眠唤醒（Docker Desktop 虚拟机暂停）、Redis 重启等都会让阻塞中的读取超时或断开，
+                # 连接池会自动重连，只记一行警告
+                log.warning("读取任务队列超时或连接中断（%s），稍后重试", e)
+                await asyncio.sleep(2)
+                continue
             except Exception:
                 log.exception("读取任务队列失败，稍后重试")
                 await asyncio.sleep(2)

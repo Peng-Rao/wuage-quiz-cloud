@@ -12,6 +12,8 @@ import MaterialText from '@/components/MaterialText.vue'
 /** 选题结果中的一道题：来源简写、题型 | 难度 | 知识点、题干，底部为来源与操作 */
 const props = defineProps<{
   canSimilar?: boolean
+  /** 显示「编辑」（仅管理员） */
+  canEdit?: boolean
   q: BankQuestion
   /** 列表中的序号 */
   no: number
@@ -20,7 +22,7 @@ const props = defineProps<{
   /** 试卷详情中不显示来源（即本卷），序号后显示分值 */
   inPaper?: boolean
 }>()
-defineEmits<{ 'toggle-answer': []; 'toggle-basket': []; similar: [] }>()
+defineEmits<{ 'toggle-answer': []; 'toggle-basket': []; similar: []; edit: [] }>()
 
 const app = useAppStore()
 const layout = provideSubject(() => props.q.source?.subject || app.subject)
@@ -70,6 +72,7 @@ const paperTitle = computed(() => props.q.source?.title || props.q.source?.fileN
       </template>
       <div class="acts">
         <button v-if="canSimilar" class="act" @click="$emit('similar')">相似题</button>
+        <button v-if="canEdit" class="act" @click="$emit('edit')">编辑</button>
         <button class="act">纠错</button>
         <button class="act" :class="{ on: showAnswer }" @click="$emit('toggle-answer')">{{ showAnswer ? '收起' : '详情' }}</button>
         <button class="act">收藏</button>
