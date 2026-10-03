@@ -9,7 +9,12 @@ import { layoutOf, useTextLayout } from '@/utils/subject'
  * 渲染夹带公式的文本：$...$ 为行内公式，$$...$$ 为独立公式（MinerU 输出格式）。
  * 语文、英语按卷面结构排版（段落缩进、诗词居中、对话分行、填空横线等），学科取自 subject 或外层 provideSubject。
  */
-const props = defineProps<{ text: string; subject?: string | null }>()
+const props = defineProps<{
+  text: string
+  subject?: string | null
+  /** 独立成块（阅读材料）：首行不接在题号后，正文段落都缩进 */
+  block?: boolean
+}>()
 const injected = useTextLayout()
 const layout = computed(() => (props.subject !== undefined ? layoutOf(props.subject) : injected.value))
 
@@ -18,7 +23,7 @@ const escapeHtml = (s: string) =>
 
 const html = computed(() => (layout.value === 'plain'
   ? splitMath(props.text).map((s) => (s.math ? renderTex(s.text, s.display) : escapeHtml(s.text))).join('')
-  : renderRich(props.text, layout.value)))
+  : renderRich(props.text, layout.value, props.block)))
 </script>
 
 <template>

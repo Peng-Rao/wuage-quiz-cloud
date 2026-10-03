@@ -13,6 +13,8 @@ export interface BankQuestion {
   /** 原卷分值 */
   score: number
   stem: string
+  /** 阅读材料（英语阅读 / 完形填空原文、语文选文等） */
+  material?: string | null
   /** 选项，不含「A．」前缀 */
   options: string[]
   answer: string | null

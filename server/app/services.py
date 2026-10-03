@@ -195,6 +195,7 @@ def merge_with_previous(s: Session, q: DraftQuestion) -> None:
         if all(p["id"] != k["id"] for p in kps):
             kps.append(k)
     prev.stem = prev.stem + "\n" + q.stem
+    prev.material = prev.material or q.material
     prev.options = prev.options or q.options
     prev.answer = "；".join(x for x in (prev.answer, q.answer) if x) or None
     prev.analysis = "\n".join(x for x in (prev.analysis, q.analysis) if x) or None
@@ -242,7 +243,7 @@ def split_sub_questions(s: Session, q: DraftQuestion) -> None:
         s.add(DraftQuestion(
             id="q" + uuid.uuid4().hex[:20], job_id=q.job_id, no=q.no + i, type=q.type,
             score=q.score - each * (n - 1) if i == n - 1 else each, page=q.page,
-            stem=head + part, options=list(q.options),
+            stem=head + part, material=q.material, options=list(q.options),
             answer=answers[i] if answers and len(answers) == n else (q.answer if i == 0 else None),
             analysis=q.analysis if i == 0 else None, answer_source=q.answer_source, answer_note=q.answer_note,
             knowledge_points=list(q.knowledge_points), coef=q.coef,

@@ -12,12 +12,12 @@ const emit = defineEmits<{ save: [patch: DraftQuestionPatch] }>()
 
 const CHOICE: QuestionType[] = ['单选题', '多选题']
 
-const form = reactive({ type: '单选题' as QuestionType, score: 5, stem: '', options: '', answer: '', analysis: '', kps: '' })
+const form = reactive({ type: '单选题' as QuestionType, score: 5, material: '', stem: '', options: '', answer: '', analysis: '', kps: '' })
 
 watch(() => [open.value, props.q] as const, ([v, q]) => {
   if (!v || !q) return
   Object.assign(form, {
-    type: q.type, score: q.score, stem: q.stem, options: q.options.join('\n'),
+    type: q.type, score: q.score, material: q.material ?? '', stem: q.stem, options: q.options.join('\n'),
     answer: q.answer ?? '', analysis: q.analysis ?? '', kps: q.knowledgePoints.map(k => k.name).join('、'),
   })
 }, { immediate: true })
@@ -91,6 +91,7 @@ function save() {
     type: form.type,
     score: Math.max(0, Number(form.score) || 0),
     stem: form.stem.trim(),
+    material: form.material.trim() || null,
     options: CHOICE.includes(form.type) ? form.options.split('\n').map(s => s.trim()).filter(Boolean) : [],
     answer: form.answer.trim() || null,
     analysis: form.analysis.trim() || null,
@@ -113,9 +114,14 @@ function save() {
           <input v-model.number="form.score" type="number" min="0" step="1">
         </label>
       </div>
+      <div v-if="q?.material || form.material" class="field">
+        <span class="label-row"><label for="eq-material">阅读材料 <em>只修改本题；同一篇材料下的其他题需分别修改</em></label></span>
+        <textarea id="eq-material" v-model="form.material" rows="6" class="serif" />
+      </div>
       <div class="field">
         <span class="label-row"><label for="eq-stem">题干</label><button type="button" class="fx" title="插入或修改公式" @click="openFormula('stem')">∑ 公式</button></span>
-        <textarea id="eq-stem" :ref="setInput('stem')" v-model="form.stem" rows="5" class="serif" required />
+        <!-- 完形填空等题只有材料和选项，题干可以为空 -->
+        <textarea id="eq-stem" :ref="setInput('stem')" v-model="form.stem" rows="5" class="serif" :required="!form.material.trim()" />
         <div v-if="hasMath(form.stem)" class="pv serif"><MathText :text="form.stem" /></div>
       </div>
       <div v-if="CHOICE.includes(form.type)" class="field">

@@ -186,9 +186,10 @@ function inlineHtml(x: Inline): string {
 /** 首行若是正文、小问等，紧跟在题号后同一行显示（行内），标题、诗句、独立公式另起一行 */
 const LEAD_INLINE: LineRole[] = ['para', 'plain', 'sub', 'turn']
 
-export function renderRich(text: string, layout: 'zh' | 'en'): string {
+/** block：独立成块的文本（阅读材料），首行不接在题号后 */
+export function renderRich(text: string, layout: 'zh' | 'en', block = false): string {
   return parseRich(text, layout).map((l, i) => {
-    const lead = i === 0 && LEAD_INLINE.includes(l.role) ? ' lead' : ''
+    const lead = !block && i === 0 && LEAD_INLINE.includes(l.role) ? ' lead' : ''
     return `<span class="ln ln-${l.role}${lead}">${l.inlines.map(inlineHtml).join('')}</span>`
   }).join('')
 }

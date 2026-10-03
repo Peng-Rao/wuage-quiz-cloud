@@ -68,6 +68,9 @@ class Question:
     confidence: float
     section: int = 0
     flags: list[str] = field(default_factory=list)
+    # 阅读材料：英语阅读 / 完形填空原文、语文阅读选文等，同一篇材料下的各题共用
+    material: str | None = None
+    material_unit_ids: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -537,7 +540,215 @@ def question_part(unit_ids: list[str], text_of) -> list[str]:  # noqa: ANN001
     return out
 
 
+# ---------------- 阅读材料 ----------------
+#
+# 英语阅读理解、完形填空、任务型阅读，语文现代文 / 文言文 / 诗歌阅读等：一篇材料后接若干题。
+# 材料不带题号，按题号切分时会被拼进上一题的选项或解析，或被当作大题说明丢掉。
+# 拆题前先识别出材料、从拆题输入中移出，拆题后挂到材料之后的各题上。
+
+# 大题标题之外的分节标题：Ⅲ．阅读理解、第二节 完形填空、第一部分、Part II
+ROMAN_HEAD_RE = re.compile(r"^\s*(?:[ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩⅪⅫ]+|(?:I{1,3}|IV|VI{0,3}|IX|X))\s*[.．、]")
+PART_HEAD_RE = re.compile(r"^\s*(?:第\s*[一二三四五六七八九十\d]+\s*(?:节|部分)|(?:Part|Section)\s+[IVX\d]+\b)")
+# 材料小标题：A、(B)、Passage C、Text 2
+LABEL_RE = re.compile(r"^\s*(?:(?:[Pp]assage|[Tt]ext)\s*[A-H\d]|[(（]?[A-H][)）]?)\s*$")
+# 材料前的说明：阅读下面短文…、从每小题所给的…选出可以填入空白处…；单独一行的分值说明
+INSTRUCTION_RE = re.compile(
+    r"阅读(?:下面|下列|以下|下文|短文|材料|文章|理解)|完形填空|根据(?:短文|文章|材料|对话)|填入空白处|[Rr]ead the (?:following|passage)")
+SCORE_LINE_RE = re.compile(r"^\s*[（(][^（）()]*分[^（）()]*[)）]\s*$")
+PAGE_NOISE_RE = re.compile(r"^\s*(?:第\s*\d+\s*页|\d+\s*/\s*\d+\s*$)")
+# 答案、解析块：【答案】【解析】【原文】【导语】【32题详解】、故选…
+ANSWER_BLOCK_RE = re.compile(r"^\s*(?:【[^】]{1,12}】|故选|故答案为)")
+# 对话行、列表行（a. b. 排序题、1) 2)）不是材料段落
+SPEAKER_RE = re.compile(r"^\s*(?:[—―–-]|[A-Z][a-z]{0,10}\s?[:：]|[a-h1-9]\s*[.．、)）])")
+# 材料中不会有选项行；有则是题目内容，不能移出
+OPTION_IN_TEXT_RE = re.compile(r"(?m)^\s*[A-D]\s*[.．、]")
+# 含选项的单元（上一题到此结束，其后的英文段落可以是新材料）
+HAS_OPTIONS_RE = re.compile(r"(?<![A-Za-z])[A-D]\s*[.．、]\s*\S")
+# 材料正文至少的字数：大题说明的续行（「每小题 5 分」等）远短于此；
+# 有小标题且带配图的材料（家谱图、海报配一两句说明）文字可以很短，但不能只有图（听力的图片选项）
+MATERIAL_MIN_CHARS = 150
+MATERIAL_MIN_CHARS_WITH_IMAGE = 30
+# 一篇材料最多挂几道题（完形填空可达 15 空）；分节标题识别不到时避免挂到后面的题
+MATERIAL_MAX_QUESTIONS = 15
+
+
+@dataclass
+class Material:
+    text: str
+    unit_ids: list[str]      # 材料正文的单元（含图、表），用于配图与原图区域
+    removed: list[str]       # 移出拆题输入的单元：正文、小标题、说明行与页眉页脚
+    begin: int               # 第一个单元（含小标题、说明）的 seq
+    start: int               # 正文最后一个单元的 seq，其后的题挂上本材料
+    end: int | None = None   # 下一个分节标题或下一篇材料的 seq
+
+
+def _is_heading(t: str) -> bool:
+    if len(t) > 80:
+        return False
+    if SECTION_RE.match(t) or PART_HEAD_RE.match(t):
+        return True
+    # 罗马数字也用作题内条目（I.用硼酸…合成 ZB。Ⅱ.受热…）：分节标题不以句号结尾、不含公式
+    return bool(ROMAN_HEAD_RE.match(t)) and not re.search(r"[。.]$|\$", t)
+
+
+WORD_RE = re.compile(r"[A-Za-z]{2,}")
+MATH_SPAN_RE = re.compile(r"\$[^$]*\$")
+
+
+def _is_prose(t: str) -> bool:
+    """英文段落：较长、以英文单词为主，不是选项行、对话行或公式推导（无小标题的阅读材料靠它识别）。"""
+    t = t.strip()
+    if len(t) < 60 or OPTION_LINE_RE.match(t) or SPEAKER_RE.match(t) or "\\" in t:
+        return False
+    plain = MATH_SPAN_RE.sub("", t)
+    if len(plain) < 0.9 * len(t) or len(WORD_RE.findall(plain)) < 10:
+        return False
+    letters = sum(c.isascii() and c.isalpha() for c in plain)
+    return letters >= 0.6 * len(plain) and len(_CJK.findall(plain)) <= 0.08 * len(plain)
+
+
+# 一行里同时有 A、B 两个选项：是题目（完形填空的「1. A. treasure B. surprise」），不是材料中的列表项
+TWO_OPTIONS_RE = re.compile(r"(?<![A-Za-z])A\s*[.．、]\s*\S.*?(?<![A-Za-z])B\s*[.．、]\s*\S")
+
+
+def _chars(body: list[Unit]) -> int:
+    return sum(len(b.text) for b in body if b.type != "image")
+
+
+def _list_item(body: list[Unit], n: int, last_no: int, text: str) -> bool:
+    """材料正文中的编号列表（告示里的 1. 2.）：编号倒退，且正文已足够长、编号从 1 起或接着正文中的上一项。
+    分节后题号重新从 1 编起时正文还很短，不受影响；带选项的是题目。"""
+    if (n > last_no or TWO_OPTIONS_RE.search(text)
+            or _chars(body) < MATERIAL_MIN_CHARS):
+        return False
+    return n == 1 or any(re.match(rf"\s*{n - 1}\s*[.．、]", b.text) for b in body)
+
+
+def find_materials(units: list[Unit]) -> list[Material]:
+    """按阅读顺序扫描单元：分节标题、材料小标题或说明行之后、下一题之前的正文是一篇材料；
+    没有小标题时，上一题之后紧接的英文段落也是材料。答案解析块中的内容（如听力原文）不算。"""
+    materials: list[Material] = []
+    headings: list[int] = []
+    anchors: list[Unit] = []        # 正文之前的小标题、说明、页眉页脚
+    body: list[Unit] | None = None  # 正在收集的正文；None 表示未在收集
+    pending = False                 # 已遇到小标题 / 说明 / 分节标题，等待正文
+    after_heading = False           # 当前说明紧跟在分节标题之后（说明中的分值供大题使用，不移出）
+    noise: list[Unit] = []          # 正文中的页眉页脚
+    lead_images: list[Unit] = []    # 紧挨在正文前的配图
+    # None 不在答案块中 / transcript 听力原文（其中的英文不是材料）/ analysis 解析
+    in_answer: str | None = None
+    # 上一题已结束（出现过选项或解析），其后的英文段落才可能是没有小标题的材料
+    question_done = False
+    last_no = 0
+
+    def reset() -> None:
+        nonlocal anchors, body, pending, after_heading, noise
+        anchors, body, pending, after_heading, noise = [], None, False, False, []
+
+    def confirm(body: list[Unit]) -> None:
+        text = _strip_image_marks("\n".join(b.text for b in body if b.type != "image"))
+        labeled_figure = any(LABEL_RE.match(a.text) for a in anchors) and any(b.type == "image" for b in body)
+        if (len(text) < (MATERIAL_MIN_CHARS_WITH_IMAGE if labeled_figure else MATERIAL_MIN_CHARS)
+                or OPTION_IN_TEXT_RE.search(text) or NOTICE_RE.match(text) or text.startswith("温馨提示")
+                or any(SUB_MARK_RE.match(b.text.strip()) for b in body)):
+            return
+        removed = [a.id for a in anchors if not (after_heading and INSTRUCTION_RE.search(a.text))]
+        materials.append(Material(text, [b.id for b in body], removed + [x.id for x in noise + body],
+                                  begin=(anchors or body)[0].seq, start=body[-1].seq))
+
+    for u in units:
+        t = u.text.strip()
+        if u.type == "image":
+            if body is not None:
+                body.append(u)
+            elif pending:
+                body = [u]
+            else:
+                lead_images.append(u)
+            continue
+        images, lead_images = lead_images, []
+        m = Q_START_RE.match(t)
+        if m and not (body is not None and _list_item(body, int(m.group(1)), last_no, t)):
+            if body:
+                confirm(body)
+            reset()
+            in_answer, last_no = None, int(m.group(1))
+            question_done = bool(HAS_OPTIONS_RE.search(t))
+            continue
+        if _is_heading(t):
+            headings.append(u.seq)
+            reset()
+            pending, after_heading, in_answer = True, True, None
+            continue
+        # 单独一行的分值说明只在分节标题之后才算（卷首的「时间：60 分钟，满分：100 分」不算）
+        # 含选项的行即使带着说明文字（选项后粘着「Ⅲ. 阅读理解」）也是题目内容
+        if LABEL_RE.match(t) or (pending and SCORE_LINE_RE.match(t)) or (
+                len(t) <= 150 and INSTRUCTION_RE.search(t) and not OPTION_IN_TEXT_RE.search(t)):
+            if body is not None and not LABEL_RE.match(t) and _chars(body) >= MATERIAL_MIN_CHARS:
+                noise.append(u)  # 材料之后的「根据材料内容选择最佳答案」：随材料移出
+                continue
+            if body is not None:  # 正文之后又出现小标题：前面的不是材料
+                reset()
+            anchors.append(u)
+            pending, in_answer = True, None
+            continue
+        if PAGE_NOISE_RE.match(t):
+            if body is not None:
+                noise.append(u)
+            elif pending:
+                anchors.append(u)
+            continue
+        if ANSWER_BLOCK_RE.match(t):
+            reset()
+            in_answer = "transcript" if "原文" in t[:8] else "analysis"
+            continue
+        if body is not None and (OPTION_IN_TEXT_RE.search(t) or TWO_OPTIONS_RE.search(t)):
+            # 材料中不会有选项：是题目内容（如分节说明之后的选择题），放弃
+            reset()
+            question_done = True
+            continue
+        if body is not None:
+            body.append(u)
+        elif pending:
+            body = [u]
+        elif (last_no and in_answer != "transcript" and (question_done or in_answer == "analysis")
+              and u.type == "text" and _is_prose(t)):
+            body = images + [u]
+            in_answer = None
+        elif HAS_OPTIONS_RE.search(t):
+            question_done = True
+
+    for m in materials:
+        nxt = [h for h in headings if h > m.start] + [x.begin for x in materials if x.begin > m.start]
+        m.end = min(nxt) if nxt else None
+    return materials
+
+
+def attach_materials(questions: list[Question], materials: list[Material], units: list[Unit]) -> None:
+    """材料之后、下一个分节标题或下一篇材料之前的题挂上该材料；完形填空等题干为空的题不再算作题干过短。"""
+    seq = {u.id: u.seq for u in units}
+    for m in materials:
+        members = [q for q in questions if q.unit_ids and m.start < seq[q.unit_ids[0]]
+                   and (m.end is None or seq[q.unit_ids[0]] < m.end)]
+        for q in members[:MATERIAL_MAX_QUESTIONS]:
+            q.material, q.material_unit_ids = m.text, list(m.unit_ids)
+            if "题干过短" in q.flags:
+                q.flags.remove("题干过短")
+                q.confidence = round(min(0.99, q.confidence + 0.3), 2)
+
+
 async def segment(units: list[Unit], settings: Settings, *, with_answer: bool) -> Segmentation:
+    materials = find_materials(units)
+    if materials:
+        removed = {i for m in materials for i in m.removed}
+        all_units, units = units, [u for u in units if u.id not in removed]
+    seg = await _segment(units, settings, with_answer=with_answer)
+    if materials:
+        attach_materials(seg.questions, materials, all_units)
+    return seg
+
+
+async def _segment(units: list[Unit], settings: Settings, *, with_answer: bool) -> Segmentation:
     rule = rule_segment(units, with_answer=with_answer)
     if not settings.llm_enabled:
         rule.warnings.append("未配置大模型，仅使用规则拆题")

@@ -14,6 +14,8 @@ export interface DocxItem {
   /** 题号后的分值标注，如「（12 分）」 */
   scoreMark?: string
   stem: string
+  /** 印在本题之前的阅读材料（同一篇材料下相邻的题只在第一题前印） */
+  material?: string | null
   options: string[]
   images: string[]
   answer?: string | null
@@ -166,22 +168,22 @@ const LINE_STYLE: Record<LineRole, { para: ParaStyle; run?: RunStyle }> = {
   display: { para: { align: 'center' } },
 }
 
-/** 题干分段：首行是正文、小问等时接在题号后，否则题号单独一行 */
-function stemParas(prefix: string, stem: string, layout: TextLayout): string {
-  if (layout === 'plain') return para(textRuns(prefix) + richRuns(stem), { before: 60 })
+/** 题干分段：首行是正文、小问等时接在题号后，否则题号单独一行。prefix 为 null 时是阅读材料，不带题号 */
+function stemParas(prefix: string | null, stem: string, layout: TextLayout): string {
+  if (layout === 'plain') return para(textRuns(prefix ?? '') + richRuns(stem), { before: 60 })
   const lines = parseRich(stem, layout)
   const out: string[] = []
   lines.forEach((l, i) => {
     const st = LINE_STYLE[l.role]
     const runs = l.inlines.map((x) => inlineRuns(x, st.run ?? {})).join('')
-    const lead = i === 0 && ['para', 'plain', 'sub', 'turn'].includes(l.role)
+    const lead = prefix !== null && i === 0 && ['para', 'plain', 'sub', 'turn'].includes(l.role)
     const align = layout === 'zh' && !st.para.align ? 'both' : st.para.align
-    if (i === 0 && !lead) out.push(para(textRuns(prefix), { before: 60 }))
+    if (prefix !== null && i === 0 && !lead) out.push(para(textRuns(prefix), { before: 60 }))
     out.push(lead
       ? para(textRuns(prefix) + runs, { before: 60, align })
       : para(runs, { ...st.para, align }))
   })
-  return out.join('') || para(textRuns(prefix), { before: 60 })
+  return out.join('') || para(textRuns(prefix ?? ''), { before: 60 })
 }
 
 // ---------- 图片 ----------
@@ -291,6 +293,7 @@ export async function buildDocx(p: DocxPaper): Promise<Blob> {
   for (const s of p.sections) {
     body.push(para(textRuns(s.heading, { bold: true, font: 'hei' }), { before: 200, after: 80, keepNext: true }))
     for (const q of s.items) {
+      if (q.material) body.push(stemParas(null, q.material, layout))
       body.push(stemParas(`${q.no}${noSep(layout)}${q.scoreMark ?? ''}`, q.stem, layout))
       const imgs = q.images.map((u) => media.get(u)).filter((m): m is Media => !!m)
       if (imgs.length) body.push(para(imgs.map((m) => imageRun(m, drawingId++)).join(textRuns('　')), { indent: 420 }))

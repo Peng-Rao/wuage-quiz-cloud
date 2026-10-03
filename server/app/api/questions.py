@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from ..db import get_session
@@ -12,13 +12,17 @@ from ..storage import get_store
 router = APIRouter(prefix="/api/draft-questions")
 
 # 修改这些字段视为人工核对
-_REVIEW_FIELDS = {"stem", "options", "answer", "type"}
+_REVIEW_FIELDS = {"stem", "material", "options", "answer", "type"}
 
 
 @router.patch("/{qid}", response_model=DraftQuestionOut)
 def update_question(qid: str, patch: DraftQuestionPatch, s: Session = Depends(get_session)) -> DraftQuestionOut:
     q = get_question(s, qid)
     fields = patch.model_dump(exclude_unset=True)
+    stem = fields.get("stem", q.stem) or ""
+    material = fields.get("material", q.material) or ""
+    if not stem.strip() and not material.strip():
+        raise HTTPException(422, "题干与阅读材料不能都为空")
     # 只处理实际变化的字段（编辑弹窗会带上全部字段）
     changed = {k for k, v in fields.items() if getattr(q, k) != v}
     if "knowledge_points" in fields:
