@@ -103,6 +103,18 @@ export const httpParseApi: ParseApi = {
 
   getJob: jobId => request('GET', `/api/parse-jobs/${jobId}`),
 
+  async getPdf(jobId, signal) {
+    const res = await fetch(`${BASE}/api/parse-jobs/${encodeURIComponent(jobId)}/pdf`, {
+      credentials: 'include', signal,
+    })
+    if (!res.ok) {
+      const err = await res.json().catch(() => null)
+      if (res.status === 401 && window.location.pathname !== '/login') window.location.replace('/login')
+      throw new Error(err?.message ?? `PDF 加载失败（HTTP ${res.status}）`)
+    }
+    return res.blob()
+  },
+
   subscribe(jobId, onEvent) {
     const es = new EventSource(`${BASE}/api/parse-jobs/${jobId}/events`, { withCredentials: true })
     es.onmessage = e => {

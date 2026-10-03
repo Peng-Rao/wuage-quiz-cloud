@@ -30,6 +30,7 @@ POST /api/parse-jobs/{id}/commit    → 入校本题库
 | POST | `/api/uploads` | `{ fileName, fileSize, contentType }` | `{ uploadUrl, uploadHeaders, fileKey }` |
 | POST | `/api/parse-jobs` | `{ fileKeys: string[], fileNames: string[], options: ParseOptions }` | `ParseJob` |
 | GET | `/api/parse-jobs/{id}` | — | `ParseJob` |
+| GET | `/api/parse-jobs/{id}/pdf` | — | 原始 PDF 字节（`application/pdf`，仅管理员及有该学科权限的组长） |
 | GET | `/api/parse-jobs/{id}/events` | SSE | `data: ParseJob` |
 | GET | `/api/parse-jobs?recent=1` | — | `RecentUpload[]`（最近 5 条） |
 | GET | `/api/parse-jobs?status=queued,running&batchId=&limit=20&offset=0` | — | `JobListPage`（任务列表，最新在前） |
@@ -77,6 +78,11 @@ POST /api/parse-jobs/{id}/commit    → 入校本题库
 页面图与题图通过 `GET /api/files/jobs/…` 读取。使用腾讯云 COS（`STORAGE_BACKEND=cos`）或阿里云 OSS（`oss`）时
 `uploadUrl` 为预签名地址，PUT 时须原样携带 `uploadHeaders`（`Content-Type`、`x-cos-forbid-overwrite` /
 `x-oss-forbid-overwrite` 等参与签名），不携带 Cookie；`GET /api/files/jobs/…` 校验权限后 302 跳转到短时有效的签名地址。
+
+原卷 PDF 通过 `GET /api/parse-jobs/{id}/pdf` 读取，支持解析中、已完成及失败的任务；非 PDF 返回 400，
+原文件缺失返回 404。接口沿用任务的学科权限，普通成员不可读取整卷，原始上传路径仍不可直接读取。
+本地文件及 OSS / COS 文件均由本服务以 `inline`、`private, no-store` 返回，避免跨域及对象存储下载头影响预览。
+前端仅在打开预览时获取 PDF，关闭、切换任务或离开页面时取消请求并释放预览地址。
 
 ### 上传校验
 

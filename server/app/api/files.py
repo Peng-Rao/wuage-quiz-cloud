@@ -2,6 +2,7 @@
 
 import os
 import uuid
+from urllib.parse import quote
 
 import anyio
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -18,6 +19,28 @@ from ..schemas import UploadRequest, UploadTicket
 from ..storage import LocalStore, get_store, new_upload_key
 
 router = APIRouter()
+
+
+@router.get("/api/parse-jobs/{job_id}/pdf", response_class=Response)
+def get_job_pdf(job_id: str, user: User = Depends(staff), s: Session = Depends(get_session)) -> Response:
+    """原卷 PDF：沿用任务的学科权限，普通成员不能读取整卷。"""
+    job = get_job(s, job_id)
+    if job.file_type != "pdf":
+        raise HTTPException(400, "这份试卷不是 PDF 文件")
+    if len(job.file_keys) != 1:
+        raise HTTPException(404, "原始 PDF 文件不存在")
+    key = job.file_keys[0]["key"]
+    store = get_store()
+    if not key.startswith("uploads/") or not store.exists(key):
+        raise HTTPException(404, "原始 PDF 文件不存在")
+    headers = {
+        "Cache-Control": "private, no-store",
+        "Content-Disposition": f"inline; filename*=UTF-8''{quote(job.file_name, safe='')}",
+    }
+    if isinstance(store, LocalStore):
+        return FileResponse(store.path(key), media_type="application/pdf", headers=headers)
+    # 经过本服务读取，避免对象存储的跨域配置、文件类型或下载响应头影响预览。
+    return Response(store.get(key), media_type="application/pdf", headers=headers)
 
 
 @router.post("/api/uploads", response_model=UploadTicket)
