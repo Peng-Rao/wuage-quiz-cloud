@@ -116,8 +116,9 @@ export interface AnswerTask {
   done: number
   failed: number
   error: string | null
-  /** 本次要生成答案的题 */
+  /** 本次要生成答案的题：draft 为解析草稿题 id，bank 为已入库题目 id */
   questionIds: string[]
+  scope?: 'draft' | 'bank'
 }
 
 export interface GenerateAnswersOptions {

@@ -115,9 +115,11 @@ def test_member_scope_every_surface(accounts, data):
     assert c.get(f"/api/files/jobs/{data['math']}/pages/1.png").status_code == 403
     assert c.get(f"/api/files/jobs/{data['chem']}/pages/1.png").status_code == 404
     for path, body in [('/api/uploads', {}), ('/api/parse-jobs', {}), ('/api/similar/search', {}),
-                       ('/api/compose', {}), ('/api/bank/review', {}), ('/api/users', {})]:
+                       ('/api/compose', {}), ('/api/bank/review', {}), ('/api/users', {}),
+                       (f"/api/papers/{data['math']}/generate-answers", {})]:
         assert c.post(path, json=body).status_code == 403
     assert c.delete(f"/api/papers/{data['math']}").status_code == 403
+    assert c.get(f"/api/papers/{data['math']}/answer-task").status_code == 403
     assert c.get(f"/api/parse-jobs/{data['math']}").status_code == 403
 
 

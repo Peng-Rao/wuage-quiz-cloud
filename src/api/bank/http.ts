@@ -1,4 +1,5 @@
 import { query, request } from '../request'
+import type { AnswerTask } from '../parse/types'
 import type {
   BankApi, BankQuestion, ComposeResult, Page, PaperDetail, PaperPage, QuestionFacets, TextbookVersion,
 } from './types'
@@ -19,5 +20,8 @@ export const httpBankApi: BankApi = {
   })}`),
   getPaper: (id) => request<PaperDetail>('GET', `/api/papers/${encodeURIComponent(id)}`),
   removePaper: (id) => request<void>('DELETE', `/api/papers/${encodeURIComponent(id)}`),
+  generateAnswers: (id, questionIds) =>
+    request<AnswerTask>('POST', `/api/papers/${encodeURIComponent(id)}/generate-answers`, { questionIds }),
+  answerTask: (id) => request<AnswerTask | null>('GET', `/api/papers/${encodeURIComponent(id)}/answer-task`),
   compose: (req) => request<ComposeResult>('POST', '/api/compose', req),
 }

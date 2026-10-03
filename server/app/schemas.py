@@ -229,8 +229,9 @@ class AnswerTask(Model):
     done: int = 0
     failed: int = 0
     error: str | None = None
-    # 本次要生成答案的题
+    # 本次要生成答案的题：draft 为解析草稿题 id，bank 为已入库题目 id
     question_ids: list[str] = []
+    scope: Literal["draft", "bank"] = "draft"
 
 
 class GenerateAnswersRequest(Model):
@@ -238,6 +239,11 @@ class GenerateAnswersRequest(Model):
     question_ids: list[str] | None = None
     # true 时覆盖已有答案（原卷或人工填写的答案也会被替换）
     overwrite: bool = False
+
+
+class GenerateBankAnswersRequest(Model):
+    # 已入库题目 id；留空表示本卷所有缺少答案的已入库题目
+    question_ids: list[str] | None = None
 
 
 class ParseJobOut(Model):
@@ -525,6 +531,8 @@ class BankQuestionOut(Model):
     answer: str | None
     analysis: str | None
     answer_source: Literal["paper", "ai", "manual"] | None = None
+    # AI 生成答案的提示，如「题目含图，AI 未看到图片，答案可能不准确」
+    answer_note: str | None = None
     knowledge_points: list[KnowledgePointRef]
     # 难度系数 0–1，越高越难
     coef: float

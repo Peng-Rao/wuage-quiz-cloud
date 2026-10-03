@@ -2,10 +2,11 @@
 import { useAuthStore } from '@/stores/auth'
 import ReviewPanel from '@/components/bank/ReviewPanel.vue'
 const auth = useAuthStore()
-import { computed, reactive, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { TYPE_ORDER, coefToDiff } from '@/data/mock'
 import { bankApi, type PaperDetail } from '@/api/bank'
+import type { AnswerTask } from '@/api/parse'
 import { useAppStore } from '@/stores/app'
 import { fromBank, useBasketStore } from '@/stores/basket'
 import QuestionCard from '@/components/bank/QuestionCard.vue'
@@ -20,14 +21,37 @@ const app = useAppStore()
 
 const paper = ref<PaperDetail | null>(null)
 const error = ref('')
+// AI 补全答案的任务进度（在加载试卷时恢复，须先于下方的 watch 声明）
+const answerTask = ref<AnswerTask | null>(null)
+const answerNotice = ref('')
+const answerError = ref('')
+const answerStarting = ref(false)
+const isRunning = (t: AnswerTask) => t.status === 'queued' || t.status === 'running'
+const answering = computed(() => !!answerTask.value && isRunning(answerTask.value))
+let answerTimer: ReturnType<typeof setTimeout> | null = null
+
 watch(() => props.id, async (id) => {
   paper.value = null
   error.value = ''
+  stopAnswerPoll()
+  answerTask.value = null
+  answerNotice.value = ''
+  answerError.value = ''
   try {
     const p = await bankApi.getPaper(id)
     if (props.id === id) paper.value = p
   } catch (e) {
     if (props.id === id) error.value = (e as Error).message
+  }
+  if (auth.isStaff && props.id === id) {
+    // 接着显示进行中的生成任务（如刷新页面前发起的）
+    try {
+      const t = await bankApi.answerTask(id)
+      if (props.id === id && t && isRunning(t)) {
+        answerTask.value = t
+        pollAnswers(id, t.done + t.failed)
+      }
+    } catch { /* 进度获取失败不影响查看试卷 */ }
   }
 }, { immediate: true })
 
@@ -51,6 +75,58 @@ const showAns = (id: string) => ansOpen[id] ?? allAns.value
 function toggleAllAns() {
   allAns.value = !allAns.value
   for (const k of Object.keys(ansOpen)) delete ansOpen[k]
+}
+
+/** AI 补全答案：为已入库、缺少答案的题生成答案，写入题库后需重新审核 */
+const missingAnswers = computed(() => qs.value.filter((q) => !q.answer?.trim()).length)
+function stopAnswerPoll() {
+  if (answerTimer) clearTimeout(answerTimer)
+  answerTimer = null
+}
+onBeforeUnmount(stopAnswerPoll)
+
+async function generateAnswers() {
+  const id = props.id
+  answerError.value = ''
+  answerNotice.value = ''
+  answerStarting.value = true
+  try {
+    const t = await bankApi.generateAnswers(id)
+    if (props.id !== id) return
+    answerTask.value = t
+    pollAnswers(id, 0)
+  } catch (e) {
+    if (props.id === id) answerError.value = (e as Error).message
+  } finally {
+    answerStarting.value = false
+  }
+}
+
+/** 轮询进度：每有题目完成就刷新试卷，答案逐题出现 */
+function pollAnswers(id: string, lastFinished: number) {
+  stopAnswerPoll()
+  answerTimer = setTimeout(async () => {
+    answerTimer = null
+    if (props.id !== id) return
+    let t: AnswerTask | null
+    try {
+      t = await bankApi.answerTask(id)
+    } catch {
+      if (props.id === id) pollAnswers(id, lastFinished)
+      return
+    }
+    if (props.id !== id) return
+    answerTask.value = t
+    const finished = t ? t.done + t.failed : 0
+    const running = !!t && isRunning(t)
+    if (finished !== lastFinished || !running) await reloadPaper()
+    if (props.id !== id) return
+    if (running) return pollAnswers(id, finished)
+    if (!t) return
+    if (t.scope === 'bank') for (const qid of t.questionIds) ansOpen[qid] = true
+    if (t.status === 'failed' || t.error) answerError.value = t.error ?? 'AI 生成答案失败'
+    if (t.done) answerNotice.value = `已为 ${t.done} 道题生成答案（标记为「AI 生成」）。这些题已撤回审核，请核对后在下方「审核与分配题目」中重新审核。`
+  }, 1500)
 }
 
 function addAll() {
@@ -129,7 +205,26 @@ function replaceAndGo() {
 
       <div class="toolbar">
         <span>按原卷题序</span>
-        <button class="all-ans" @click="toggleAllAns">{{ allAns ? '收起全部解析' : '展开全部解析' }}</button>
+        <div class="tools">
+          <template v-if="auth.isStaff">
+            <LoadingState v-if="answering && answerTask" compact class="ai-progress" :label="`AI 解答中 ${answerTask.done + answerTask.failed} / ${answerTask.total}`" />
+            <LoadingState v-else-if="answerStarting" compact class="ai-progress" label="正在申请 AI 解答任务…" />
+            <button
+              v-else-if="missingAnswers" class="ai-gen"
+              title="为缺少答案的题生成答案与解析，结果标记为「AI 生成」；生成后这些题需重新审核"
+              @click="generateAnswers"
+            >AI 补全答案（{{ missingAnswers }} 题）</button>
+          </template>
+          <button class="all-ans" @click="toggleAllAns">{{ allAns ? '收起全部解析' : '展开全部解析' }}</button>
+        </div>
+      </div>
+      <div v-if="answerNotice" class="card ok-bar" role="status">
+        <span>{{ answerNotice }}</span>
+        <button class="btn-link" @click="answerNotice = ''">知道了</button>
+      </div>
+      <div v-if="answerError" class="card err-bar" role="alert">
+        <span>{{ answerError }}</span>
+        <button class="btn-link" @click="answerError = ''">知道了</button>
       </div>
 
       <div class="list">
@@ -189,6 +284,17 @@ function replaceAndGo() {
 .basket-note { font-size: 12px; color: var(--c-text-4); text-align: center; }
 
 .toolbar { display: flex; align-items: center; justify-content: space-between; font-size: 13px; color: var(--c-text-3); padding: 0 4px; }
+.tools { display: flex; align-items: center; flex-wrap: wrap; justify-content: flex-end; gap: 10px; }
+.ai-gen {
+  border: 1px solid var(--c-primary); background: #fff; color: var(--c-primary); border-radius: var(--r-sm);
+  padding: 4px 10px; font-size: 13px; font-weight: 600;
+}
+.ai-gen:hover { background: var(--c-primary-soft); }
+.ai-progress { font-size: 13px; color: var(--c-primary); background: var(--c-primary-soft); border-radius: var(--r-sm); padding: 4px 10px; }
+.ok-bar, .err-bar { padding: 10px 18px; display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 13px; line-height: 1.7; }
+.ok-bar { color: #3F7340; background: #E9F1E7; border-color: #C8DCC4; }
+.err-bar { color: #A0301F; background: #FBEAE6; border-color: #EFC2B8; }
+.ok-bar .btn-link, .err-bar .btn-link { flex-shrink: 0; }
 .all-ans { border: 1px solid var(--c-border); background: #fff; border-radius: var(--r-sm); padding: 4px 10px; font-size: 13px; color: var(--c-text-2); }
 .list { display: flex; flex-direction: column; gap: 14px; }
 .confirm { margin: 0; font-size: 14px; line-height: 1.8; color: var(--c-text-2); }

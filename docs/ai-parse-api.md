@@ -58,6 +58,8 @@ POST /api/parse-jobs/{id}/commit    → 入校本题库
 | GET | `/api/draft-questions/{qid}/source` | — | `SourceImage[]` |
 | POST | `/api/parse-jobs/{id}/commit` | `{ questionIds: string[], force?: boolean }` | `CommitResult`（`savedCount / savedIds / skipped / duplicatePaper`） |
 | POST | `/api/parse-jobs/{id}/generate-answers` | `{ questionIds?: string[], overwrite?: boolean }` | `AnswerTask`（202） |
+| POST | `/api/papers/{id}/generate-answers` | `{ questionIds?: string[] }`（已入库题目 id） | `AnswerTask`（202，仅管理员、组长） |
+| GET | `/api/papers/{id}/answer-task` | — | `AnswerTask \| null`（仅管理员、组长） |
 | GET | `/api/parse-jobs/{id}/usage` | — | `JobUsage`（汇总 + 每次调用明细） |
 | GET | `/api/usage/summary?days=30` | — | `UsageOverview`（近 N 天用量与平均成本） |
 | GET | `/api/bank/questions?stage=&subject=&nodeId=&chapterId=&type=&diff=&paperType=&year=&region=&grade=&term=&q=&paperId=&sort=&limit=&offset=` | — | `{ items: BankQuestion[], total }`（校本题库选题） |
@@ -172,7 +174,11 @@ POST /api/parse-jobs/{id}/commit    → 入校本题库
   （`status / total / done / failed / questionIds`），前端轮询 `GET /api/parse-jobs/{id}`。同一试卷同时只能有一个任务，重复发起返回 409。
 - `DraftQuestion.answerSource`：`paper` 原卷识别 / `ai` 大模型生成 / `manual` 人工修改（PATCH `answer` 或 `analysis` 后变为 `manual`）。
 - `DraftQuestion.answerNote`：AI 答案的提示，如题目含图（大模型看不到图片）、模型自认不确定、选择题答案不符合题型。
-- 入校本题库时保留答案来源；用量记为 `purpose=answer`。
+- 入校本题库时保留答案来源与提示（`BankQuestion.answerSource / answerNote`）；用量记为 `purpose=answer`。
+- 入库后补答案：管理员、组长在试卷详情页对已入库、缺少答案的题发起 `POST /api/papers/{id}/generate-answers`
+  （`questionIds` 为已入库题目 id，留空表示本卷全部缺答案的题；不覆盖已有答案），进度见 `GET /api/papers/{id}/answer-task`。
+  与核对页共用本卷的任务（`answerTask.scope=bank`），按题库中的题目内容作答，答案直接写入题库；
+  原草稿题缺答案时一并写入（状态不变），之后重新入库不会冲掉。生成答案的题撤销审核（保留归属），老师核对后重新审核。
 
 ### AI 用量与成本
 

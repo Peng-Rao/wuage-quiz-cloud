@@ -265,7 +265,7 @@ def bank_out(b: BankQuestion) -> BankQuestionOut:
         owner_id=b.owner_id, reviewed_by=b.reviewed_by, reviewed_at=b.reviewed_at,
         id=b.id, type=b.type, score=b.score, stem=b.stem, material=b.material, options=b.options or [],
         answer=b.answer, analysis=b.analysis,
-        answer_source=b.answer_source, knowledge_points=b.knowledge_points or [], coef=b.coef,
+        answer_source=b.answer_source, answer_note=b.answer_note, knowledge_points=b.knowledge_points or [], coef=b.coef,
         images=[store.public_url(k) for k in b.images or []],
         source=question_source(b.meta, b.source_file_name, b.source_no, b.source_page),
         paper_id=b.source_job_id, created_at=b.created_at,
@@ -496,7 +496,7 @@ def commit_questions(s: Session, job: ParseJob, qs: list[DraftQuestion], owner_i
         # Recommitting updates invalidates the previous review/assignment.
         b.owner_id = b.owner_id or owner_id
         b.reviewed_at, b.reviewed_by = None, None
-        b.answer_source = q.answer_source
+        b.answer_source, b.answer_note = q.answer_source, q.answer_note
         b.embedding, b.embedding_model = q.embedding, q.embedding_model
         b.source_file_name, b.source_no, b.source_page = job.file_name, q.no, q.page
         b.images, b.meta = q.images, job.meta
