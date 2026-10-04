@@ -259,7 +259,7 @@ function toBasket() {
 .stats { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 16px; font-size: 13px; color: var(--c-text-3); }
 .focus { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 13px; }
 .focus .label { color: var(--c-text-3); margin-right: 4px; }
-.gaps { margin: 0; padding: 10px 14px 10px 30px; background: #FDF6EC; border: 1px solid #F0D9B5; border-radius: var(--r-md); font-size: 13px; line-height: 1.7; color: #8A5A14; }
+.gaps { margin: 0; padding: 10px 14px 10px 30px; background: var(--c-warn-soft); border: 1px solid var(--c-warn-line); border-radius: var(--r-md); font-size: 13px; line-height: 1.7; color: var(--c-warn); }
 .sec h2 { margin: 8px 0 10px; font-size: 16px; }
 .q { padding: 12px 0; border-top: 1px solid var(--c-divider); display: flex; flex-direction: column; gap: 8px; }
 .q-stem { font-size: 15px; line-height: 1.8; }

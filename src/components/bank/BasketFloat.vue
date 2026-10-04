@@ -51,17 +51,17 @@ onBeforeUnmount(() => {
 .tab {
   width: 36px; border: none; border-radius: var(--r-md) 0 0 var(--r-md); background: var(--c-primary); color: #fff;
   padding: 12px 0 10px; display: flex; flex-direction: column; align-items: center; gap: 8px;
-  box-shadow: -4px 6px 18px rgba(27, 36, 48, .16); font-size: 14px; font-weight: 600;
+  box-shadow: -4px 6px 18px rgb(var(--shadow-rgb) / .16); font-size: 14px; font-weight: 600;
 }
 .tab:hover { background: var(--c-primary-dark); }
 .tab-text { writing-mode: vertical-rl; letter-spacing: 4px; }
 .badge {
-  min-width: 22px; height: 20px; border-radius: 10px; background: #fff; color: var(--c-primary); font-size: 12px;
+  min-width: 22px; height: 20px; border-radius: 10px; background: var(--c-surface); color: var(--c-primary); font-size: 12px;
   display: inline-flex; align-items: center; justify-content: center; padding: 0 5px;
 }
 .panel {
-  width: 230px; margin-right: 8px; background: #fff; border: 1px solid var(--c-border); border-radius: var(--r-lg);
-  box-shadow: 0 16px 40px rgba(27, 36, 48, .16); padding: 14px; display: flex; flex-direction: column; gap: 10px;
+  width: 230px; margin-right: 8px; background: var(--c-surface); border: 1px solid var(--c-border); border-radius: var(--r-lg);
+  box-shadow: 0 16px 40px rgb(var(--shadow-rgb) / .16); padding: 14px; display: flex; flex-direction: column; gap: 10px;
 }
 .panel-head { display: flex; align-items: baseline; justify-content: space-between; }
 .title { font-size: 15px; font-weight: 600; }

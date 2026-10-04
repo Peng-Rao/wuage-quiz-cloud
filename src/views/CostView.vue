@@ -5,7 +5,7 @@ import LoadingState from '@/components/LoadingState.vue'
 import CostBarChart, { type ChartBar } from '@/components/cost/CostBarChart.vue'
 import BreakdownList, { type BreakdownItem } from '@/components/cost/BreakdownList.vue'
 import {
-  PURPOSE_LABELS, SOURCE_LABELS, formatCost, formatDuration, formatPercent, formatTokens, pricingNote,
+  PURPOSE_LABELS, SOURCE_LABELS, formatCost, formatDuration, formatPercent, formatTokens,
 } from '@/utils/usage'
 
 // ---- 日期区间（北京时间）----
@@ -84,14 +84,6 @@ const delta = computed(() => {
   if (o.previousCost === 0) return o.summary.cost === 0 ? 0 : null
   return (o.summary.cost - o.previousCost) / o.previousCost
 })
-const note = computed(() => (d.value?.summary.calls ? pricingNote(d.value.summary) : ''))
-const otherCurrencies = computed(() => {
-  const o = d.value
-  if (!o) return ''
-  const main = Object.entries(o.summary.costsByCurrency).sort((a, b) => b[1] - a[1])[0]?.[0]
-  return Object.entries(o.summary.costsByCurrency).filter(([k]) => k !== main)
-    .map(([k, v]) => `${k} ${v.toFixed(4)}`).join('、')
-})
 
 const SERIES = [
   { name: '大模型', color: '#B8561F' },
@@ -118,7 +110,6 @@ function tokensSub(b: CostBreakdown): string {
   const parts = [`${b.calls} 次`]
   if (b.provider === 'mineru' || (b.pages && !b.promptTokens)) parts.push(`${b.pages} 页`)
   else parts.push(`${formatTokens(b.promptTokens + b.completionTokens)} tokens`)
-  if (b.unpricedCalls) parts.push(`${b.unpricedCalls} 次未计价`)
   return parts.join(' · ')
 }
 const purposeItems = computed<BreakdownItem[]>(() => (d.value?.byPurpose ?? []).map(b => ({
@@ -178,12 +169,6 @@ function cachedText(p: ModelPrice): string {
     <LoadingState v-if="loading && !d" label="正在统计成本…" />
 
     <template v-if="d">
-      <div class="notes" :class="{ stale: loading }">
-        <p v-if="note" class="warn">{{ note }}</p>
-        <p v-if="otherCurrencies">另有其他货币的费用未计入合计：{{ otherCurrencies }}</p>
-        <p v-if="d.summary.estimated">部分调用服务端未返回用量，已按字符数估算。</p>
-      </div>
-
       <section class="kpis" :class="{ stale: loading }">
         <div class="card kpi hero">
           <span class="kpi-label">区间总费用<small>{{ d.start }} 至 {{ d.end }}</small></span>
@@ -262,7 +247,7 @@ function cachedText(p: ModelPrice): string {
             <thead><tr><th>模型</th><th>调用</th><th>输入 tokens</th><th>输出 tokens</th><th>缓存命中</th><th>失败</th><th>每次均价</th><th>费用</th><th>占比</th></tr></thead>
             <tbody>
               <tr v-for="m in d.byModel" :key="m.key">
-                <td class="model">{{ m.key }}<small v-if="m.unpricedCalls">{{ m.unpricedCalls }} 次未计价</small></td>
+                <td class="model">{{ m.key }}</td>
                 <td>{{ m.calls }}</td>
                 <template v-if="m.provider === 'mineru'"><td>{{ m.pages }} 页</td><td>—</td><td>—</td></template>
                 <template v-else>
@@ -357,16 +342,13 @@ h1 { font-size: 26px; margin: 0 0 10px; }
 h2 { font-size: 15px; margin: 0; font-weight: 600; }
 
 .toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; }
-.presets { display: flex; flex-wrap: wrap; gap: 4px; background: #fff; border: 1px solid var(--c-border); border-radius: var(--r-md); padding: 3px; }
+.presets { display: flex; flex-wrap: wrap; gap: 4px; background: var(--c-surface); border: 1px solid var(--c-border); border-radius: var(--r-md); padding: 3px; }
 .presets .chip { padding: 5px 12px; }
 .dates { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--c-text-3); }
-.dates input { height: 36px; padding: 0 8px; border: 1px solid var(--c-border); border-radius: var(--r-sm); background: #fff; font: inherit; color: var(--c-ink); }
+.dates input { height: 36px; padding: 0 8px; border: 1px solid var(--c-border); border-radius: var(--r-sm); background: var(--c-surface); font: inherit; color: var(--c-ink); }
 .dates .btn { height: 36px; }
-.error { color: #a0301f; margin: 0; }
+.error { color: var(--c-danger); margin: 0; }
 
-.notes:empty { display: none; }
-.notes p { margin: 0; font-size: 13px; color: var(--c-text-3); line-height: 1.7; }
-.notes .warn { color: #8a4a12; }
 .stale { opacity: .6; transition: opacity .15s; }
 
 .kpis { display: grid; grid-template-columns: 1.4fr repeat(4, minmax(0, 1fr)); gap: 12px; }

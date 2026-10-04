@@ -44,14 +44,14 @@ async function submit() {
 
 <style scoped>
 .login-page { min-height: calc(100vh - 110px); display: grid; grid-template-columns: 1fr 1fr; }
-.welcome { background: #f5ede2; padding: 54px max(32px, 8vw); display: flex; flex-direction: column; justify-content: space-between; gap: 56px; }
+.welcome { background: var(--c-sand); padding: 54px max(32px, 8vw); display: flex; flex-direction: column; justify-content: space-between; gap: 56px; }
 .eyebrow { color: var(--c-primary); font-size: 13px; letter-spacing: 2px; }
 h1 { font-size: clamp(38px, 4vw, 64px); font-weight: 500; line-height: 1.3; margin: 24px 0; }
 .welcome p { color: var(--c-text-3); line-height: 1.9; }.welcome-foot { font-size: 12px; }
-.login-panel { display: grid; place-items: center; padding: 48px 24px; background: #fff; }
+.login-panel { display: grid; place-items: center; padding: 48px 24px; background: var(--c-surface); }
 form { width: 100%; max-width: 360px; }h2 { font-size: 28px; margin: 12px 0; }.intro,.help { color: var(--c-text-3); font-size: 13px; line-height: 1.7; }
 label { display: block; margin: 24px 0 8px; font-size: 14px; }input { width: 100%; padding: 12px 14px; border: 1px solid var(--c-border); border-radius: 6px; background: var(--c-paper); }
-.login-button { width: 100%; margin-top: 28px; height: 46px; }.help { text-align: center; margin: 18px 0 36px; }.error { color: #a0301f; font-size: 13px; }
+.login-button { width: 100%; margin-top: 28px; height: 46px; }.help { text-align: center; margin: 18px 0 36px; }.error { color: var(--c-danger); font-size: 13px; }
 .roles { display: flex; justify-content: space-between; padding-top: 24px; border-top: 1px solid var(--c-border); font-size: 12px; }.roles small { display: block; color: var(--c-text-4); margin-top: 6px; }
 @media(max-width:720px) { .login-page { grid-template-columns: 1fr; }.welcome { padding: 24px; gap: 20px; }.welcome h1 { font-size: 32px; margin: 12px 0; }.welcome p,.welcome-foot { display: none; }.welcome h1 br { display: none; }.login-panel { padding: 32px 24px; } }
 </style>

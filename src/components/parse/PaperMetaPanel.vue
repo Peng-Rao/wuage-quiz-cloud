@@ -84,7 +84,7 @@ function commit(key: keyof PaperMeta, value: string) {
 .small { font-size: 12px; }
 .meta-row { display: flex; justify-content: space-between; align-items: center; font-size: 13px; gap: 10px; min-height: 26px; }
 .meta-k { color: var(--c-text-3); flex-shrink: 0; }
-.meta-v { padding: 3px 10px; border: 1px solid var(--c-border); border-radius: var(--r-sm); color: var(--c-ink); background: #fff; font-size: 13px; min-width: 0; }
+.meta-v { padding: 3px 10px; border: 1px solid var(--c-border); border-radius: var(--r-sm); color: var(--c-ink); background: var(--c-surface); font-size: 13px; min-width: 0; }
 .meta-v:hover { border-color: var(--c-primary); }
 .meta-v.editing { border-color: var(--c-primary); outline: none; max-width: 170px; font-family: inherit; }
 /* 试卷名称较长，按钮内截断显示 */

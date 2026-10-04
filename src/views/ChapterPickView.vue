@@ -245,8 +245,8 @@ async function addPaper(p: PaperSummary) {
 .gt { color: var(--c-text-4); }
 .caret { margin-left: auto; font-size: 11px; }
 .book-pop {
-  position: absolute; left: 0; top: 100%; z-index: 12; width: min(760px, calc(100vw - 32px)); background: #fff;
-  border: 1px solid var(--c-border); border-radius: var(--r-lg); box-shadow: 0 16px 40px rgba(27, 36, 48, .14);
+  position: absolute; left: 0; top: 100%; z-index: 12; width: min(760px, calc(100vw - 32px)); background: var(--c-surface);
+  border: 1px solid var(--c-border); border-radius: var(--r-lg); box-shadow: 0 16px 40px rgb(var(--shadow-rgb) / .14);
   padding: 14px 18px; display: flex; flex-direction: column; gap: 10px;
 }
 .pop-row { display: flex; gap: 14px; align-items: flex-start; }
@@ -282,7 +282,7 @@ async function addPaper(p: PaperSummary) {
 .paper-title { color: var(--c-ink); font-size: 15px; }
 .paper-title:hover { color: var(--c-primary); }
 .paper-meta { font-size: 12px; color: var(--c-text-4); }
-.paper-add { flex-shrink: 0; border: 1px solid var(--c-primary); background: #fff; color: var(--c-primary); border-radius: var(--r-sm); padding: 5px 12px; font-size: 13px; }
+.paper-add { flex-shrink: 0; border: 1px solid var(--c-primary); background: var(--c-surface); color: var(--c-primary); border-radius: var(--r-sm); padding: 5px 12px; font-size: 13px; }
 .paper-add:hover { background: var(--c-primary-soft); }
 .more { display: inline-block; margin-top: 12px; font-size: 13px; }
 

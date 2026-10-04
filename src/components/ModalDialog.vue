@@ -32,9 +32,9 @@ function onBackdrop(e: MouseEvent) {
 <style scoped>
 .modal {
   max-width: calc(100vw - 32px); max-height: calc(100vh - 48px); padding: 0; border: none;
-  border-radius: var(--r-lg); box-shadow: 0 20px 48px rgba(27, 36, 48, .22); color: var(--c-ink);
+  border-radius: var(--r-lg); box-shadow: 0 20px 48px rgb(var(--shadow-rgb) / .22); color: var(--c-ink);
 }
-.modal::backdrop { background: rgba(27, 36, 48, .45); }
+.modal::backdrop { background: rgb(var(--shadow-rgb) / .45); }
 .inner { display: flex; flex-direction: column; max-height: calc(100vh - 48px); }
 .head { display: flex; align-items: center; justify-content: space-between; padding: 16px 20px; border-bottom: 1px solid var(--c-divider); }
 .close { border: none; background: transparent; font-size: 22px; line-height: 1; color: var(--c-text-3); padding: 0 4px; }

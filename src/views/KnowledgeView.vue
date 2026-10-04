@@ -161,8 +161,8 @@ const shownNodes = computed(() => {
 h1 { margin: 4px 0 6px; font-size: 24px; }
 .sub { font-size: 14px; color: var(--c-text-3); }
 .err, .ok { margin: 0; padding: 10px 16px; font-size: 13px; }
-.err { color: #A0301F; background: #FBEAE6; border-color: #EFC2B8; }
-.ok { color: #3F7340; background: #E9F1E7; border-color: #C8DCC4; }
+.err { color: var(--c-danger); background: var(--c-danger-soft); border-color: var(--c-danger-line); }
+.ok { color: var(--c-success); background: var(--c-success-soft); border-color: var(--c-success-line); }
 .row { display: flex; flex-wrap: wrap; gap: 18px; align-items: flex-start; }
 .side { flex: 1 0 300px; max-width: 360px; display: flex; flex-direction: column; gap: 14px; }
 .panel { padding: 18px; display: flex; flex-direction: column; gap: 12px; }
@@ -176,13 +176,13 @@ h1 { margin: 4px 0 6px; font-size: 24px; }
 .meta { font-size: 12px; color: var(--c-text-4); }
 .tag { font-size: 11px; color: var(--c-primary-dark); background: var(--c-primary-soft); border-radius: 4px; padding: 0 6px; flex-shrink: 0; }
 .del { flex-shrink: 0; }
-.del:hover { color: #A0301F; }
+.del:hover { color: var(--c-danger); }
 .file { border: 1px dashed var(--c-primary-line); border-radius: var(--r-md); padding: 12px; font-size: 13px; color: var(--c-text-2); cursor: pointer; text-align: center; }
 .file input { display: none; }
 .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .grid label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--c-text-3); }
 .grid .wide { grid-column: 1 / -1; }
-.grid input, .grid select, .search { border: 1px solid var(--c-border); border-radius: var(--r-sm); padding: 6px 8px; font-size: 13px; font-family: inherit; color: var(--c-ink); background: #fff; }
+.grid input, .grid select, .search { border: 1px solid var(--c-border); border-radius: var(--r-sm); padding: 6px 8px; font-size: 13px; font-family: inherit; color: var(--c-ink); background: var(--c-surface); }
 .help { font-size: 12px; color: var(--c-text-3); }
 .help summary { cursor: pointer; }
 .help pre { background: var(--c-paper); border-radius: var(--r-sm); padding: 8px; overflow-x: auto; font-size: 11.5px; }

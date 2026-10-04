@@ -184,7 +184,7 @@ function save() {
 .field em { font-style: normal; color: var(--c-text-4); margin-left: 6px; }
 .field input, .field select, .field textarea {
   border: 1px solid var(--c-border); border-radius: var(--r-sm); padding: 8px 10px; font-size: 14px;
-  color: var(--c-ink); background: #fff; font-family: inherit; resize: vertical;
+  color: var(--c-ink); background: var(--c-surface); font-family: inherit; resize: vertical;
 }
 .field textarea.serif, .field input.serif { font-family: var(--font-serif); line-height: 1.75; }
 .field input:focus, .field select:focus, .field textarea:focus { outline: none; border-color: var(--c-primary); }
@@ -195,7 +195,7 @@ function save() {
 .hits span { font-size: 11px; color: var(--c-text-4); }
 .label-row { display: flex; align-items: center; justify-content: space-between; }
 .fx {
-  border: 1px solid var(--c-border); background: #fff; border-radius: var(--r-sm); padding: 2px 8px;
+  border: 1px solid var(--c-border); background: var(--c-surface); border-radius: var(--r-sm); padding: 2px 8px;
   font-size: 12px; color: var(--c-primary);
 }
 .fx:hover { border-color: var(--c-primary); background: var(--c-primary-soft); }

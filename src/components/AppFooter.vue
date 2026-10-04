@@ -38,7 +38,7 @@ const policeCode = SITE.police.match(/\d+/)?.[0]
 </template>
 
 <style scoped>
-.footer { border-top: 1px solid var(--c-border); background: #F3F1EB; }
+.footer { border-top: 1px solid var(--c-border); background: var(--c-paper-2); }
 .inner { padding-top: 28px; padding-bottom: 28px; display: flex; flex-direction: column; align-items: center; gap: 10px; text-align: center; }
 .line {
   margin: 0; display: flex; flex-wrap: wrap; justify-content: center; gap: 6px 22px;

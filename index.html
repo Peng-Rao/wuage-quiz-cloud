@@ -4,6 +4,14 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>福格云上题库</title>
+  <script>
+    // 首屏渲染前确定主题，避免暗色下闪白；逻辑同 src/utils/theme.ts
+    try {
+      var t = localStorage.getItem('theme')
+      if (t !== 'light' && t !== 'dark') t = matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+      document.documentElement.dataset.theme = t
+    } catch (e) {}
+  </script>
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>

@@ -67,5 +67,5 @@ watch([open, () => props.jobId, attempt], async ([isOpen, jobId], _, onCleanup) 
 .actions { display: flex; gap: 8px; flex-wrap: wrap; }
 .hint { margin: 0; font-size: 12px; color: var(--c-text-3); }
 .pdf-frame { width: 100%; height: min(68vh, 800px); border: 1px solid var(--c-border); border-radius: var(--r-sm); background: var(--c-surface-2); }
-.error { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 20px 0; font-size: 14px; color: #A0301F; }
+.error { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 20px 0; font-size: 14px; color: var(--c-danger); }
 </style>

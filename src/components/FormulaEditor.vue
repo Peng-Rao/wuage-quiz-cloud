@@ -141,14 +141,14 @@ function done() {
 .fe { display: flex; flex-direction: column; gap: 10px; }
 .toolbar { display: flex; flex-wrap: wrap; gap: 4px; }
 .tb {
-  min-width: 32px; height: 30px; padding: 0 6px; border: 1px solid var(--c-border); border-radius: var(--r-sm); background: #fff;
+  min-width: 32px; height: 30px; padding: 0 6px; border: 1px solid var(--c-border); border-radius: var(--r-sm); background: var(--c-surface);
   font-family: var(--font-serif); font-size: 15px; color: var(--c-ink);
 }
 .tb.wide { font-family: var(--font-sans); font-size: 13px; padding: 0 8px; }
 .tb:hover { border-color: var(--c-primary); color: var(--c-primary); background: var(--c-primary-soft); }
 .field-host :deep(math-field) {
   display: block; width: 100%; min-height: 64px; font-size: 22px; padding: 10px 12px;
-  border: 1px solid var(--c-border); border-radius: var(--r-md); background: #fff;
+  border: 1px solid var(--c-border); border-radius: var(--r-md); background: var(--c-surface);
   --primary: var(--c-primary); --caret-color: var(--c-primary); --selection-background-color: var(--c-primary-soft);
 }
 .field-host :deep(math-field:focus-within) { outline: none; border-color: var(--c-primary); }

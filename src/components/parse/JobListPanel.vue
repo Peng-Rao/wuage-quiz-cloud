@@ -95,7 +95,7 @@ function meta(j: JobListItem): string {
 .toolbar { display: flex; align-items: center; justify-content: space-between; padding: 0 24px 16px; gap: 12px; }
 .filters { display: flex; padding: 3px; background: var(--c-surface-2); border: 1px solid var(--c-divider); border-radius: 8px; gap: 2px; }
 .filters button { background: transparent; color: var(--c-text-3); border: 0; border-radius: 5px; padding: 6px 14px; font-size: 13px; }
-.filters button.selected { background: var(--c-surface); color: var(--c-primary); font-weight: 600; box-shadow: 0 1px 4px #1B24300D; }
+.filters button.selected { background: var(--c-surface); color: var(--c-primary); font-weight: 600; box-shadow: 0 1px 4px rgb(var(--shadow-rgb) / .05); }
 .list-note { color: var(--c-text-3); font-size: 12px; }
 .columns, .item { display: grid; grid-template-columns: minmax(0, 1fr) 180px 126px 62px; align-items: center; gap: 24px; padding: 12px 24px; }
 .columns { background: var(--c-surface-2); border-top: 1px solid var(--c-divider); border-bottom: 1px solid var(--c-divider); color: var(--c-text-3); font-size: 12px; }
@@ -106,9 +106,9 @@ function meta(j: JobListItem): string {
 .item:hover { background: var(--c-surface-2); }
 .main { min-width: 0; display: flex; align-items: center; gap: 12px; text-align: left; border: none; background: transparent; padding: 2px 0; color: var(--c-ink); }
 .main:hover .name { color: var(--c-primary); }
-.file-icon { width: 34px; height: 40px; display: grid; place-items: center; flex-shrink: 0; border: 1px solid #EEDACD; border-radius: 7px; color: var(--c-primary); background: #FCF3ED; }
-.file-icon.word { color: #50749B; border-color: #D9E3EF; background: #F0F5FA; }
-.file-icon.image { color: #577D60; border-color: #DBE6DD; background: #F0F6F1; }
+.file-icon { width: 34px; height: 40px; display: grid; place-items: center; flex-shrink: 0; border: 1px solid var(--c-primary-line-soft); border-radius: 7px; color: var(--c-primary); background: var(--c-primary-tint); }
+.file-icon.word { color: var(--c-info); border-color: var(--c-info-line); background: var(--c-info-soft); }
+.file-icon.image { color: var(--c-success); border-color: var(--c-success-line); background: var(--c-success-soft); }
 .file-icon svg { width: 23px; height: 23px; }
 .file-copy { min-width: 0; display: flex; flex-direction: column; gap: 6px; }
 .name { font-size: 14px; font-weight: 500; line-height: 1.5; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -119,9 +119,9 @@ function meta(j: JobListItem): string {
 .detail { max-width: 100%; font-size: 11px; color: var(--c-text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .time { font-size: 12px; color: var(--c-text-3); font-variant-numeric: tabular-nums; }
 .item.running .status { color: var(--c-primary); background: var(--c-primary-soft); }
-.item.queued .status { color: #876834; background: #F7F1E4; }
-.item.done .status { color: #3F7340; background: #EEF5ED; }
-.item.failed .status { color: #A0301F; background: #FBEAE6; }
+.item.queued .status { color: var(--c-warn); background: var(--c-warn-soft); }
+.item.done .status { color: var(--c-success); background: var(--c-success-soft); }
+.item.failed .status { color: var(--c-danger); background: var(--c-danger-soft); }
 .bar { align-self: stretch; height: 3px; border-radius: 2px; background: var(--c-divider); overflow: hidden; }
 .bar > span { display: block; height: 100%; background: var(--c-primary); transition: width .3s; }
 .actions { display: flex; justify-content: flex-end; }
@@ -135,7 +135,7 @@ button:focus-visible { outline: 3px solid var(--c-primary-line); outline-offset:
 .empty svg { width: 32px; height: 32px; color: var(--c-text-4); margin-bottom: 4px; }
 .empty p { margin: 0; font-size: 13px; font-weight: 500; color: var(--c-text-2); }
 .empty > span { font-size: 12px; line-height: 1.7; }
-.load-error { display: flex; justify-content: space-between; gap: 12px; padding: 12px 24px; font-size: 12px; color: #A0301F; background: #FBEAE6; }
+.load-error { display: flex; justify-content: space-between; gap: 12px; padding: 12px 24px; font-size: 12px; color: var(--c-danger); background: var(--c-danger-soft); }
 .pagination { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 12px; padding: 16px 24px; border-top: 1px solid var(--c-divider); }
 .page-info { color: var(--c-text-3); font-size: 12px; font-variant-numeric: tabular-nums; }
 .page-controls { display: flex; gap: 4px; }

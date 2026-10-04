@@ -97,12 +97,12 @@ async function save() {
 .field { display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: var(--c-text-3); }
 .field input, .field select {
   border: 1px solid var(--c-border); border-radius: var(--r-sm); padding: 8px 10px; font-size: 14px;
-  color: var(--c-ink); background: #fff; font-family: inherit;
+  color: var(--c-ink); background: var(--c-surface); font-family: inherit;
 }
 .field input.serif { font-family: var(--font-serif); }
 .field input:focus, .field select:focus { outline: none; border-color: var(--c-primary); }
 .tip { margin: 0; font-size: 12px; color: var(--c-text-4); line-height: 1.6; }
-.warn { margin: 0; font-size: 12px; color: #B5661B; line-height: 1.6; }
+.warn { margin: 0; font-size: 12px; color: var(--c-accent); line-height: 1.6; }
 .err { margin: 0; font-size: 13px; color: var(--c-hard); }
 .save:disabled { opacity: .6; cursor: not-allowed; }
 @media (max-width: 520px) {
