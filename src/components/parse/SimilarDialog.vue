@@ -54,9 +54,9 @@ const pct = (v: number) => Math.round(v * 100) + '%'
 .item { border: 1px solid var(--c-border); border-radius: var(--r-md); padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; }
 .head { display: flex; flex-wrap: wrap; gap: 6px 8px; align-items: center; font-size: 12px; }
 .score { font-weight: 700; color: var(--c-ink); font-size: 13px; font-variant-numeric: tabular-nums; }
-.score.dup { color: #A0301F; }
+.score.dup { color: var(--c-danger); }
 .tag { color: var(--c-primary-dark); background: var(--c-primary-soft); border-radius: 4px; padding: 1px 6px; }
-.tag.dup { color: #A0301F; background: #FBEAE6; }
+.tag.dup { color: var(--c-danger); background: var(--c-danger-soft); }
 .tag.plain { color: var(--c-text-2); background: var(--c-paper); }
 .from { font-size: 12px; color: var(--c-text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .kps { display: flex; flex-wrap: wrap; gap: 6px; }
@@ -68,5 +68,5 @@ const pct = (v: number) => Math.round(v * 100) + '%'
 .ans b { color: var(--c-primary-dark); font-weight: 600; }
 .why { margin: 0; font-size: 11.5px; color: var(--c-text-4); }
 .note { font-size: 12px; margin: 14px 0 0; }
-.err { color: #A0301F; }
+.err { color: var(--c-danger); }
 </style>

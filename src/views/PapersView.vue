@@ -198,10 +198,10 @@ async function addPaper(p: PaperSummary) {
 .search { display: flex; gap: 6px; width: min(100%, 360px); padding: 8px 0; }
 .search input {
   flex: 1; min-width: 0; height: 36px; border: 1px solid var(--c-border); border-radius: var(--r-md); padding: 0 12px;
-  font-size: 14px; background: #fff; color: var(--c-ink);
+  font-size: 14px; background: var(--c-surface); color: var(--c-ink);
 }
 .search input:focus { outline: none; border-color: var(--c-primary); }
-.search button { border: none; background: var(--c-ink); color: #fff; border-radius: var(--r-md); padding: 0 18px; font-size: 14px; }
+.search button { border: none; background: var(--c-inverse); color: #fff; border-radius: var(--r-md); padding: 0 18px; font-size: 14px; }
 
 .filters { padding: 14px 18px; display: flex; flex-direction: column; gap: 10px; }
 .filter-row { display: flex; gap: 12px; align-items: flex-start; }
@@ -229,12 +229,12 @@ async function addPaper(p: PaperSummary) {
 .title:hover { color: var(--c-primary); }
 .meta, .stats { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 12px; color: var(--c-text-4); }
 .stats { color: var(--c-text-3); }
-.partial { color: #B5661B; }
+.partial { color: var(--c-accent); }
 .ops { flex-shrink: 0; display: flex; flex-direction: column; align-items: flex-end; gap: 8px; }
 .date { font-size: 12px; color: var(--c-text-4); }
 .btns { display: flex; gap: 8px; }
 .op {
-  height: 30px; padding: 0 12px; border-radius: var(--r-sm); border: 1px solid var(--c-border); background: #fff;
+  height: 30px; padding: 0 12px; border-radius: var(--r-sm); border: 1px solid var(--c-border); background: var(--c-surface);
   font-size: 13px; color: var(--c-text-2); display: inline-flex; align-items: center;
 }
 .op:hover { text-decoration: none; border-color: var(--c-primary); color: var(--c-primary); }
@@ -244,7 +244,7 @@ async function addPaper(p: PaperSummary) {
 
 .pager { display: flex; justify-content: center; flex-wrap: wrap; gap: 6px; padding: 8px 0; }
 .pager button {
-  min-width: 32px; height: 32px; border-radius: var(--r-sm); background: #fff; border: 1px solid var(--c-border);
+  min-width: 32px; height: 32px; border-radius: var(--r-sm); background: var(--c-surface); border: 1px solid var(--c-border);
   font-size: 13px; color: var(--c-ink);
 }
 .pager button.on { background: var(--c-primary); border-color: var(--c-primary); color: #fff; }

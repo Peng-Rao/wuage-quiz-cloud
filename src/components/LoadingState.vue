@@ -40,7 +40,7 @@ withDefaults(defineProps<{
 .compact .label { font-size: inherit; font-weight: inherit; }
 .skeletons { display: flex; flex-direction: column; gap: 12px; width: 100%; max-width: 680px; }
 .skeleton { position: relative; display: flex; flex-direction: column; gap: 12px; padding: 20px; border: 1px solid var(--c-divider); border-radius: var(--r-md); overflow: hidden; }
-.skeleton::after { content: ''; position: absolute; inset: 0; background: linear-gradient(100deg, transparent 20%, rgba(255, 255, 255, .75) 50%, transparent 80%); transform: translateX(-100%); animation: loading-shimmer 1.6s ease-in-out infinite; }
+.skeleton::after { content: ''; position: absolute; inset: 0; background: linear-gradient(100deg, transparent 20%, var(--c-shimmer) 50%, transparent 80%); transform: translateX(-100%); animation: loading-shimmer 1.6s ease-in-out infinite; }
 .skeleton-line { display: block; height: 10px; border-radius: 5px; background: var(--c-divider); }
 .skeleton-line.short { width: 28%; height: 8px; }
 .skeleton-line.medium { width: 72%; }

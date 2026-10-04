@@ -62,13 +62,13 @@ const note = computed(() => (s.value ? pricingNote(s.value) : ''))
 <style scoped>
 .panel { padding: 18px; display: flex; flex-direction: column; gap: 12px; }
 .head { display: flex; align-items: center; justify-content: space-between; }
-.flag { font-size: 11px; color: #6B4E0F; background: #F8EFD9; border-radius: 4px; padding: 1px 6px; cursor: help; }
+.flag { font-size: 11px; color: var(--c-warn); background: var(--c-warn-soft); border-radius: 4px; padding: 1px 6px; cursor: help; }
 .small { font-size: 12px; margin: 0; }
 .cost { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
 .cost-num { font-size: 26px; font-weight: 700; color: var(--c-ink); line-height: 1; font-variant-numeric: tabular-nums; }
 .cost-label { font-size: 12px; color: var(--c-text-3); }
 .note { margin: 0; font-size: 12px; color: var(--c-text-3); line-height: 1.6; }
-.note.warn { color: #A0301F; }
+.note.warn { color: var(--c-danger); }
 .stats { margin: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 10px 12px; }
 .stats div { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .stats dt { font-size: 12px; color: var(--c-text-3); }
@@ -79,5 +79,5 @@ const note = computed(() => (s.value ? pricingNote(s.value) : ''))
 .calls th { text-align: left; font-weight: 400; color: var(--c-text-4); padding: 4px 0; border-bottom: 1px solid var(--c-divider); }
 .calls td { padding: 6px 4px 6px 0; border-bottom: 1px solid var(--c-divider); vertical-align: top; }
 .calls th:last-child, .calls td:last-child { text-align: right; padding-right: 0; }
-.calls tr.failed td { color: #A0301F; }
+.calls tr.failed td { color: var(--c-danger); }
 </style>

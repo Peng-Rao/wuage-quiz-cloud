@@ -25,7 +25,7 @@ const on = defineModel<boolean>({ required: true })
 .track.on { background: var(--c-primary); }
 .knob {
   position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 8px;
-  background: #fff; box-shadow: 0 1px 2px rgba(0, 0, 0, .2); transition: left .15s;
+  background: var(--c-surface); box-shadow: 0 1px 2px rgba(0, 0, 0, .2); transition: left .15s;
 }
 .track.on .knob { left: 16px; }
 </style>

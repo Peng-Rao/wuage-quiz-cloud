@@ -103,11 +103,11 @@ const meta = computed(() => [props.job?.pageCount ? `${props.job.pageCount} 页`
 @keyframes stage-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .dot.spinning { animation: none; } }
 .task.done .dot { background: var(--c-primary); color: #fff; }
-.task.failed .dot { background: #FBEAE6; color: #A0301F; }
+.task.failed .dot { background: var(--c-danger-soft); color: var(--c-danger); }
 .task.skipped .task-label { text-decoration: line-through; }
 .task-label { flex: 1; }
 .task-note { font-size: 12px; color: var(--c-text-4); }
-.fail { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; font-size: 14px; color: #A0301F; }
+.fail { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; font-size: 14px; color: var(--c-danger); }
 .fail-actions { display: flex; gap: 8px; }
 .bg-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; border-top: 1px solid var(--c-divider); padding-top: 16px; }
 .small { font-size: 12px; }

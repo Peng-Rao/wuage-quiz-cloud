@@ -315,7 +315,7 @@ function replaceAndGo() {
 .stats span { font-size: 12px; color: var(--c-text-3); }
 .stats .types { flex-wrap: wrap; gap: 4px 12px; }
 .dist-wrap { max-width: 360px; display: flex; flex-direction: column; gap: 6px; }
-.partial { margin: 0; font-size: 12px; color: #B5661B; }
+.partial { margin: 0; font-size: 12px; color: var(--c-accent); }
 .head-ops { flex: 0 0 200px; display: flex; flex-direction: column; gap: 10px; justify-content: center; }
 .head-ops .btn:disabled { opacity: .55; cursor: default; }
 .minor-ops { display: flex; justify-content: center; gap: 16px; }
@@ -328,16 +328,16 @@ function replaceAndGo() {
 .toolbar { display: flex; align-items: center; justify-content: space-between; font-size: 13px; color: var(--c-text-3); padding: 0 4px; }
 .tools { display: flex; align-items: center; flex-wrap: wrap; justify-content: flex-end; gap: 10px; }
 .ai-gen {
-  border: 1px solid var(--c-primary); background: #fff; color: var(--c-primary); border-radius: var(--r-sm);
+  border: 1px solid var(--c-primary); background: var(--c-surface); color: var(--c-primary); border-radius: var(--r-sm);
   padding: 4px 10px; font-size: 13px; font-weight: 600;
 }
 .ai-gen:hover { background: var(--c-primary-soft); }
 .ai-progress { font-size: 13px; color: var(--c-primary); background: var(--c-primary-soft); border-radius: var(--r-sm); padding: 4px 10px; }
 .ok-bar, .err-bar { padding: 10px 18px; display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 13px; line-height: 1.7; }
-.ok-bar { color: #3F7340; background: #E9F1E7; border-color: #C8DCC4; }
-.err-bar { color: #A0301F; background: #FBEAE6; border-color: #EFC2B8; }
+.ok-bar { color: var(--c-success); background: var(--c-success-soft); border-color: var(--c-success-line); }
+.err-bar { color: var(--c-danger); background: var(--c-danger-soft); border-color: var(--c-danger-line); }
 .ok-bar .btn-link, .err-bar .btn-link { flex-shrink: 0; }
-.all-ans { border: 1px solid var(--c-border); background: #fff; border-radius: var(--r-sm); padding: 4px 10px; font-size: 13px; color: var(--c-text-2); }
+.all-ans { border: 1px solid var(--c-border); background: var(--c-surface); border-radius: var(--r-sm); padding: 4px 10px; font-size: 13px; color: var(--c-text-2); }
 .list { display: flex; flex-direction: column; gap: 14px; }
 .confirm { margin: 0; font-size: 14px; line-height: 1.8; color: var(--c-text-2); }
 

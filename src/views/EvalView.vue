@@ -207,15 +207,15 @@ h1 { margin: 4px 0 6px; font-size: 24px; }
 .run { height: 40px; font-size: 14px; padding: 0 18px; }
 .run:disabled { opacity: .6; cursor: not-allowed; }
 .err, .ok { margin: 0; padding: 10px 16px; font-size: 13px; }
-.err { color: #A0301F; background: #FBEAE6; border-color: #EFC2B8; }
-.ok { color: #3F7340; background: #E9F1E7; border-color: #C8DCC4; }
-.err-text { color: #A0301F; font-size: 13px; margin: 0; }
+.err { color: var(--c-danger); background: var(--c-danger-soft); border-color: var(--c-danger-line); }
+.ok { color: var(--c-success); background: var(--c-success-soft); border-color: var(--c-success-line); }
+.err-text { color: var(--c-danger); font-size: 13px; margin: 0; }
 .row { display: flex; flex-wrap: wrap; gap: 18px; align-items: flex-start; }
 .side { flex: 1 0 280px; max-width: 340px; display: flex; flex-direction: column; gap: 14px; }
 .main-col { flex: 999 1 480px; min-width: 0; display: flex; flex-direction: column; gap: 14px; }
 .panel { padding: 18px; display: flex; flex-direction: column; gap: 12px; }
 .small { font-size: 12px; margin: 0; line-height: 1.6; }
-.warn { color: #8F4115; }
+.warn { color: var(--c-primary-dark); }
 .list { list-style: none; margin: 0; padding: 0; }
 .list li { display: flex; align-items: center; gap: 8px; padding: 7px 0; border-top: 1px solid var(--c-divider); font-size: 13px; }
 .list li:first-child { border-top: none; }
@@ -229,15 +229,15 @@ h1 { margin: 4px 0 6px; font-size: 24px; }
 .metric b { font-size: 22px; font-variant-numeric: tabular-nums; }
 .m-label { font-size: 12px; color: var(--c-text-3); }
 .m-target { font-size: 11px; color: var(--c-text-4); }
-.metric.pass { border-color: #C8DCC4; background: #F3F8F2; }
-.metric.pass b { color: #3F7340; }
-.metric.fail { border-color: #EFC2B8; background: #FDF5F3; }
-.metric.fail b { color: #A0301F; }
+.metric.pass { border-color: var(--c-success-line); background: var(--c-success-soft); }
+.metric.pass b { color: var(--c-success); }
+.metric.fail { border-color: var(--c-danger-line); background: var(--c-danger-soft); }
+.metric.fail b { color: var(--c-danger); }
 .cal { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; font-size: 13px; background: var(--c-surface-2); border-radius: var(--r-md); padding: 10px 12px; }
 .chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .chips span { font-size: 12px; background: var(--c-paper); border-radius: 4px; padding: 2px 8px; color: var(--c-text-2); }
-.chips .pass { background: #E9F1E7; color: #3F7340; }
-.chips .fail { background: #FBEAE6; color: #A0301F; }
+.chips .pass { background: var(--c-success-soft); color: var(--c-success); }
+.chips .fail { background: var(--c-danger-soft); color: var(--c-danger); }
 .issues { margin: 0; padding-left: 18px; font-size: 13px; color: var(--c-text-2); display: flex; flex-direction: column; gap: 4px; }
 .issues b { margin-right: 8px; }
 </style>

@@ -1,11 +1,18 @@
+/* 颜色一律走变量；暗色值在下方 [data-theme="dark"] 中覆盖（主题由 utils/theme.ts 写到 <html>） */
 :root {
+  color-scheme: light;
+
   /* 品牌 */
   --c-primary: #B8561F;       /* 主色 · 福格橙 */
   --c-primary-dark: #8F4115;
   --c-logo: #C96A30;          /* 标识橙 */
   --c-primary-soft: #FBEEE4;  /* 浅橙底 */
+  --c-primary-tint: #FDF6F0;  /* 更浅的橙底 */
   --c-primary-line: #E9B894;
+  --c-primary-line-soft: #EEDACD;
   --c-highlight: #F4B98C;
+  --c-hero: #B8561F;          /* 首页横幅 */
+  --c-sand: #F5EDE2;          /* 登录页欢迎区 */
 
   /* 中性 */
   --c-ink: #1B2430;           /* 墨色 */
@@ -13,16 +20,38 @@
   --c-text-3: #6A6F76;        /* 辅助文字 */
   --c-text-4: #8A8F95;
   --c-paper: #F6F5F1;         /* 纸色背景 */
+  --c-paper-2: #F3F1EB;
   --c-surface: #FFFFFF;
   --c-surface-2: #FCFBF8;
   --c-border: #E4E1D8;
+  --c-border-strong: #C9C5BA;
   --c-divider: #EFECE4;
   --c-toggle-off: #D8D4C8;
+  --c-inverse: #1B2430;       /* 深色块（配白字） */
+  --shadow-rgb: 27 36 48;
+  --c-shimmer: rgba(255, 255, 255, .75);
 
   /* 难度 */
   --c-easy: #6E9E6B;
   --c-mid: #D9922E;
   --c-hard: #B23A2A;
+  --c-mid-text: #A3620F;
+
+  /* 状态 */
+  --c-danger: #A0301F;
+  --c-danger-soft: #FBEAE6;
+  --c-danger-line: #EFC2B8;
+  --c-success: #3F7340;
+  --c-success-soft: #E9F1E7;
+  --c-success-line: #C8DCC4;
+  --c-warn: #6B4E0F;
+  --c-warn-soft: #F8EFD9;
+  --c-warn-hover: #F2E2BD;
+  --c-warn-line: #F0D9B5;
+  --c-accent: #B5661B;        /* AI 生成、部分完成等提示 */
+  --c-info: #50749B;
+  --c-info-soft: #F0F5FA;
+  --c-info-line: #D9E3EF;
 
   --font-sans: "Noto Sans SC", system-ui, sans-serif;
   --font-serif: "Noto Serif SC", "Songti SC", serif;
@@ -37,6 +66,61 @@
   --r-md: 8px;
   --r-lg: 12px;
   --container: 1320px;
+}
+
+/* 暗色主题：只作用于屏幕，打印始终用浅色 */
+@media screen {
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+
+    --c-primary: #D2733A;
+    --c-primary-dark: #E58C55;
+    --c-logo: #D9793C;
+    --c-primary-soft: #3A2619;
+    --c-primary-tint: #2A211B;
+    --c-primary-line: #7A4A2C;
+    --c-primary-line-soft: #4A3326;
+    --c-hero: #7E3C16;
+    --c-sand: #1F1B17;
+
+    --c-ink: #E6E3DC;
+    --c-text-2: #C9C6BF;
+    --c-text-3: #9EA2A8;
+    --c-text-4: #7F848A;
+    --c-paper: #13171C;
+    --c-paper-2: #0F1216;
+    --c-surface: #1B2027;
+    --c-surface-2: #1F252D;
+    --c-border: #313841;
+    --c-border-strong: #4A525C;
+    --c-divider: #272D35;
+    --c-toggle-off: #434B55;
+    --c-inverse: #303844;
+    --shadow-rgb: 0 0 0;
+    --c-shimmer: rgba(255, 255, 255, .06);
+
+    --c-easy: #7FB27B;
+    --c-mid: #E0A048;
+    --c-hard: #D2584A;
+    --c-mid-text: #E3A85A;
+
+    --c-danger: #F08C7C;
+    --c-danger-soft: #3A1F1B;
+    --c-danger-line: #6A3229;
+    --c-success: #8CC489;
+    --c-success-soft: #1C2B1E;
+    --c-success-line: #36553A;
+    --c-warn: #E3C47A;
+    --c-warn-soft: #322A18;
+    --c-warn-hover: #42371F;
+    --c-warn-line: #574626;
+    --c-accent: #E39D5E;
+    --c-info: #8DB0D6;
+    --c-info-soft: #1B2532;
+    --c-info-line: #2F3F52;
+  }
+  /* 题图多为透明底黑线稿，暗色下垫白底 */
+  :root[data-theme="dark"] :is(.images, .figs) img { background: #fff; border-radius: 4px; }
 }
 
 * { box-sizing: border-box; }
@@ -92,7 +176,7 @@ button { cursor: pointer; }
   height: 38px;
   padding: 0 14px;
   border: 1px solid var(--c-border);
-  background: #fff;
+  background: var(--c-surface);
   color: var(--c-text-2);
 }
 .btn-primary { border: none; background: var(--c-primary); color: #fff; font-weight: 600; height: 42px; font-size: 15px; }

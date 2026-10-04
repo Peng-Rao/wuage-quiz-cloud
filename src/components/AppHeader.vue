@@ -7,6 +7,7 @@ import BrandLogo from './BrandLogo.vue'
 import { STAGES } from '@/data/mock'
 import { useAppStore } from '@/stores/app'
 import { useBasketStore } from '@/stores/basket'
+import { THEME_LABELS, cycleTheme, themePref } from '@/utils/theme'
 
 const auth = useAuthStore()
 const logoutError = ref('')
@@ -88,6 +89,17 @@ onBeforeUnmount(() => {
       <RouterLink to="/paper" class="basket-btn">
         试题篮<span class="badge">{{ basket.count }}</span>
       </RouterLink>
+      <button class="theme-btn" :title="`主题：${THEME_LABELS[themePref]}（点击切换）`" :aria-label="`主题：${THEME_LABELS[themePref]}`" @click="cycleTheme">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <template v-if="themePref === 'light'">
+            <circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" />
+          </template>
+          <path v-else-if="themePref === 'dark'" d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5Z" />
+          <template v-else>
+            <rect x="3" y="4" width="18" height="13" rx="2" /><path d="M8 21h8M12 17v4" />
+          </template>
+        </svg>
+      </button>
       <div class="account"><span>{{ auth.user?.displayName }}<small>{{ auth.roleName }}</small></span><button class="btn-link" @click="logout">退出</button><small v-if="logoutError" role="alert">{{ logoutError }}</small></div>
     </div>
   </header>
@@ -95,7 +107,7 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .account { display:flex;align-items:center;gap:10px;font-size:12px;flex-shrink:0; }.account small { display:block;color:var(--c-text-4);margin-top:2px; }.account button { font-size:12px; }
-.header { position: sticky; top: 0; z-index: 20; background: #fff; border-bottom: 1px solid var(--c-border); }
+.header { position: sticky; top: 0; z-index: 20; background: var(--c-surface); border-bottom: 1px solid var(--c-border); }
 .bar { height: 60px; display: flex; align-items: center; gap: 20px; }
 
 .picker { position: relative; flex-shrink: 0; }
@@ -107,8 +119,8 @@ onBeforeUnmount(() => {
 .stage { color: var(--c-primary); font-weight: 600; }
 .caret { font-size: 10px; color: var(--c-text-4); }
 .picker-pop {
-  position: absolute; top: 42px; left: 0; width: 420px; max-width: calc(100vw - 32px); background: #fff;
-  border: 1px solid var(--c-border); border-radius: var(--r-lg); box-shadow: 0 12px 32px rgba(27, 36, 48, .12);
+  position: absolute; top: 42px; left: 0; width: 420px; max-width: calc(100vw - 32px); background: var(--c-surface);
+  border: 1px solid var(--c-border); border-radius: var(--r-lg); box-shadow: 0 12px 32px rgb(var(--shadow-rgb) / .12);
   padding: 16px; display: flex; flex-direction: column; gap: 14px;
 }
 .picker-row { display: flex; gap: 14px; align-items: flex-start; }
@@ -127,14 +139,20 @@ onBeforeUnmount(() => {
 
 .basket-btn {
   flex-shrink: 0; white-space: nowrap; height: 34px; padding: 0 14px; border: 1px solid var(--c-primary);
-  background: #fff; color: var(--c-primary); border-radius: var(--r-md); font-size: 14px;
+  background: var(--c-surface); color: var(--c-primary); border-radius: var(--r-md); font-size: 14px;
   display: flex; align-items: center; gap: 8px;
 }
 .basket-btn:hover { text-decoration: none; background: var(--c-primary-soft); }
 .badge {
-  min-width: 20px; height: 20px; border-radius: 10px; background: var(--c-ink); color: #fff; font-size: 12px;
+  min-width: 20px; height: 20px; border-radius: 10px; background: var(--c-inverse); color: #fff; font-size: 12px;
   display: flex; align-items: center; justify-content: center; padding: 0 6px;
 }
+.theme-btn {
+  flex-shrink: 0; width: 34px; height: 34px; padding: 0; border: 1px solid var(--c-border); border-radius: var(--r-md);
+  background: var(--c-paper); color: var(--c-text-3); display: flex; align-items: center; justify-content: center;
+}
+.theme-btn:hover { color: var(--c-primary); border-color: var(--c-primary-line); }
+.theme-btn svg { width: 18px; height: 18px; }
 .avatar {
   width: 32px; height: 32px; border-radius: 16px; background: var(--c-primary-soft); color: var(--c-primary);
   display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 600; flex-shrink: 0;

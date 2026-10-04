@@ -52,13 +52,13 @@ function search() { router.push({ path: '/knowledge', query: keyword.value.trim(
   </main>
 </template>
 <style scoped>
-.hero { background: var(--c-primary); color: #fff; }
+.hero { background: var(--c-hero); color: #fff; }
 .hero-inner { padding-top: 56px; padding-bottom: 64px; display: flex; flex-direction: column; gap: 22px; }
 .hero h1 { margin: 0; font-size: 36px; font-weight: 700; letter-spacing: 1px; }
 .hero p { margin: 0; font-size: 16px; color: #FFF1E6; max-width: 620px; line-height: 1.7; }
-.search { display: flex; max-width: 720px; background: #fff; border-radius: 10px; padding: 6px; gap: 6px; }
+.search { display: flex; max-width: 720px; background: var(--c-surface); border-radius: 10px; padding: 6px; gap: 6px; }
 .search input { flex: 1; min-width: 0; border: none; outline: none; font-size: 15px; padding: 0 14px; color: var(--c-ink); background: transparent; }
-.search button { border: none; background: var(--c-ink); color: #fff; border-radius: 7px; padding: 0 26px; height: 42px; font-size: 15px; font-weight: 600; }
+.search button { border: none; background: var(--c-inverse); color: #fff; border-radius: 7px; padding: 0 26px; height: 42px; font-size: 15px; font-weight: 600; }
 .hot { display: flex; gap: 10px; flex-wrap: wrap; font-size: 13px; color: #FFF1E6; }
 .hot button { border: none; background: none; padding: 0; color: inherit; font-size: inherit; }
 .hot button:hover { color: #fff; text-decoration: underline; }
@@ -67,7 +67,7 @@ function search() { router.push({ path: '/knowledge', query: keyword.value.trim(
 .entries { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; }
 .entry {
   padding: 20px; display: flex; flex-direction: column; gap: 8px; color: var(--c-ink);
-  box-shadow: 0 4px 14px rgba(27, 36, 48, .05); transition: border-color .15s;
+  box-shadow: 0 4px 14px rgb(var(--shadow-rgb) / .05); transition: border-color .15s;
 }
 .entry:hover { border-color: var(--c-primary); text-decoration: none; color: var(--c-ink); }
 .entry-head { display: flex; align-items: center; gap: 10px; }
@@ -97,11 +97,11 @@ function search() { router.push({ path: '/knowledge', query: keyword.value.trim(
 .mine-item { display: flex; flex-direction: column; gap: 3px; }
 .mine-title { font-size: 14px; }
 .mine-meta { font-size: 12px; color: var(--c-text-4); }
-.school { background: #FBF3EA; border: 1px solid #F0DCC4; border-radius: var(--r-lg); padding: 20px; display: flex; flex-direction: column; gap: 8px; }
-.school-title { font-size: 15px; font-weight: 600; color: #8A4B12; }
-.school-desc { font-size: 13px; color: #6A5A48; line-height: 1.6; }
+.school { background: var(--c-primary-tint); border: 1px solid var(--c-primary-line-soft); border-radius: var(--r-lg); padding: 20px; display: flex; flex-direction: column; gap: 8px; }
+.school-title { font-size: 15px; font-weight: 600; color: var(--c-primary-dark); }
+.school-desc { font-size: 13px; color: var(--c-text-3); line-height: 1.6; }
 .school-btn {
-  align-self: flex-start; margin-top: 4px; border: 1px solid var(--c-ink); background: #fff; color: #B5661B;
+  align-self: flex-start; margin-top: 4px; border: 1px solid var(--c-ink); background: var(--c-surface); color: var(--c-accent);
   border-radius: var(--r-sm); padding: 5px 12px; font-size: 13px;
 }
 .school-btn:hover { text-decoration: none; background: var(--c-primary-soft); }

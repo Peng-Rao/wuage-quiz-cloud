@@ -164,7 +164,7 @@ const current = computed(() => {
 .tools.sub { padding-top: 8px; justify-content: space-between; }
 .search {
   flex: 1; min-width: 0; height: 32px; border: 1px solid var(--c-border); border-radius: 16px; padding: 0 12px 0 30px; font-size: 13px;
-  background: #fff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' fill='none' stroke='%238A8F95' stroke-width='2'%3E%3Ccircle cx='6' cy='6' r='4.5'/%3E%3Cpath d='m9.5 9.5 3 3'/%3E%3C/svg%3E") no-repeat 11px center;
+  background: var(--c-surface) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' fill='none' stroke='%238A8F95' stroke-width='2'%3E%3Ccircle cx='6' cy='6' r='4.5'/%3E%3Cpath d='m9.5 9.5 3 3'/%3E%3C/svg%3E") no-repeat 11px center;
 }
 .search:focus { outline: none; border-color: var(--c-primary); }
 .multi {
@@ -176,7 +176,7 @@ const current = computed(() => {
 .multi.on .dot { background: var(--c-primary); }
 .tree-select {
   min-width: 0; flex: 1; height: 28px; border: 1px solid var(--c-border); border-radius: var(--r-sm); padding: 0 6px;
-  font-size: 12px; color: var(--c-text-2); background: #fff; font-family: inherit;
+  font-size: 12px; color: var(--c-text-2); background: var(--c-surface); font-family: inherit;
 }
 .tree-name { font-size: 12px; color: var(--c-text-4); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .only { flex-shrink: 0; display: flex; align-items: center; gap: 4px; font-size: 12px; color: var(--c-text-3); cursor: pointer; }

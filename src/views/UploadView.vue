@@ -416,7 +416,7 @@ async function forceCommit() {
   display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; cursor: pointer;
   padding: 24px; text-align: center; transition: background .18s, border-color .18s;
 }
-.drop:hover, .drop.dragging { background: #FDF6F0; border-color: var(--c-primary); }
+.drop:hover, .drop.dragging { background: var(--c-primary-tint); border-color: var(--c-primary); }
 .drop.is-uploading { cursor: progress; }
 .drop-icon {
   width: 52px; height: 52px; border-radius: 16px; background: var(--c-primary-soft); color: var(--c-primary);
@@ -431,8 +431,8 @@ async function forceCommit() {
 .file-formats { display: flex; gap: 6px; margin-top: 2px; }
 .file-formats span { padding: 3px 8px; border: 1px solid var(--c-divider); border-radius: 5px; font-size: 10px; font-weight: 600; color: var(--c-text-3); background: var(--c-surface-2); }
 .drop-hint { font-size: 11px; line-height: 1.7; color: var(--c-text-3); }
-.drop-err { font-size: 13px; color: #A0301F; }
-.drop-ok { font-size: 13px; color: #3F7340; }
+.drop-err { font-size: 13px; color: var(--c-danger); }
+.drop-ok { font-size: 13px; color: var(--c-success); }
 .pick-btn:disabled { opacity: .7; cursor: progress; }
 .options-panel { padding: 20px 24px; display: flex; flex-direction: column; justify-content: space-between; }
 .options-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
@@ -452,7 +452,7 @@ async function forceCommit() {
 .kp { display: flex; flex-direction: column; gap: 4px; }
 .kp-row { display: flex; justify-content: space-between; font-size: 13px; }
 .kp-track { height: 4px; border-radius: 2px; background: var(--c-divider); }
-.kp-track > div { height: 100%; border-radius: 2px; background: #E9A877; }
+.kp-track > div { height: 100%; border-radius: 2px; background: var(--c-highlight); }
 
 /* 核对 · 题目列表 */
 .parsed { flex: 999 1 520px; min-width: 0; display: flex; flex-direction: column; gap: 12px; }
@@ -462,7 +462,7 @@ async function forceCommit() {
 .warn { font-size: 13px; color: var(--c-primary-dark); background: var(--c-primary-soft); border-radius: var(--r-sm); padding: 3px 10px; }
 .ptabs { margin-left: auto; display: flex; gap: 4px; flex-wrap: wrap; }
 .ai-gen {
-  border: 1px solid var(--c-primary); background: #fff; color: var(--c-primary); border-radius: var(--r-sm);
+  border: 1px solid var(--c-primary); background: var(--c-surface); color: var(--c-primary); border-radius: var(--r-sm);
   padding: 3px 10px; font-size: 13px; font-weight: 600;
 }
 .ai-gen:hover:not(:disabled) { background: var(--c-primary-soft); }
@@ -471,15 +471,15 @@ async function forceCommit() {
 .chip.dark { color: var(--c-primary-dark); }
 .err-bar {
   padding: 10px 18px; display: flex; align-items: center; justify-content: space-between; gap: 12px;
-  font-size: 13px; color: #A0301F; background: #FBEAE6; border-color: #EFC2B8;
+  font-size: 13px; color: var(--c-danger); background: var(--c-danger-soft); border-color: var(--c-danger-line);
 }
-.ok-bar { padding: 10px 18px; display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 13px; color: #3F7340; background: #E9F1E7; border-color: #C8DCC4; }
+.ok-bar { padding: 10px 18px; display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 13px; color: var(--c-success); background: var(--c-success-soft); border-color: var(--c-success-line); }
 .empty { padding: 32px; text-align: center; font-size: 14px; color: var(--c-text-4); }
 
 .actionbar {
-  position: sticky; bottom: 16px; background: var(--c-ink); color: #fff; border-radius: var(--r-lg);
+  position: sticky; bottom: 16px; background: var(--c-inverse); color: #fff; border-radius: var(--r-lg);
   padding: 12px 16px 12px 20px; display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px;
-  box-shadow: 0 10px 30px rgba(27, 36, 48, .25);
+  box-shadow: 0 10px 30px rgb(var(--shadow-rgb) / .25);
 }
 .sel { font-size: 14px; }
 .sel b { color: var(--c-highlight); }
@@ -494,7 +494,7 @@ async function forceCommit() {
 .ab-btn { border-radius: var(--r-md); height: 36px; padding: 0 14px; font-size: 13px; }
 .ab-btn:disabled { opacity: .5; cursor: not-allowed; }
 .ab-btn.ghost { border: 1px solid #4A5561; background: transparent; color: #fff; }
-.ab-btn.light { border: 1px solid #fff; background: #fff; color: var(--c-ink); }
+.ab-btn.light { border: 1px solid #fff; background: #fff; color: var(--c-inverse); }
 .ab-btn.primary { border: none; background: var(--c-primary); color: #fff; font-weight: 600; padding: 0 16px; }
 
 @media (max-width: 800px) {

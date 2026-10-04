@@ -114,7 +114,7 @@ const paperTitle = computed(() => props.q.source?.title || props.q.source?.fileN
   display: flex; flex-direction: column; gap: 6px; font-size: 14px; line-height: 1.8;
 }
 .qc-answer b { color: var(--c-primary); font-weight: 600; }
-.qc-answer .ai { font-size: 12px; color: #B5661B; }
+.qc-answer .ai { font-size: 12px; color: var(--c-accent); }
 .none { color: var(--c-text-4); }
 .qc-foot {
   border-top: 1px solid var(--c-divider); padding: 8px 12px 8px 22px; display: flex; flex-wrap: wrap; align-items: center;

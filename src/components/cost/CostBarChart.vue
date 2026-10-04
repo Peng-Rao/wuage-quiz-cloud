@@ -149,8 +149,8 @@ text { font-size: 11px; fill: var(--c-text-4); font-variant-numeric: tabular-num
 .hit { fill: transparent; cursor: default; }
 .tip {
   position: absolute; top: 0; pointer-events: none; z-index: 2;
-  min-width: 150px; padding: 8px 10px; background: #fff; border: 1px solid var(--c-border);
-  border-radius: var(--r-md); box-shadow: 0 6px 20px rgba(27, 36, 48, .12);
+  min-width: 150px; padding: 8px 10px; background: var(--c-surface); border: 1px solid var(--c-border);
+  border-radius: var(--r-md); box-shadow: 0 6px 20px rgb(var(--shadow-rgb) / .12);
   display: flex; flex-direction: column; gap: 3px; font-size: 12px; color: var(--c-text-2);
   font-variant-numeric: tabular-nums;
 }

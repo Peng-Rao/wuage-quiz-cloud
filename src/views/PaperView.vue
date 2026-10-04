@@ -279,7 +279,7 @@ function focusRow(id: string) {
 .sec-move button, .row-ops button {
   width: 22px; height: 22px; border: none; background: transparent; border-radius: 4px; font-size: 9px; color: var(--c-text-3); padding: 0;
 }
-.sec-move button:hover:not(:disabled), .row-ops button:hover:not(:disabled) { background: #fff; color: var(--c-primary); }
+.sec-move button:hover:not(:disabled), .row-ops button:hover:not(:disabled) { background: var(--c-surface); color: var(--c-primary); }
 .sec-move button:disabled, .row-ops button:disabled { opacity: .3; cursor: default; }
 .row-ops .del { font-size: 14px; }
 .row-ops .del:hover { color: var(--c-hard) !important; }
@@ -292,7 +292,7 @@ function focusRow(id: string) {
 .rows { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
 .row {
   display: flex; align-items: center; gap: 6px; padding: 4px 4px 4px 2px; border-radius: var(--r-sm);
-  font-size: 12px; border: 1px solid transparent; background: #fff; cursor: grab;
+  font-size: 12px; border: 1px solid transparent; background: var(--c-surface); cursor: grab;
 }
 .row:hover { background: var(--c-surface-2); border-color: var(--c-divider); }
 .row.over { border-color: var(--c-primary); border-style: dashed; }
@@ -310,21 +310,21 @@ function focusRow(id: string) {
 .total b { font-weight: 700; color: var(--c-primary); }
 .more { display: flex; gap: 8px; }
 .more-btn {
-  flex: 1; border: 1px dashed var(--c-primary); background: #fff; color: var(--c-primary); border-radius: var(--r-sm);
+  flex: 1; border: 1px dashed var(--c-primary); background: var(--c-surface); color: var(--c-primary); border-radius: var(--r-sm);
   height: 34px; font-size: 13px; display: flex; align-items: center; justify-content: center;
 }
 .more-btn:hover { text-decoration: none; background: var(--c-primary-soft); }
 
 /* 试卷纸面 */
 .sheet {
-  position: relative; background: #fff; border: 1px solid var(--c-border); border-radius: 4px;
-  box-shadow: 0 10px 30px rgba(27, 36, 48, .08); padding: 56px 56px 72px; color: var(--c-ink);
+  position: relative; background: var(--c-surface); border: 1px solid var(--c-border); border-radius: 4px;
+  box-shadow: 0 10px 30px rgb(var(--shadow-rgb) / .08); padding: 56px 56px 72px; color: var(--c-ink);
   min-width: 0; flex: 999 1 520px;
 }
 .sheet.binding { padding-left: 88px; }
 .sheet.binding::before {
   content: '装　订　线'; position: absolute; left: 28px; top: 40px; bottom: 40px; width: 20px;
-  border-right: 1px dashed #C9C5BA; writing-mode: vertical-rl; display: flex; align-items: center; justify-content: center;
+  border-right: 1px dashed var(--c-border-strong); writing-mode: vertical-rl; display: flex; align-items: center; justify-content: center;
   font-size: 11px; letter-spacing: 8px; color: var(--c-text-4); font-family: var(--font-sans);
 }
 .sheet-empty { min-height: 360px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; font-family: var(--font-sans); color: var(--c-text-3); }
@@ -340,7 +340,7 @@ function focusRow(id: string) {
 .subject { font-size: 20px; font-weight: 600; letter-spacing: 6px; }
 .info { font-size: 13px; color: var(--c-text-2); }
 .fields { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px 28px; font-size: 13px; color: var(--c-text-2); padding-top: 4px; }
-.notice { border: 1px solid #D8D4C8; padding: 10px 14px; font-size: 13px; line-height: 1.8; color: var(--c-text-2); }
+.notice { border: 1px solid var(--c-border-strong); padding: 10px 14px; font-size: 13px; line-height: 1.8; color: var(--c-text-2); }
 
 .body { display: flex; flex-direction: column; gap: 18px; }
 .a3 .body { display: block; column-count: 2; column-gap: 40px; column-rule: 1px dashed var(--c-border); }
@@ -348,7 +348,7 @@ function focusRow(id: string) {
 .part { display: flex; flex-direction: column; gap: 14px; }
 .part-head { font-size: 15.5px; font-weight: 700; font-family: var(--font-sans); }
 .item { display: flex; flex-direction: column; gap: 6px; font-size: 15px; line-height: 1.9; border-radius: 4px; cursor: pointer; }
-.item:hover { background: #FBFAF6; }
+.item:hover { background: var(--c-surface-2); }
 .stem { text-wrap: pretty; }
 .material { margin-bottom: 4px; }
 .images { display: flex; flex-wrap: wrap; gap: 10px; padding-left: 1.5em; }
@@ -359,7 +359,7 @@ function focusRow(id: string) {
 .answer-card { border-top: 2px solid var(--c-ink); padding-top: 16px; display: flex; flex-direction: column; gap: 12px; }
 .card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 8px; }
 .card-cell { display: flex; align-items: center; gap: 8px; font-size: 13px; font-family: var(--font-sans); }
-.card-cell .blank { flex: 1; height: 22px; border: 1px solid #C9C5BA; border-radius: 3px; }
+.card-cell .blank { flex: 1; height: 22px; border: 1px solid var(--c-border-strong); border-radius: 3px; }
 
 /* 右侧设置 */
 .side { flex: 1 0 240px; display: flex; flex-direction: column; gap: 14px; }

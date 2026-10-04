@@ -104,7 +104,7 @@ const sel = computed(() => new Set(props.selected))
 .tn-row { display: flex; align-items: flex-start; gap: 4px; }
 .tn-toggle {
   flex-shrink: 0; width: 16px; height: 16px; margin: 8px 4px 0 2px; padding: 0; border-radius: 50%;
-  border: 1px solid var(--c-border); background: #fff; color: var(--c-text-3); font-size: 12px; line-height: 13px;
+  border: 1px solid var(--c-border); background: var(--c-surface); color: var(--c-text-3); font-size: 12px; line-height: 13px;
 }
 .tn-row.top > .tn-toggle { border-color: var(--c-primary-line); color: var(--c-primary); }
 .tn-toggle:hover { border-color: var(--c-primary); color: var(--c-primary); }
@@ -121,10 +121,10 @@ const sel = computed(() => new Set(props.selected))
 .label { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .check {
   flex-shrink: 0; width: 14px; height: 14px; margin-top: 4px; border: 1px solid var(--c-border); border-radius: 3px;
-  font-size: 10px; line-height: 12px; text-align: center; color: #fff; background: #fff;
+  font-size: 10px; line-height: 12px; text-align: center; color: #fff; background: var(--c-surface);
 }
 .check.on { background: var(--c-primary); border-color: var(--c-primary); }
 .n { flex-shrink: 0; font-size: 11px; color: var(--c-text-4); background: var(--c-paper); border-radius: 8px; padding: 0 6px; line-height: 18px; margin-top: 3px; }
-.tn-name.on .n { background: #fff; color: var(--c-primary); }
+.tn-name.on .n { background: var(--c-surface); color: var(--c-primary); }
 .tn-empty { margin: 0; padding: 12px 8px; font-size: 13px; color: var(--c-text-4); line-height: 1.6; }
 </style>
