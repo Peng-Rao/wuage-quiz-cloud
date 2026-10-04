@@ -311,7 +311,18 @@ def _summaries(s: Session, school_id: str, job_ids: list[str] | None = None) -> 
         meta = PaperMeta.model_validate((job.meta if job else None) or {})
         file_name = job.file_name if job else ""
         # 早期入库的试卷没有学校，从名称中提取；手动填写的也统一写法，同一学校归为一项
-        meta.school = clean_school(meta.school) or rule_school(meta.title) or rule_school(file_name)
+        context = f"{meta.region} {meta.title} {file_name}"
+        candidates = (rule_school(meta.title), rule_school(file_name))
+        inferred = next((name for name in candidates if name), "")
+        meta.school = clean_school(meta.school, context=context) or clean_school(inferred, context=context)
+        # 修复旧识别结果在第一个「中学」处截断分校 / 附属校的情况；有完整校名的人工填写仍优先。
+        for candidate in candidates:
+            if branch := re.fullmatch(r"(.+?(?:中学|小学|学校|附中))([一-龥]{0,8}(?:分校|校区|附属学校|附属中学|附属小学))", candidate):
+                if clean_school(branch.group(1), context=context) == meta.school:
+                    meta.school = clean_school(candidate, context=context)
+            if (meta.school == "厦门第一中学" and candidate == "厦门灌口中学"
+                    and re.search(r"(?:第一中学|一中)集美分校", context)):
+                meta.school = candidate
         out.append(PaperSummary(
             id=jid, title=meta.title or file_name.rsplit(".", 1)[0] or "未命名试卷", meta=meta, file_name=file_name,
             question_count=n, source_question_count=max(drafts.get(jid, 0), n), total_score=score or 0,
@@ -327,10 +338,12 @@ UNCLASSIFIED = "未分类"
 def _paper_match(p: PaperSummary, f: PaperFilter, skip: str | None = None) -> bool:
     if f.category and not any(k in (p.meta.paper_type + p.title) for k in f.category):
         return False
-    for dim in ("stage", "grade", "subject", "paper_type", "school"):
+    for dim in ("stage", "grade", "subject", "paper_type"):
         want = getattr(f, dim)
         if want and skip != dim and (getattr(p.meta, dim) or UNCLASSIFIED) != want:
             return False
+    if f.school and skip != "school" and not _school_match(p, f.school):
+        return False
     m = p.meta
     if f.q:
         kw = normalize(f.q)
@@ -345,6 +358,54 @@ def _facet(papers: list[PaperSummary], f: PaperFilter, dim: str, order: list[str
     return [FacetCount(name=k, count=v) for k, v in sorted(c.items(), key=lambda x: (rank.get(x[0], len(rank)), -x[1], x[0]))]
 
 
+OTHER_SCHOOL = "其他"
+# 学校筛选只列各学段的常设学校（显示名 → 归一化校名），其余学校归入「其他」
+REGULAR_SCHOOLS: dict[str, dict[str, str]] = {
+    "初中": {
+        "厦门一中": "厦门第一中学", "厦门双十": "厦门双十中学", "厦门外国语": "厦门外国语学校", "厦门六中": "厦门第六中学",
+        "厦门十一中": "厦门第十一中学", "厦门九中": "厦门第九中学", "湖滨中学": "厦门湖滨中学", "湖里中学": "厦门湖里中学",
+        "瑞景外国语中学": "厦门瑞景外国语中学", "湖里实验中学": "厦门湖里实验中学", "华侨中学": "厦门华侨中学",
+        "槟榔中学": "厦门槟榔中学", "莲花中学": "厦门莲花中学", "尚文实验学校": "厦门尚文实验学校", "松柏中学": "厦门松柏中学",
+        "厦门音乐学校": "厦门音乐学校", "五缘实验学校": "厦门五缘实验学校", "大同中学": "厦门大同中学",
+    },
+    "高中": {
+        "厦门一中": "厦门第一中学", "厦门双十": "厦门双十中学", "厦门外国语": "厦门外国语学校", "厦门六中": "厦门第六中学",
+        "厦门科技中学": "厦门科技中学", "厦门二中": "厦门第二中学", "湖滨中学": "厦门湖滨中学", "松柏中学": "厦门松柏中学",
+        "高新中学": "厦门高新中学", "大同中学": "厦门大同中学", "厦门三中": "厦门第三中学",
+    },
+}
+# 未选学段、试卷也没有学段时用两个学段的并集
+_ALL_REGULAR = {**REGULAR_SCHOOLS["初中"], **REGULAR_SCHOOLS["高中"]}
+_SCHOOL_LABELS = {stage: {v: k for k, v in names.items()} for stage, names in {**REGULAR_SCHOOLS, "": _ALL_REGULAR}.items()}
+
+
+def _regular_schools(stage: str | None) -> dict[str, str]:
+    return _ALL_REGULAR if not stage else REGULAR_SCHOOLS.get(stage, {})
+
+
+def school_bucket(school: str, stage: str) -> str:
+    """试卷在学校筛选中的归类：常设学校的显示名、「其他」或「未分类」；同校的不同校区并入本校，分校、附属校不并。"""
+    if not school:
+        return UNCLASSIFIED
+    school = re.sub(r"(中学|学校)[一-龥]{1,4}校区$", r"\1", school)
+    labels = _SCHOOL_LABELS[stage] if not stage or stage in REGULAR_SCHOOLS else {}
+    return labels.get(school, OTHER_SCHOOL)
+
+
+def _school_match(p: PaperSummary, want: str) -> bool:
+    if want in (UNCLASSIFIED, OTHER_SCHOOL) or want in _ALL_REGULAR:
+        return school_bucket(p.meta.school, p.meta.stage) == want
+    # 旧链接里的具体校名（含别名）仍按归一化后的完整校名精确匹配
+    return p.meta.school == clean_school(want, context=f"{p.meta.region} {p.title} {p.file_name}")
+
+
+def _school_facet(papers: list[PaperSummary], f: PaperFilter) -> list[FacetCount]:
+    c = Counter(school_bucket(p.meta.school, p.meta.stage) for p in papers if _paper_match(p, f, skip="school"))
+    # 常设学校没有试卷也列出，「其他」「未分类」有试卷才列
+    return ([FacetCount(name=n, count=c[n]) for n in _regular_schools(f.stage)]
+            + [FacetCount(name=n, count=c[n]) for n in (OTHER_SCHOOL, UNCLASSIFIED) if c[n]])
+
+
 # 年级按学段顺序排列，其余按试卷数
 GRADE_ORDER = ["一年级", "二年级", "三年级", "四年级", "五年级", "六年级", "七年级", "初一", "八年级", "初二", "九年级", "初三",
                "高一", "高二", "高三"]
@@ -357,7 +418,7 @@ def list_papers(s: Session, school_id: str, f: PaperFilter, limit: int = 20, off
     facets = PaperFacets(
         stages=_facet(papers, f, "stage", STAGE_ORDER), grades=_facet(papers, f, "grade", GRADE_ORDER),
         subjects=_facet(papers, f, "subject"), paper_types=_facet(papers, f, "paper_type"),
-        schools=_facet(papers, f, "school"),
+        schools=_school_facet(papers, f),
     )
     return PaperPage(items=matched[offset:offset + limit], total=len(matched), facets=facets)
 
