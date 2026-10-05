@@ -5,17 +5,18 @@ from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import Field, field_validator
-from sqlalchemy import delete, select, update
+from sqlalchemy import case, delete, select, update
 from sqlalchemy.exc import IntegrityError
 
 from ..auth import COOKIE, admin, check_origin, current_user, hash_password, staff, token_hash, verify_password
 from ..config import get_settings
 from ..db import BankQuestion, LoginSession, LoginThrottle, ParseJob, SessionLocal, UploadOwner, User, utcnow
 from ..pipeline.classify import ALL_SUBJECTS
-from ..schemas import Model
+from ..schemas import Model, UtcDatetime
 
 router = APIRouter(prefix="/api")
 DUMMY_HASH = hash_password("not-a-real-password")
+ONLINE_WINDOW = timedelta(seconds=90)
 
 
 class UserOut(Model):
@@ -25,6 +26,11 @@ class UserOut(Model):
     role: Literal["admin", "leader", "member"]
     subjects: list[str]
     active: bool
+
+
+class AdminUserOut(UserOut):
+    is_online: bool
+    last_seen_at: UtcDatetime | None
 
 
 class Login(Model):
@@ -82,7 +88,7 @@ def login(body: Login, request: Request, response: Response):
                 s.add(counter)
             counter.attempts += 1
         s.commit()
-        user = s.scalar(select(User).where(User.username == name))
+        user = s.scalar(select(User).where(User.username == name).with_for_update())
         valid = verify_password(body.password, user.password_hash if user else DUMMY_HASH)
         if not valid or not user or not user.active:
             raise HTTPException(401, "账号或密码错误，或账号已停用")
@@ -92,7 +98,9 @@ def login(body: Login, request: Request, response: Response):
         if old:
             s.execute(delete(LoginSession).where(LoginSession.token_hash == token_hash(old)))
         s.add(LoginSession(token_hash=token_hash(token), user_id=user.id,
-                           expires_at=now + timedelta(hours=get_settings().session_hours)))
+                           expires_at=now + timedelta(hours=get_settings().session_hours), last_seen_at=now))
+        s.execute(update(User).where(User.id == user.id,
+                  (User.last_seen_at.is_(None)) | (User.last_seen_at < now)).values(last_seen_at=now))
         s.commit()
         response.set_cookie(COOKIE, token, httponly=True, secure=get_settings().cookie_secure,
                             samesite="lax", max_age=get_settings().session_hours * 3600, path="/")
@@ -115,10 +123,34 @@ def logout(request: Request, response: Response):
     response.delete_cookie(COOKIE, path="/", secure=get_settings().cookie_secure, httponly=True, samesite="lax")
 
 
-@router.get("/users", response_model=list[UserOut])
-def users(_: User = Depends(admin)):
+@router.post("/auth/heartbeat", status_code=204)
+def heartbeat(request: Request, user: User = Depends(current_user)):
+    now = utcnow()
     with SessionLocal() as s:
-        return [out(u) for u in s.scalars(select(User).order_by(User.username))]
+        # Use the same user-before-session lock order as account changes.
+        s.execute(update(User).where(User.id == user.id, User.active.is_(True),
+                  (User.last_seen_at.is_(None)) | (User.last_seen_at < now)).values(last_seen_at=now))
+        # Recheck the session in the write: a concurrent logout/revocation must not revive it.
+        result = s.execute(update(LoginSession).where(
+            LoginSession.token_hash == token_hash(request.cookies.get(COOKIE, "")),
+            LoginSession.user_id == user.id, LoginSession.expires_at > now,
+        ).values(last_seen_at=case((LoginSession.last_seen_at > now, LoginSession.last_seen_at), else_=now)))
+        if result.rowcount != 1:
+            raise HTTPException(401, "请先登录或重新登录")
+        s.commit()
+
+
+@router.get("/users", response_model=list[AdminUserOut])
+def users(response: Response, _: User = Depends(admin)):
+    response.headers["Cache-Control"] = "no-store"
+    now = utcnow()
+    online = select(LoginSession.user_id).where(
+        LoginSession.expires_at > now, LoginSession.last_seen_at >= now - ONLINE_WINDOW,
+    ).distinct().subquery()
+    with SessionLocal() as s:
+        rows = s.execute(select(User, online.c.user_id).outerjoin(online, User.id == online.c.user_id).order_by(User.username))
+        return [AdminUserOut(**out(u).model_dump(), is_online=u.active and online_id is not None,
+                             last_seen_at=u.last_seen_at) for u, online_id in rows]
 
 
 @router.get("/review-recipients", response_model=list[UserOut])

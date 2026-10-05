@@ -43,6 +43,8 @@ uv run uvicorn app.main:app --port 8000 --reload
 
 ## 配置
 
+在线状态：`POST /api/auth/heartbeat` 使用当前登录 Cookie 更新心跳，不延长会话有效期；`GET /api/users` 仅向管理员返回 `isOnline` 与 `lastSeenAt`（UTC）。最近 90 秒内有登录或心跳且会话未过期的启用账号视为在线；最后在线时间持久保存，退出或撤销会话后仍可查看。启动时自动为旧用户表、会话表添加可空的 `last_seen_at` 列；旧账号在首次登录或心跳前暂无在线记录。
+
 | 变量 | 说明 |
 |---|---|
 | `PARSER_CHAIN` | 解析引擎链，默认 `["mineru_cloud","lite"]`：未配置或失败时依次降级 |

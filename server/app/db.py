@@ -29,6 +29,7 @@ class User(Base):
     role: Mapped[str] = mapped_column(String(16))
     subjects: Mapped[list[Any]] = mapped_column(JSON, default=list)
     active: Mapped[bool] = mapped_column(default=True)
+    last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class LoginSession(Base):
@@ -36,6 +37,7 @@ class LoginSession(Base):
     token_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
     user_id: Mapped[str] = mapped_column(ForeignKey("app_user.id"), index=True)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class LoginThrottle(Base):

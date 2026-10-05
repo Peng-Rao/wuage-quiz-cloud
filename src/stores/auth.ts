@@ -54,7 +54,18 @@ export const useAuthStore = defineStore('auth', () => {
     try { localStorage.setItem('quiz-auth-changed', String(Date.now())) } catch { /* Optional tab notification. */ }
     window.location.replace('/login')
   }
-  return { user, error, isAdmin, isStaff, roleName, restore, login, logout }
+  let heartbeatPending = false
+  async function heartbeat() {
+    if (!user.value || heartbeatPending) return
+    heartbeatPending = true
+    try { await request('POST', '/api/auth/heartbeat') }
+    catch (e) {
+      if ((e as Error & { status?: number }).status === 401) window.location.replace('/login')
+      // Connection failures expire presence on the server; retry on the next tick.
+    }
+    finally { heartbeatPending = false }
+  }
+  return { user, error, isAdmin, isStaff, roleName, restore, login, logout, heartbeat }
 })
 
 // A cookie is shared across tabs: discard any old account's rendered state immediately.
