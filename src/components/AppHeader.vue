@@ -47,13 +47,22 @@ function onDocClick(e: MouseEvent) {
 function onKey(e: KeyboardEvent) {
   if (e.key === 'Escape') open.value = false
 }
+let heartbeatTimer: ReturnType<typeof setInterval> | undefined
+function onVisibilityChange() {
+  if (document.visibilityState === 'visible') void auth.heartbeat()
+}
 onMounted(() => {
   document.addEventListener('click', onDocClick)
   document.addEventListener('keydown', onKey)
+  void auth.heartbeat()
+  heartbeatTimer = setInterval(() => { void auth.heartbeat() }, 30_000)
+  document.addEventListener('visibilitychange', onVisibilityChange)
 })
 onBeforeUnmount(() => {
   document.removeEventListener('click', onDocClick)
   document.removeEventListener('keydown', onKey)
+  clearInterval(heartbeatTimer)
+  document.removeEventListener('visibilitychange', onVisibilityChange)
 })
 </script>
 
