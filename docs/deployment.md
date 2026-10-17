@@ -270,6 +270,59 @@ docker compose up -d --build
 docker compose up -d --force-recreate app worker
 ```
 
+### 自动部署（GitHub Actions）
+
+配置后，**推送或合并到 `main` 且 CI 全部通过**，就会自动更新服务器（[.github/workflows/deploy.yml](../.github/workflows/deploy.yml)）：
+
+1. 在 GitHub 上构建 x86 镜像，推送到镜像仓库（腾讯云 TCR），标签为提交号；服务器不参与构建，内存小的机器也能部署。
+2. 通过 SSH 把提交推送到服务器上的仓库（服务器不需要访问 GitHub），然后运行 [deploy/deploy.sh](../deploy/deploy.sh)：
+   拉取镜像 → 备份数据库到 `~/backups` → 仓库快进到该提交 → 新镜像标记为 `fg-quiz-cloud:latest` 并重建 `app`、`worker` → 等待健康检查。
+3. 健康检查不通过时自动回滚到旧镜像和旧提交，这次运行显示失败；切换前的步骤失败不影响正在运行的服务。
+
+部署依次进行，正在进行的部署不会被新的推送打断。也可以在 Actions 页面手动运行 Deploy，重新部署 `main` 的最新提交。部署脚本只保留最近 20 份部署前备份（`BACKUP_KEEP`）和 3 个回滚镜像（`ROLLBACK_KEEP`）。
+
+一次性配置：
+
+1. **镜像仓库**：在腾讯云「容器镜像服务 · 个人版」中选择与服务器相同的地域，创建命名空间（如 `fg-quiz`），并设置登录密码。用户名是腾讯云账号 ID。服务器在同一地域时，从内网拉取镜像。
+2. **服务器登录镜像仓库**（只需一次，凭据保存在服务器的 root 用户下）：
+
+   ```bash
+   sudo docker login ccr.ccs.tencentyun.com --username <账号 ID>
+   ```
+
+3. **部署密钥**：在本机生成一对密钥，把公钥追加到服务器的 `~/.ssh/authorized_keys`：
+
+   ```bash
+   ssh-keygen -t ed25519 -N '' -C github-deploy -f deploy_key
+   ssh-copy-id -i deploy_key.pub ubuntu@<服务器地址>
+   ```
+
+4. **GitHub 配置**：在仓库的 Settings → Secrets and variables → Actions 中添加以下项（也可以加到名为 `production` 的 Environment 中，并在其中设置部署前需要人工批准）：
+
+   | 类型 | 名称 | 值 |
+   | --- | --- | --- |
+   | Variable | `REGISTRY` | `ccr.ccs.tencentyun.com` |
+   | Variable | `REGISTRY_NAMESPACE` | 命名空间，如 `fg-quiz` |
+   | Variable | `DEPLOY_HOST` | 服务器地址；不设置时不部署 |
+   | Variable | `DEPLOY_USER` / `DEPLOY_PORT` | 可选，默认 `ubuntu` / `22` |
+   | Secret | `REGISTRY_USERNAME` / `REGISTRY_PASSWORD` | 镜像仓库的账号 ID 与登录密码 |
+   | Secret | `DEPLOY_SSH_KEY` | `deploy_key` 文件的内容（私钥） |
+   | Secret | `DEPLOY_KNOWN_HOSTS` | `ssh-keyscan -t ed25519 <服务器地址>` 的输出 |
+
+   配置完后删除本机的 `deploy_key`。
+
+服务器仓库要求：没有修改过受版本管理的文件，只用于服务器的配置放在 `docker-compose.override.yml`，并把它加入 `.git/info/exclude`。部署脚本也可以在服务器上手动运行：`bash deploy/deploy.sh <镜像>:<提交> <提交>`。
+
+回到旧版本（数据库只会新增列，旧版本可以直接运行）：
+
+```bash
+cd ~/wuage-quiz-cloud
+sudo docker images fg-quiz-cloud                                # 找到 rollback-<提交>
+sudo docker tag fg-quiz-cloud:rollback-<提交> fg-quiz-cloud:latest
+sudo docker compose up -d --no-build --wait app worker
+git reset --keep <提交>                                          # 之后的自动部署从这个提交继续快进
+```
+
 ### 常用运维命令
 
 | 操作 | 命令 |
