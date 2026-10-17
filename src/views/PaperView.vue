@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, reactive, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch, watchEffect } from 'vue'
 import { request } from '@/api/request'
 import { storeToRefs } from 'pinia'
 import { CN_NUM } from '@/data/mock'
@@ -7,9 +7,11 @@ import type { QuestionType } from '@/api/parse'
 import { useAppStore } from '@/stores/app'
 import { useBasketStore } from '@/stores/basket'
 import MathText from '@/components/MathText.vue'
+import PaperBlock, { type PaperBlockData } from '@/components/PaperBlock.vue'
 import { plainText } from '@/utils/math'
 import ToggleSwitch from '@/components/ToggleSwitch.vue'
-import { noSep, optionCols, optionLabel, provideSubject } from '@/utils/subject'
+import { provideSubject } from '@/utils/subject'
+import { MM, pageBox, paginate, type PaperSize } from '@/utils/paginate'
 
 const basket = useBasketStore()
 const { subject } = storeToRefs(useAppStore())
@@ -20,11 +22,13 @@ const opts = reactive({ showAns: false, binding: true, score: true, card: false 
 const OPT_LABELS: [keyof typeof opts, string][] = [
   ['showAns', '显示答案与解析'], ['binding', '装订线'], ['score', '显示分值'], ['card', '附答题卡'],
 ]
-const SIZES = ['A4', 'A3 双栏', 'B4'] as const
-const size = ref<(typeof SIZES)[number]>('A4')
+const SIZES: PaperSize[] = ['A4', 'A3 双栏', 'B4']
+const size = ref<PaperSize>('A4')
 
-const TITLE = '2026—2027学年高一上学期期中考试'
-const subjectTitle = computed(() => `${[...subject.value].join(' ')} 试 卷`)
+/** 卷头在试卷上直接修改，存于试题篮，换页面回来仍在 */
+const head = computed(() => basket.head)
+const autoSubtitle = computed(() => `${[...subject.value].join(' ')} 试 卷`)
+const subjectTitle = computed(() => head.value.subtitle ?? autoSubtitle.value)
 
 /** 大题：按试题篮中的大题顺序与题序连续编号；同一篇阅读材料下相邻的题，材料只在第一题前印一次 */
 const sections = computed(() => {
@@ -65,10 +69,10 @@ async function downloadWord() {
     await validateBasket()
     const { buildDocx } = await import('@/utils/docx')
     const blob = await buildDocx({
-      secret: '绝密★启用前', title: TITLE, subtitle: subjectTitle.value,
-      info: `考试时间：120 分钟　满分：${basket.totalScore} 分`,
-      fields: ['学校：__________', '姓名：__________', '班级：__________', '考号：__________'],
-      notice: '注意事项：1. 答题前填写好自己的姓名、班级、考号等信息。2. 请将答案正确填写在答题卡上。',
+      secret: head.value.secret, title: head.value.title, subtitle: subjectTitle.value,
+      info: [head.value.duration.trim(), `满分：${basket.totalScore} 分`].filter(Boolean).join('　'),
+      fields: head.value.fields.filter((f) => f.trim()).map((f) => `${f.trim()}：__________`),
+      notice: head.value.notice,
       sections: sections.value.map((s) => ({
         heading: s.heading,
         items: s.items.map((it) => ({
@@ -82,7 +86,7 @@ async function downloadWord() {
     })
     const a = document.createElement('a')
     a.href = URL.createObjectURL(blob)
-    a.download = `${TITLE}${subject.value}试卷.docx`
+    a.download = `${head.value.title.trim() || '试卷'}${subject.value}试卷.docx`
     a.click()
     setTimeout(() => URL.revokeObjectURL(a.href), 1000)
   } catch (e) {
@@ -92,10 +96,101 @@ async function downloadWord() {
   }
 }
 
-function genCard() {
+async function genCard() {
   opts.card = true
+  await nextTick()
   requestAnimationFrame(() => document.getElementById('answer-card')?.scrollIntoView({ behavior: 'smooth' }))
 }
+
+// ---------- 自动分页 ----------
+
+/** 卷面依次排列的块；gap 为与上一块的间距（像素） */
+const blocks = computed<PaperBlockData[]>(() => {
+  const out: PaperBlockData[] = [{ key: 'head', kind: 'head', gap: 0 }, { key: 'notice', kind: 'notice', gap: 18 }]
+  sections.value.forEach((s, si) => {
+    out.push({ key: `part-${s.type}`, kind: 'part', heading: s.heading, gap: si ? 26 : 22, keepWithNext: true })
+    s.items.forEach((it, j) => {
+      const gap = j ? 16 : 10
+      if (it.material) out.push({ key: `mat-${it.q.id}`, kind: 'material', text: it.material, gap, keepWithNext: true })
+      out.push({
+        key: it.q.id, kind: 'item', q: it.q, no: it.no, gap: it.material ? 6 : gap,
+        scoreMark: opts.score && s.each === null ? `（${it.score} 分）` : '',
+      })
+    })
+  })
+  if (opts.card) out.push({ key: 'card', kind: 'card', gap: 28 })
+  return out
+})
+
+const box = computed(() => pageBox(size.value, opts.binding))
+/** 各栏中的块 key；由隐藏的测量副本量出每块高度后装栏 */
+const columns = ref<string[][]>([])
+const pages = computed(() => {
+  const byKey = new Map(blocks.value.map((b) => [b.key, b]))
+  const cols = columns.value.map((c) => c.map((k) => byKey.get(k)).filter((b): b is PaperBlockData => !!b))
+  const out: PaperBlockData[][][] = []
+  for (let i = 0; i < cols.length; i += box.value.cols) {
+    const page = cols.slice(i, i + box.value.cols)
+    while (page.length < box.value.cols) page.push([])
+    out.push(page)
+  }
+  return out
+})
+
+const measureEl = ref<HTMLElement | null>(null)
+function repaginate() {
+  const el = measureEl.value
+  if (!el) return
+  const heights = [...el.children].map((c) => c.getBoundingClientRect().height)
+  if (heights.length !== blocks.value.length) return
+  const next = paginate(blocks.value, heights, box.value.colHeight)
+  if (JSON.stringify(next) !== JSON.stringify(columns.value)) columns.value = next
+  observeBlocks()
+}
+
+/** 公式、配图、字体加载后块高度会变，随时重新分页 */
+let frame = 0
+const schedule = () => {
+  cancelAnimationFrame(frame)
+  frame = requestAnimationFrame(repaginate)
+}
+const resizeObs = new ResizeObserver(schedule)
+const observed = new Set<Element>()
+function observeBlocks() {
+  const now = new Set(measureEl.value?.children ?? [])
+  for (const c of observed) if (!now.has(c)) { resizeObs.unobserve(c); observed.delete(c) }
+  for (const c of now) if (!observed.has(c)) { resizeObs.observe(c); observed.add(c) }
+}
+watch([blocks, box, () => opts.showAns], repaginate, { flush: 'post' })
+
+/** 纸张按实际尺寸排版，整体缩放到中间栏的宽度 */
+const sheetEl = ref<HTMLElement | null>(null)
+const pagesEl = ref<HTMLElement | null>(null)
+const view = reactive({ width: 0, height: 0 })
+const pageWidth = computed(() => box.value.w * MM)
+const scale = computed(() => (view.width ? Math.min(1, view.width / pageWidth.value) : 1))
+const viewObs = new ResizeObserver(() => {
+  view.width = sheetEl.value?.clientWidth ?? 0
+  view.height = pagesEl.value?.offsetHeight ?? 0
+})
+watch([sheetEl, pagesEl], ([a, b], [oa, ob]) => {
+  for (const el of [oa, ob]) if (el) viewObs.unobserve(el)
+  for (const el of [a, b]) if (el) viewObs.observe(el)
+})
+
+/** 打印 / 导出 PDF 时的纸张大小 */
+const pageStyle = document.createElement('style')
+watchEffect(() => { pageStyle.textContent = `@page { size: ${box.value.w}mm ${box.value.h}mm; margin: 0; }` })
+onMounted(() => {
+  document.head.append(pageStyle)
+  repaginate()
+})
+onBeforeUnmount(() => {
+  cancelAnimationFrame(frame)
+  resizeObs.disconnect()
+  viewObs.disconnect()
+  pageStyle.remove()
+})
 
 // ---------- 结构编辑：题序与分值 ----------
 
@@ -186,7 +281,7 @@ function focusRow(id: string) {
       </div>
     </aside>
 
-    <section class="sheet serif" :class="[`lay-${layout}`, { binding: opts.binding, a3: size === 'A3 双栏' }]">
+    <section ref="sheetEl" class="sheet serif" :class="`lay-${layout}`">
       <div v-if="!basket.count" class="sheet-empty no-print">
         <p>试题篮还是空的，先去挑选题目吧。</p>
         <div class="empty-links">
@@ -194,55 +289,39 @@ function focusRow(id: string) {
           <RouterLink to="/papers" class="btn btn-outline">从试卷选题整卷组卷</RouterLink>
         </div>
       </div>
-      <div v-else class="sheet-inner">
-        <div class="head center">
-          <div class="secret">绝密★启用前</div>
-          <h1>{{ TITLE }}</h1>
-          <div class="subject">{{ subjectTitle }}</div>
-          <div class="info">考试时间：120 分钟　满分：{{ basket.totalScore }} 分</div>
-          <div class="fields">
-            <span>学校：__________</span><span>姓名：__________</span><span>班级：__________</span><span>考号：__________</span>
+      <template v-else>
+        <!-- 排版测量用的隐藏副本：按栏宽排出每块的实际高度 -->
+        <div class="measure-wrap" aria-hidden="true">
+          <div ref="measureEl" class="measure" :style="{ width: `${box.colWidth}mm` }">
+            <PaperBlock v-for="b in blocks" :key="b.key" :block="b" :show-ans="opts.showAns" :subtitle="autoSubtitle" />
           </div>
         </div>
-        <div class="notice">
-          注意事项：1. 答题前填写好自己的姓名、班级、考号等信息。2. 请将答案正确填写在答题卡上。
-        </div>
-
-        <div class="body">
-          <div v-for="s in sections" :key="s.type" class="part">
-            <div class="part-head">{{ s.heading }}</div>
-            <div v-for="it in s.items" :key="it.q.id" class="item" @click="focusRow(it.q.id)">
-              <div v-if="it.material" class="material"><MathText :text="it.material" block /></div>
-              <div class="stem">
-                {{ it.no }}{{ noSep(layout) }}<template v-if="opts.score && s.each === null">（{{ it.score }} 分）</template><MathText :text="it.q.stem" />
+        <div class="stage" :style="{ height: `${view.height * scale}px` }">
+          <div ref="pagesEl" class="pages" :style="{ width: `${box.w}mm`, transform: `translateX(-50%) scale(${scale})` }">
+            <div
+              v-for="(page, pi) in pages" :key="pi" class="page" :class="{ binding: opts.binding }"
+              :style="{ width: `${box.w}mm`, minHeight: `${box.h}mm`, padding: `${box.margin}mm ${box.margin}mm ${box.margin}mm ${box.left}mm` }"
+            >
+              <div class="cols" :style="{ gridTemplateColumns: `repeat(${box.cols}, ${box.colWidth}mm)`, columnGap: `${box.colGap}mm` }">
+                <div v-for="(col, ci) in page" :key="ci" class="col" :style="{ minHeight: `${box.colHeight}px` }">
+                  <PaperBlock
+                    v-for="(b, bi) in col" :key="b.key" :block="b" :show-ans="opts.showAns" :subtitle="autoSubtitle" editable
+                    :class="{ focus: b.kind === 'item' && focusId === b.key }" :style="{ marginTop: bi ? `${b.gap}px` : 0 }"
+                    @pick="focusRow"
+                  />
+                </div>
               </div>
-              <div v-if="it.q.images.length" class="images">
-                <img v-for="src in it.q.images" :key="src" :src="src" alt="题目配图">
-              </div>
-              <div v-if="it.q.options.length" class="options" :class="layout !== 'plain' && ['opt-fixed', `cols-${optionCols(it.q.options)}`]">
-                <span v-for="(o, i) in it.q.options" :key="i">{{ optionLabel(layout, i) }}<MathText :text="o" /></span>
-              </div>
-              <div v-if="opts.showAns" class="answer">
-                【答案】<MathText :text="it.q.answer || '略'" /><template v-if="it.q.analysis">　【解析】<MathText :text="it.q.analysis" /></template>
-              </div>
+              <div class="page-foot">{{ subject }}试卷　第 {{ pi + 1 }} 页（共 {{ pages.length }} 页）</div>
             </div>
           </div>
         </div>
-
-        <div v-if="opts.card" id="answer-card" class="answer-card">
-          <div class="part-head">答题卡</div>
-          <div class="card-grid">
-            <div v-for="n in basket.count" :key="n" class="card-cell">
-              <span>{{ n }}</span><span class="blank" />
-            </div>
-          </div>
-        </div>
-      </div>
+      </template>
     </section>
 
     <aside class="side sticky-side no-print">
       <div class="card settings">
         <span class="card-title">排版设置</span>
+        <p class="edit-tip">点击卷头文字（标题、考试时间、注意事项等）可直接修改。<button class="btn-link small" @click="basket.resetHead()">恢复默认卷头</button></p>
         <ToggleSwitch v-for="[k, l] in OPT_LABELS" :key="k" v-model="opts[k]" :label="l" />
         <div class="sizes-wrap">
           <span class="muted small">纸张</span>
@@ -315,57 +394,44 @@ function focusRow(id: string) {
 }
 .more-btn:hover { text-decoration: none; background: var(--c-primary-soft); }
 
-/* 试卷纸面 */
-.sheet {
-  position: relative; background: var(--c-surface); border: 1px solid var(--c-border); border-radius: 4px;
-  box-shadow: 0 10px 30px rgb(var(--shadow-rgb) / .08); padding: 56px 56px 72px; color: var(--c-ink);
-  min-width: 0; flex: 999 1 520px;
+/* 试卷：按纸张实际尺寸分页排版，整体缩放到中间栏宽度 */
+.sheet { min-width: 0; flex: 999 1 520px; color: var(--c-ink); }
+.sheet-empty {
+  min-height: 360px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px;
+  font-family: var(--font-sans); color: var(--c-text-3);
+  background: var(--c-surface); border: 1px solid var(--c-border); border-radius: 4px;
 }
-.sheet.binding { padding-left: 88px; }
-.sheet.binding::before {
-  content: '装　订　线'; position: absolute; left: 28px; top: 40px; bottom: 40px; width: 20px;
-  border-right: 1px dashed var(--c-border-strong); writing-mode: vertical-rl; display: flex; align-items: center; justify-content: center;
-  font-size: 11px; letter-spacing: 8px; color: var(--c-text-4); font-family: var(--font-sans);
-}
-.sheet-empty { min-height: 360px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; font-family: var(--font-sans); color: var(--c-text-3); }
 .sheet-empty p { margin: 0; font-size: 15px; }
 .empty-links { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
 .empty-links .btn { padding: 0 18px; display: inline-flex; align-items: center; }
 .empty-links .btn:hover { text-decoration: none; }
-.sheet-inner { display: flex; flex-direction: column; gap: 18px; }
-.center { text-align: center; }
-.head { display: flex; flex-direction: column; gap: 10px; }
-.secret { font-size: 12px; letter-spacing: 4px; color: var(--c-text-3); }
-.head h1 { margin: 0; font-size: 24px; font-weight: 700; letter-spacing: 1px; }
-.subject { font-size: 20px; font-weight: 600; letter-spacing: 6px; }
-.info { font-size: 13px; color: var(--c-text-2); }
-.fields { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px 28px; font-size: 13px; color: var(--c-text-2); padding-top: 4px; }
-.notice { border: 1px solid var(--c-border-strong); padding: 10px 14px; font-size: 13px; line-height: 1.8; color: var(--c-text-2); }
-
-.body { display: flex; flex-direction: column; gap: 18px; }
-.a3 .body { display: block; column-count: 2; column-gap: 40px; column-rule: 1px dashed var(--c-border); }
-.a3 .part { break-inside: avoid-column; margin-bottom: 18px; }
-.part { display: flex; flex-direction: column; gap: 14px; }
-.part-head { font-size: 15.5px; font-weight: 700; font-family: var(--font-sans); }
-.item { display: flex; flex-direction: column; gap: 6px; font-size: 15px; line-height: 1.9; border-radius: 4px; cursor: pointer; }
-.item:hover { background: var(--c-surface-2); }
-.stem { text-wrap: pretty; }
-.material { margin-bottom: 4px; }
-.images { display: flex; flex-wrap: wrap; gap: 10px; padding-left: 1.5em; }
-.images img { max-width: min(100%, 320px); max-height: 220px; object-fit: contain; }
-.options { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 0 20px; padding-left: 1.5em; }
-.answer { font-size: 13px; color: var(--c-primary); font-family: var(--font-sans); padding-left: 1.5em; line-height: 1.7; }
-
-.answer-card { border-top: 2px solid var(--c-ink); padding-top: 16px; display: flex; flex-direction: column; gap: 12px; }
-.card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 8px; }
-.card-cell { display: flex; align-items: center; gap: 8px; font-size: 13px; font-family: var(--font-sans); }
-.card-cell .blank { flex: 1; height: 22px; border: 1px solid var(--c-border-strong); border-radius: 3px; }
+.measure-wrap { height: 0; overflow: hidden; visibility: hidden; pointer-events: none; }
+.measure { display: flow-root; }
+.stage { position: relative; }
+.pages { position: absolute; top: 0; left: 50%; transform-origin: top center; display: flex; flex-direction: column; gap: 24px; }
+.page {
+  position: relative; box-sizing: border-box; background: var(--c-surface); border: 1px solid var(--c-border); border-radius: 2px;
+  box-shadow: 0 10px 30px rgb(var(--shadow-rgb) / .08);
+}
+.page.binding::before {
+  content: '装　订　线'; position: absolute; left: 12mm; top: 20mm; bottom: 20mm; width: 6mm;
+  border-right: 1px dashed var(--c-border-strong); writing-mode: vertical-rl; display: flex; align-items: center; justify-content: center;
+  font-size: 11px; letter-spacing: 8px; color: var(--c-text-4); font-family: var(--font-sans);
+}
+.cols { display: grid; align-items: stretch; }
+.col { display: flow-root; min-width: 0; }
+.col + .col { position: relative; }
+.col + .col::before { content: ''; position: absolute; top: 0; bottom: 0; left: -7.5mm; border-left: 1px dashed var(--c-border); }
+.page-foot { position: absolute; left: 0; right: 0; bottom: 9mm; text-align: center; font-size: 12px; color: var(--c-text-3); font-family: var(--font-sans); }
+.focus { background: var(--c-primary-soft); }
 
 /* 右侧设置 */
 .side { flex: 1 0 240px; display: flex; flex-direction: column; gap: 14px; }
 .side .btn:disabled { opacity: .5; cursor: default; }
 .export-err { margin: -6px 0 0; font-size: 12px; color: var(--c-hard); }
 .settings { padding: 18px; display: flex; flex-direction: column; gap: 12px; }
+.edit-tip { margin: 0; font-size: 12px; line-height: 1.6; color: var(--c-text-4); }
+.edit-tip .btn-link { margin-left: 4px; }
 .sizes-wrap { display: flex; flex-direction: column; gap: 6px; border-top: 1px solid var(--c-divider); padding-top: 12px; }
 .sizes { display: flex; gap: 6px; }
 .sizes button {
@@ -377,18 +443,15 @@ function focusRow(id: string) {
 @media (max-width: 800px) {
   .sticky-side { position: static; }
   .structure { flex: 1 1 100%; max-height: none; }
-  .sheet { padding: 32px 20px 40px; }
-  .sheet.binding { padding-left: 52px; }
-  .sheet.binding::before { left: 12px; }
-  .a3 .body { column-count: 1; }
 }
 
 @media print {
   .paper { padding: 0; display: block; max-width: none; }
-  .sheet { border: none; box-shadow: none; padding: 0 0 0 48px; }
-  .sheet:not(.binding) { padding-left: 0; }
-  .sheet.binding::before { left: 0; top: 0; bottom: 0; }
-  .item:hover { background: none; }
+  .stage { height: auto !important; }
+  .pages { position: static; transform: none !important; gap: 0; }
+  .page { border: none; border-radius: 0; box-shadow: none; break-after: page; }
+  .page:last-child { break-after: auto; }
+  .focus { background: none; }
 }
 </style>
 

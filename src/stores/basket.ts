@@ -56,12 +56,37 @@ export function fromDraft(q: DraftQuestion): BasketQuestion {
   }
 }
 
+/** 卷头：在试卷页面上直接修改；subtitle 为 null 时按当前学科生成（如「数 学 试 卷」） */
+export interface PaperHead {
+  secret: string
+  title: string
+  subtitle: string | null
+  /** 考试时间一行；满分按总分自动生成，接在其后 */
+  duration: string
+  /** 考生信息栏，如「学校」「姓名」 */
+  fields: string[]
+  notice: string
+}
+
+export const defaultHead = (): PaperHead => ({
+  secret: '绝密★启用前',
+  title: '2026—2027学年高一上学期期中考试',
+  subtitle: null,
+  duration: '考试时间：120 分钟',
+  fields: ['学校', '姓名', '班级', '考号'],
+  notice: '注意事项：1. 答题前填写好自己的姓名、班级、考号等信息。2. 请将答案正确填写在答题卡上。',
+})
+
 const defaultScore = (q: BasketQuestion) => (q.score > 0 ? q.score : SCORE[q.type] ?? 5)
 
 export const useBasketStore = defineStore('basket', () => {
   try { localStorage.removeItem('fg-basket-v2') } catch { /* Storage may be disabled. */ }
   const items = ref<BasketItem[]>([])
   const typeOrder = ref<QuestionType[]>([...TYPE_ORDER])
+  const head = ref<PaperHead>(defaultHead())
+  function resetHead() {
+    head.value = defaultHead()
+  }
 
   const count = computed(() => items.value.length)
   const totalScore = computed(() => items.value.reduce((a, x) => a + x.score, 0))
@@ -150,7 +175,7 @@ export const useBasketStore = defineStore('basket', () => {
   }
 
   return {
-    items, typeOrder, count, totalScore, sections, has, add, addMany, remove, toggle, refresh, clear, replace,
+    items, typeOrder, head, resetHead, count, totalScore, sections, has, add, addMany, remove, toggle, refresh, clear, replace,
     reorder, move, moveSection, setScore, setSectionScore, resetScores,
   }
 })
