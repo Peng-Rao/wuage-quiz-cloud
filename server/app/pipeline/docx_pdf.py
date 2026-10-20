@@ -1,7 +1,9 @@
 """本地解析的 Word 没有版面：用 LibreOffice 转成 PDF 供「查看原图」，并按文字在 PDF 中定位各版面单元。"""
 
 import logging
+import os
 import re
+import signal
 import shutil
 import subprocess
 import tempfile
@@ -30,6 +32,14 @@ def soffice() -> str | None:
     return shutil.which("soffice") or shutil.which("libreoffice")
 
 
+def _profile() -> Path:
+    """本进程复用的 LibreOffice 配置目录：首次转换时初始化（数秒），之后每份省去这一步。
+
+    不依赖 HOME 可写；按进程区分，同一容器内的多个进程互不争用配置目录的锁。
+    """
+    return Path(tempfile.gettempdir()) / f"fg-lo-profile-{os.getpid()}"
+
+
 def docx_to_pdf(data: bytes, timeout: int = TIMEOUT) -> bytes | None:
     """转换失败或未安装 LibreOffice 时返回 None（原图不可用，不影响解析）。"""
     exe = soffice()
@@ -39,17 +49,23 @@ def docx_to_pdf(data: bytes, timeout: int = TIMEOUT) -> bytes | None:
     with _lock, tempfile.TemporaryDirectory(prefix="docx2pdf-") as tmp:
         d = Path(tmp)
         (d / "in.docx").write_bytes(data)
-        # 每次使用独立的配置目录：不依赖 HOME 可写，也不与其他进程的 LibreOffice 冲突
-        cmd = [exe, f"-env:UserInstallation={(d / 'profile').as_uri()}", "--headless", "--norestore",
+        profile = _profile()
+        cmd = [exe, f"-env:UserInstallation={profile.as_uri()}", "--headless", "--norestore",
                "--convert-to", "pdf", "--outdir", str(d), str(d / "in.docx")]
+        # soffice 是启动脚本，实际进程是其子进程：放在独立进程组，超时时整组结束，不留下占用配置目录的进程
+        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True)
         try:
-            r = subprocess.run(cmd, capture_output=True, timeout=timeout, check=False)
+            stdout, stderr = proc.communicate(timeout=timeout)
         except subprocess.TimeoutExpired:
+            os.killpg(proc.pid, signal.SIGKILL)
+            proc.communicate()
             log.warning("Word 转 PDF 超时（%s 秒）", timeout)
+            shutil.rmtree(profile, ignore_errors=True)  # 配置目录可能已损坏，下次重新初始化
             return None
         out = d / "in.pdf"
-        if r.returncode != 0 or not out.exists():
-            log.warning("Word 转 PDF 失败：%s", (r.stderr or r.stdout).decode(errors="replace")[-500:])
+        if proc.returncode != 0 or not out.exists():
+            log.warning("Word 转 PDF 失败：%s", (stderr or stdout).decode(errors="replace")[-500:])
+            shutil.rmtree(profile, ignore_errors=True)
             return None
         return out.read_bytes()
 

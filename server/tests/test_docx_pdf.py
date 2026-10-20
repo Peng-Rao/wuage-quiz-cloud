@@ -137,3 +137,34 @@ def test_libreoffice_converts_and_locates():
     for b in doc.blocks:  # 取第一次出现（卷末答案也以题号开头）
         page_of.setdefault(b.content[:2], b.page)
     assert page_of["1．"] == 1 and page_of["6．"] == 2 and page_of["参考"] == 3
+
+
+def test_backfill_existing_docx_job(client, monkeypatch):  # noqa: F811
+    from app import docx_pages
+    from app.storage import get_store
+
+    # 旧版本解析：没有 PDF，题目区域按分页符估算、横向占满整页
+    monkeypatch.setattr(run, "docx_to_pdf", lambda data: None)
+    key = upload(client, "旧卷.docx", exam_docx())
+    job = wait_done(client, client.post("/api/parse-jobs", json={
+        "fileKeys": [key], "fileNames": ["旧卷.docx"], "options": {}}).json()["id"])
+    assert job["status"] == "done" and job["pageCount"] == 3
+    qs = client.get(f"/api/parse-jobs/{job['id']}/questions").json()
+    assert qs[5]["regions"][0]["bbox"][0] == 0 and qs[5]["regions"][0]["bbox"][2] == 1
+    assert client.get(f"/api/draft-questions/{qs[5]['id']}/source").json() == []
+    with SessionLocal() as s:
+        assert any("无法查看原图" in w for w in s.get(ParseJob, job["id"]).warnings)
+
+    monkeypatch.setattr(docx_pages, "docx_to_pdf", lambda data: make_exam_pdf())
+    assert job["id"] in docx_pages.candidates(None, False)
+    assert docx_pages.backfill_job(job["id"]).startswith("3 页")
+    assert get_store().exists(f"jobs/{job['id']}/pages/3.png")
+    assert job["id"] not in docx_pages.candidates(None, False)  # 已有页面图的跳过
+    qs = client.get(f"/api/parse-jobs/{job['id']}/questions").json()
+    assert [q["regions"][0]["page"] for q in qs] == [1, 1, 1, 1, 1, 2, 2, 2, 2]
+    src = client.get(f"/api/draft-questions/{qs[5]['id']}/source").json()
+    bbox = src[0]["regions"][0]["bbox"]
+    assert [x["page"] for x in src] == [2] and bbox[0] > 0 and bbox[2] < 1 and bbox[1] < 0.2  # 实际页边距内
+    with SessionLocal() as s:
+        j = s.get(ParseJob, job["id"])
+        assert j.page_count == 3 and not any("无法查看原图" in w for w in j.warnings)

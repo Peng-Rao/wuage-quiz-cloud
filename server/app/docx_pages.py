@@ -6,6 +6,7 @@
 import argparse
 import logging
 import time
+from concurrent.futures import ThreadPoolExecutor
 
 from sqlalchemy import select
 
@@ -13,6 +14,7 @@ from .db import BankQuestion, DraftQuestion, ParseBlock, ParseJob, SessionLocal
 from .pipeline.docx_pdf import docx_to_pdf, locate_blocks
 from .pipeline.files import pdf_page_count, render_pages
 from .pipeline.ir import Block
+from .pipeline.run import PAGE_BATCH, PUT_CONCURRENCY
 from .config import get_settings
 from .storage import get_store
 
@@ -75,9 +77,13 @@ def backfill_job(job_id: str) -> str:
         return "转换失败"
     located = locate_blocks(pdf, list(blocks.values()))
     pages = pdf_page_count(pdf)
-    for start in range(0, pages, 4):
-        for i, png in enumerate(render_pages(pdf, settings.page_dpi, start, start + 4), start + 1):
-            store.put(f"jobs/{job_id}/pages/{i}.png", png)
+    # 渲染下一批的同时并发上传上一批（对象存储逐个上传较慢）
+    with ThreadPoolExecutor(PUT_CONCURRENCY) as pool:
+        uploads = [pool.submit(store.put, f"jobs/{job_id}/pages/{i}.png", png)
+                   for start in range(0, pages, PAGE_BATCH)
+                   for i, png in enumerate(render_pages(pdf, settings.page_dpi, start, start + PAGE_BATCH), start + 1)]
+        for u in uploads:
+            u.result()  # 任一页上传失败则本份失败，不更新数据库，可重跑
     new = {bid: (b.page, b.bbox) for bid, b in blocks.items()}
     with SessionLocal() as s:
         for r in s.scalars(select(ParseBlock).where(ParseBlock.job_id == job_id)):
@@ -107,6 +113,7 @@ def main() -> None:
     parser.add_argument("--force", action="store_true", help="已有页面图也重新生成")
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
+    logging.getLogger("qcloud_cos").setLevel(logging.WARNING)  # 不逐个记录对象存储请求
     ids = candidates(args.job, args.force)[: args.limit]
     log.info("待处理 %d 份", len(ids))
     ok = 0
