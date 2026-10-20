@@ -595,6 +595,9 @@ def assign_scores(questions: list[Question], sections: dict[int, Section], paper
         if info.count is None and not rest / 2 <= current <= rest * 1.5:
             continue  # 标题没写题数时无法核对归属：现有分值与总分相差过大，多半混入了下一大题的题
         if all(q.score_source == "llm" for q in free) and abs(sum(q.score for q in free) - rest) < 1e-6:
+            # 大模型分值与大题总分一致：视同已按总分确定，整卷满分推算时不再调整（重算时结果不变）
+            for q in free:
+                q.score_source = "section_total"
             continue
         for q, score in zip(free, _split(rest, len(free))):
             q.score, q.score_source = score, "section_total"

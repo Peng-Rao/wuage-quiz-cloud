@@ -460,3 +460,19 @@ def test_rescore_existing_drafts():
               for q in rule.questions]
     scores = rescore(blocks, drafts)
     assert scores[:16] == [4.0] * 16 and scores[16:] == [8, 8, 8, 8, 8, 10, 10, 12, 14]
+
+
+def test_rescore_is_stable():
+    """重算结果再重算不变：与大题总分一致的分值不被整卷满分（与大题合计不符时）再次下调。"""
+    from types import SimpleNamespace
+    from app.rescore import rescore
+    us = fujian_math_units()
+    us[1] = Unit(us[1].id, us[1].seq, 1, "text", "（试卷满分：130分 考试时间：120分钟）")  # 与大题合计 150 不符
+    blocks = [SimpleNamespace(id=u.id, seq=u.seq, page=1, bbox=[0, 0, 1, 1], type="text", content=u.text) for u in us]
+    rule = rule_segment(us, with_answer=False)
+    drafts = [SimpleNamespace(type=q.type, score=12.0 if q.type == "解答题" else 4.0, block_ids=q.unit_ids)
+              for q in rule.questions]
+    first = rescore(blocks, drafts)
+    for d, score in zip(drafts, first):
+        d.score = score
+    assert rescore(blocks, drafts) == first and first[16:] == [8, 8, 8, 8, 8, 10, 10, 12, 14]
