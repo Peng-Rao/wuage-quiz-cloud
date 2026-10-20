@@ -90,6 +90,7 @@ uv run uvicorn app.main:app --port 8000 --reload
 | `app/pipeline/parsers/mineru_cloud.py` | v4 批量上传接口：申请上传地址 → PUT → 轮询 → 下载 zip → `content_list.json` 转 IR |
 | `app/pipeline/parsers/lite.py` | PyMuPDF 读取文字层，按行输出；按字号与基线识别上下标（O₂、x²），x^2、a_n、√(…) 转为上下标或 LaTeX；分式等二维公式仍为文字，扫描件、Word 不可用 |
 | `app/pipeline/parsers/router.py` | 引擎链与降级 |
+| `app/pipeline/docx_pdf.py` | 本地解析的 Word 用 LibreOffice 转 PDF 生成原图页面，按文字在 PDF 中定位各版面单元的页码与区域（图片取前后文字之间的 PDF 图片，公式等沿用相邻单元）；未安装 LibreOffice 或转换失败时没有原图，不影响解析 |
 | `app/pipeline/segment.py` | 大题标题 / 题号 / 选项 / 分值 / 卷末答案的规则切分；大模型分组校验与置信度 |
 | `app/pipeline/classify.py` | 试卷分类 |
 | `app/pipeline/llm.py` | OpenAI 兼容 `/chat/completions` 客户端（JSON 输出） |
@@ -186,7 +187,7 @@ uv run pytest
 - 内置知识树按知识领域组织（非教材章节），学校有正式知识体系时建议导入；相似题阈值需用真实题库校准。
 - 难度模型尚无学生作答数据，校准依赖老师调整过难度的评测样本。
 - 难度系数含义已改为「越高越难」，启动时会把旧数据一次性换算为 1 − 旧值（`app_meta.coef_semantics`）。
-- 本地 MinerU（`mineru_local`）：P3；Word 在未配置 MinerU 时无法解析（需要 LibreOffice 转换，P3）。
+- 本地 MinerU（`mineru_local`）：P3；Word 由本地解析（`docx`）处理，MinerU 仅作识别不出题目时的备选。
 - 大题标题后、第一题前的材料（如阅读材料）当前被视为标题说明而不归入题目，语文 / 英语试卷需在 P2 处理。
 - 轻量引擎按坐标排序，双栏试卷的阅读顺序可能错乱；双栏试卷请使用 MinerU。
 
@@ -222,6 +223,13 @@ pg_trgm GiST 文字近邻召回，每路默认 200 条（`SIMILAR_CANDIDATES`）
 也可以叠加根目录的 `docker-compose.embeddings.yml`，统一给 app / worker 配置本地模型和 CPU 线程数：
 `docker compose -f docker-compose.yml -f docker-compose.embeddings.yml up -d --build`。
 已有数据库仍须先按上述步骤备份、暂停写入并运行迁移。
+
+### Word 试卷原图补生成
+
+镜像内置 LibreOffice 后，新解析的 Word 试卷自动生成原图。此前本地解析的 Word 试卷没有页面图，「查看原图」为空，
+在 app 容器运行 `python -m app.docx_pages` 补生成：逐份转换、渲染页面图，并按实际位置更新版面单元、题目的原图区域与页码
+（同步正式题库的原卷页码）。已有页面图的任务跳过，失败可重跑；`--job ID` 只处理指定任务，`--limit N` 限制份数，
+`--force` 重新生成。LibreOffice 在同一进程内逐份转换，每份数秒。
 
 ### 相似题索引升级
 

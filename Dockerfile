@@ -37,6 +37,15 @@ ENV PYTHONUNBUFFERED=1 \
     PATH=/opt/venv/bin:$PATH \
     DATA_DIR=/data \
     STATIC_DIR=/app/web
+# 本地解析的 Word 试卷用 LibreOffice 转成 PDF，生成「查看原图」的页面图；中文字体用 Noto CJK，
+# 西文字体用与 Times / Arial / Calibri / Cambria 等宽的替代字体，分页与原卷接近。
+# 国内构建可指定镜像源：--build-arg APT_MIRROR=mirrors.tencent.com
+ARG APT_MIRROR=""
+RUN if [ -n "$APT_MIRROR" ]; then sed -i "s#deb.debian.org#$APT_MIRROR#g" /etc/apt/sources.list.d/debian.sources; fi \
+ && apt-get update \
+ && apt-get install -y --no-install-recommends libreoffice-writer-nogui fonts-noto-cjk fonts-liberation2 \
+      fonts-crosextra-carlito fonts-crosextra-caladea \
+ && rm -rf /var/lib/apt/lists/*
 WORKDIR /app/server
 COPY --from=deps /opt/venv /opt/venv
 COPY server/app ./app
