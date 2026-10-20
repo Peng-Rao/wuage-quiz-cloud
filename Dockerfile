@@ -23,12 +23,13 @@ RUN npm run build:api
 
 # ---------- Python 依赖（按 uv.lock 锁定版本） ----------
 FROM python:3.13-slim AS deps
-COPY --from=ghcr.io/astral-sh/uv:0.12 /uv /usr/local/bin/uv
+COPY --from=ghcr.io/astral-sh/uv:0.13 /uv /usr/local/bin/uv
 ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy UV_PROJECT_ENVIRONMENT=/opt/venv
 WORKDIR /app/server
 COPY server/pyproject.toml server/uv.lock ./
+ARG EMBEDDINGS_EXTRA=""
 # 下载缓存放在构建缓存里，不进入镜像
-RUN --mount=type=cache,target=/root/.cache/uv uv sync --frozen --no-dev --no-install-project
+RUN --mount=type=cache,target=/root/.cache/uv uv sync --frozen --no-dev --no-install-project ${EMBEDDINGS_EXTRA:+--extra embeddings}
 
 # ---------- 运行环境（不含 uv 与构建缓存） ----------
 FROM python:3.13-slim AS app

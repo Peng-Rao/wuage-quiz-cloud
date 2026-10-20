@@ -189,3 +189,41 @@ uv run pytest
 - 本地 MinerU（`mineru_local`）：P3；Word 在未配置 MinerU 时无法解析（需要 LibreOffice 转换，P3）。
 - 大题标题后、第一题前的材料（如阅读材料）当前被视为标题说明而不归入题目，语文 / 英语试卷需在 P2 处理。
 - 轻量引擎按坐标排序，双栏试卷的阅读顺序可能错乱；双栏试卷请使用 MinerU。
+
+### 本地 Hugging Face 嵌入与 pgvector
+
+通过 `langchain-huggingface` 的 `HuggingFaceEmbeddings` 加载模型，默认在 CPU 上推理。
+中文题库可使用 `BAAI/bge-small-zh-v1.5`（512 维）；模型下载到 `/data/models`，持久卷在重启后复用缓存。
+Linux 的 PyTorch 使用 CPU wheel，避免下载 CUDA 运行库。每个启用语义检索的进程会各自加载一份模型。
+
+1. 构建镜像：`EMBEDDINGS_EXTRA=1 docker compose build app`。
+2. 在 `server/.env` 设置 `EMBEDDING_PROVIDER=huggingface`、`EMBEDDING_MODEL=BAAI/bge-small-zh-v1.5`。
+3. 将 PostgreSQL 17 服务更新到 compose 中的 pgvector 镜像。升级前先备份数据库，并暂停应用和 Worker 写入。
+4. 用新镜像执行 `python -m app.embedding_backfill --migrate-only`，把三个表的 JSON 向量转为 pgvector，保留已有值；迁移可重复执行。
+5. 启动服务后，执行 `python -m app.embedding_backfill` 回填正式题库；可用 `--school-id` 限定学校。
+
+回填按 `EMBEDDING_BATCH` 分批提交；同模型已有向量跳过，失败后重跑即可。
+可用 `--after-id` / `--before-id` 限定 ID 范围（均不包含边界），将互不重叠的区间分给多个进程并行回填。
+新解析的草稿题和正式入库流程沿用现有嵌入逻辑；草稿与知识点的历史向量会迁移类型，回填命令只生成正式题库向量。
+相似题检索按学校、题型及草稿范围过滤。1,000 道以内精确比对；更大范围分别通过 HNSW 余弦近邻、
+pg_trgm GiST 文字近邻召回，每路默认 200 条（`SIMILAR_CANDIDATES`），合并去重后沿用字面/语义混合评分精排。
+文字召回只索引前 2,000 个归一化字符，精排仍使用完整题干和选项；无向量或向量过期时仍可文字召回。
+大范围查询采用近似候选集，不保证与全量精排完全相同，可调高候选数量改善召回。
+本地推理不写入远程供应商的 token 费用。
+
+也可以叠加根目录的 `docker-compose.embeddings.yml`，统一给 app / worker 配置本地模型和 CPU 线程数：
+`docker compose -f docker-compose.yml -f docker-compose.embeddings.yml up -d --build`。
+已有数据库仍须先按上述步骤备份、暂停写入并运行迁移。
+
+### 相似题索引升级
+
+更新代码后，在 app 容器运行 `python -m app.search_indexes`。
+此命令回填题库与草稿的 `search_text`，并使用 `CREATE INDEX CONCURRENTLY` 在线创建索引：
+
+- 文字召回：两张题目表的 GiST trigram 索引。
+- 语义召回：按模型和维度隔离的 HNSW 余弦索引，正式题库与草稿各一份。
+- 范围筛选：学校/题型/ID、任务/题型/ID、学校/任务状态/种类/ID 的 B-tree 索引。
+- 迁移兼容：仅索引缺失检索文本的行，快速判断是否需要暂时退回精确比对。
+
+命令可重跑，也会修复并发建索引失败留下的无效索引。更换嵌入模型并完成回填后，再运行一次即可。
+应用新增、修改题干或选项时同步更新检索文本，并作废旧向量；索引由 PostgreSQL 自动维护。

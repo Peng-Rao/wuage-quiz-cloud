@@ -85,9 +85,13 @@ class Settings(BaseSettings):
     # 相似题语义检索（可选）：OpenAI 兼容 /embeddings；地址与 Key 留空时沿用 LLM_BASE_URL / LLM_API_KEY
     # 如通义千问：EMBEDDING_MODEL=text-embedding-v4
     embedding_model: str = ""
+    embedding_provider: Literal["openai", "huggingface"] = "openai"
+    embedding_device: str = "cpu"
+    embedding_cache_dir: str = "/data/models"
     embedding_base_url: str = ""
     embedding_api_key: str = ""
-    embedding_batch: int = 10
+    embedding_batch: int = Field(10, ge=1)
+    similar_candidates: int = Field(200, ge=20, le=2000)
 
     # 每个进程同时执行的任务数（解析、生成答案等；批量上传时其余排队），1–10。
     # 线程池与数据库连接池按此自动放大；多个 Worker 时总并发 = Worker 数 × 该值

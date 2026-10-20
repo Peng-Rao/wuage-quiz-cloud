@@ -64,7 +64,7 @@ def test_similar_only_loads_winners_and_matches_full_sort(bank_data):
     with SessionLocal() as s:
         rows = s.execute(select(BankQuestion.id, BankQuestion.stem).where(BankQuestion.school_id == school)).all()
         expected = sorted([(i, round(similar.lexical("目标题目123", text), 4)) for i, text in rows],
-                          key=lambda item: item[1], reverse=True)[:5]
+                          key=lambda item: (-item[1], item[0]))[:5]
         loaded = []
         event.listen(s, "loaded_as_persistent", lambda session, obj: loaded.append(obj.id)
                      if isinstance(obj, BankQuestion) else None)

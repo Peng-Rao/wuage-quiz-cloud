@@ -1,0 +1,19 @@
+# docker compose -f docker-compose.yml -f docker-compose.embeddings.yml up -d --build
+x-local-embeddings: &local-embeddings
+  EMBEDDING_PROVIDER: huggingface
+  EMBEDDING_MODEL: ${HF_EMBEDDING_MODEL:-BAAI/bge-small-zh-v1.5}
+  EMBEDDING_DEVICE: cpu
+  EMBEDDING_CACHE_DIR: /data/models
+  OMP_NUM_THREADS: "2"
+  MKL_NUM_THREADS: "2"
+
+services:
+  app:
+    build:
+      args:
+        EMBEDDINGS_EXTRA: "1"
+    environment:
+      <<: *local-embeddings
+  worker:
+    environment:
+      <<: *local-embeddings

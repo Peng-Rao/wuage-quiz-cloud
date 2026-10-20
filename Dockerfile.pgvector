@@ -1,0 +1,12 @@
+# 保持现有 PostgreSQL 17 Alpine 数据卷的运行环境，只补充 pgvector。
+FROM postgres:17-alpine AS vector-build
+RUN apk add --no-cache build-base wget \
+    && wget -qO /tmp/pgvector.tar.gz https://github.com/pgvector/pgvector/archive/refs/tags/v0.8.2.tar.gz \
+    && tar -xzf /tmp/pgvector.tar.gz -C /tmp \
+    && cd /tmp/pgvector-0.8.2 \
+    && make OPTFLAGS="" with_llvm=no \
+    && make install with_llvm=no
+
+FROM postgres:17-alpine
+COPY --from=vector-build /usr/local/lib/postgresql/vector.so /usr/local/lib/postgresql/vector.so
+COPY --from=vector-build /usr/local/share/postgresql/extension/vector* /usr/local/share/postgresql/extension/
