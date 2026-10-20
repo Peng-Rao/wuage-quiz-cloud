@@ -109,7 +109,7 @@ function summary(p: Seed): PaperSummary {
   const typeCounts: Partial<Record<QuestionType, number>> = {}
   for (const q of qs) typeCounts[q.type] = (typeCounts[q.type] ?? 0) + 1
   return {
-    id: p.id, title: p.meta.title, meta: p.meta, fileName: p.meta.title + '.pdf', questionCount: qs.length,
+    id: p.id, title: p.meta.title, meta: p.meta, fileName: p.meta.title + '.pdf', fileType: 'pdf', questionCount: qs.length,
     sourceQuestionCount: qs.length, totalScore: total, typeCounts,
     avgCoef: total ? Math.round((qs.reduce((a, q) => a + q.coef * q.score, 0) / total) * 100) / 100 : null, updatedAt: p.date,
   }

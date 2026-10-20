@@ -4,11 +4,14 @@ import { useRoute, useRouter } from 'vue-router'
 import { TYPE_ORDER, coefToDiff } from '@/data/mock'
 import { bankApi, type FacetCount, type PaperFacets, type PaperPage, type PaperSummary } from '@/api/bank'
 import { fromBank, useBasketStore } from '@/stores/basket'
+import { useAuthStore } from '@/stores/auth'
 import LoadingState from '@/components/LoadingState.vue'
+import PdfPreviewDialog from '@/components/parse/PdfPreviewDialog.vue'
 
 const route = useRoute()
 const router = useRouter()
 const basket = useBasketStore()
+const auth = useAuthStore()
 
 type Dim = 'stage' | 'grade' | 'subject' | 'school' | 'paperType'
 const DIMS: { key: Dim; label: string; facet: keyof PaperFacets }[] = [
@@ -83,6 +86,15 @@ const typeSummary = (p: PaperSummary) =>
   TYPE_ORDER.filter((t) => p.typeCounts[t]).map((t) => `${t.replace('题', '')} ${p.typeCounts[t]}`).join(' · ')
 const tagsOf = (p: PaperSummary) =>
   [p.meta.stage && p.meta.grade ? p.meta.grade : p.meta.stage, p.meta.subject, p.meta.region, p.meta.schoolYear].filter(Boolean)
+
+// 原卷 PDF 预览：沿用解析任务的权限，普通成员不能读取整卷
+const canPreview = (p: PaperSummary) => auth.isStaff && p.fileType === 'pdf'
+const pdfOpen = ref(false)
+const pdfPaper = ref<PaperSummary | null>(null)
+function previewPdf(p: PaperSummary) {
+  pdfPaper.value = p
+  pdfOpen.value = true
+}
 
 // 整卷加入试题篮
 const adding = reactive<Record<string, 'loading' | 'done'>>({})
@@ -168,6 +180,7 @@ async function addPaper(p: PaperSummary) {
           <span class="date">{{ p.updatedAt.slice(0, 10) }}</span>
           <div class="btns">
             <RouterLink :to="`/papers/${p.id}`" class="op">查看</RouterLink>
+            <button v-if="canPreview(p)" class="op" @click="previewPdf(p)">原卷 PDF</button>
             <button class="op primary" :disabled="!!adding[p.id]" @click="addPaper(p)">
               <LoadingState v-if="adding[p.id] === 'loading'" compact label="正在获取整卷题目…" />
               <template v-else>{{ adding[p.id] === 'done' ? '已加入试题篮' : '整卷加入试题篮' }}</template>
@@ -183,6 +196,8 @@ async function addPaper(p: PaperSummary) {
         @click="setQuery({ page: n > 1 ? n : undefined })"
       >{{ n }}</button>
     </nav>
+
+    <PdfPreviewDialog v-model="pdfOpen" :job-id="pdfPaper?.id ?? ''" :file-name="pdfPaper?.fileName ?? ''" />
   </main>
 </template>
 

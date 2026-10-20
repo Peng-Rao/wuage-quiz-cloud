@@ -12,6 +12,7 @@ import { fromBank, useBasketStore } from '@/stores/basket'
 import QuestionCard from '@/components/bank/QuestionCard.vue'
 import BankEditDialog from '@/components/bank/BankEditDialog.vue'
 import PaperMetaDialog from '@/components/bank/PaperMetaDialog.vue'
+import PdfPreviewDialog from '@/components/parse/PdfPreviewDialog.vue'
 import DifficultyBar from '@/components/DifficultyBar.vue'
 import ModalDialog from '@/components/ModalDialog.vue'
 import LoadingState from '@/components/LoadingState.vue'
@@ -86,6 +87,10 @@ function onEdited(q: BankQuestion) {
 }
 // 管理员编辑试卷属性：题目来源随之更新，同步试题篮中的快照
 const metaOpen = ref(false)
+// 原卷 PDF 预览：沿用解析任务的权限，普通成员不能读取整卷
+const pdfOpen = ref(false)
+const canPreview = computed(() => auth.isStaff && paper.value?.fileType === 'pdf')
+watch(() => props.id, () => { pdfOpen.value = false })
 function onMetaSaved(p: PaperDetail) {
   paper.value = p
   for (const q of p.questions) if (basket.has(q.id)) basket.refresh(fromBank(q))
@@ -231,6 +236,7 @@ function replaceAndGo() {
           <button class="btn btn-outline" :disabled="inBasket === qs.length" @click="addAll">
             {{ inBasket === qs.length ? '已全部加入试题篮' : '整卷加入试题篮' }}
           </button>
+          <button v-if="canPreview" class="btn btn-outline" @click="pdfOpen = true">预览原卷 PDF</button>
           <span class="basket-note">本卷 {{ inBasket }} / {{ qs.length }} 题在试题篮中</span>
           <div v-if="auth.isStaff" class="minor-ops">
             <button v-if="auth.isAdmin" class="btn-link" @click="metaOpen = true">编辑属性</button>
@@ -275,6 +281,7 @@ function replaceAndGo() {
 
     <BankEditDialog v-model="editOpen" :q="editing?.q ?? null" :no="editing?.no" @saved="onEdited" />
     <PaperMetaDialog v-model="metaOpen" :paper="paper" @saved="onMetaSaved" />
+    <PdfPreviewDialog v-model="pdfOpen" :job-id="canPreview ? id : ''" :file-name="paper?.fileName ?? ''" />
 
     <ReviewPanel v-if="auth.isStaff && paper" :questions="qs" @updated="reloadPaper" />
 
