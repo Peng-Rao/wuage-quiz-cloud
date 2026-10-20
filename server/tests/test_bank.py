@@ -128,6 +128,7 @@ def test_paper_library(client, data):
     assert page["total"] == 2
     math = next(p for p in page["items"] if p["id"] == data["math"])
     assert math["title"] == "题库测试高一期中数学卷" and math["meta"]["grade"] == "高一"
+    assert math["fileType"] == client.get(f"/api/parse-jobs/{data['math']}").json()["fileType"]
     assert math["questionCount"] == 3 and math["sourceQuestionCount"] == 4 and math["totalScore"] == 22
     assert math["typeCounts"] == {"单选题": 2, "解答题": 1}
     assert math["avgCoef"] == round((0.2 * 5 + 0.45 * 5 + 0.8 * 12) / 22, 2)

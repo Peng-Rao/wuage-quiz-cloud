@@ -83,6 +83,7 @@ POST /api/parse-jobs/{id}/commit    → 入校本题库
 原文件缺失返回 404。接口沿用任务的学科权限，普通成员不可读取整卷，原始上传路径仍不可直接读取。
 本地文件及 OSS / COS 文件均由本服务以 `inline`、`private, no-store` 返回，避免跨域及对象存储下载头影响预览。
 前端仅在打开预览时获取 PDF，关闭、切换任务或离开页面时取消请求并释放预览地址。
+试卷选题列表与整卷详情页同样可预览原卷：`PaperSummary.fileType` 为 `pdf` 时（试卷 id 即来源解析任务 id），管理员及组长可打开预览。
 
 ### 上传校验
 
@@ -167,10 +168,10 @@ POST /api/parse-jobs/{id}/commit    → 入校本题库
 ### 相似题
 
 - 字面相似度：归一化（去空白、标点、填空线、LaTeX 命令，全角转半角）后的二元 / 三元字组合余弦，默认启用，无外部依赖。
-- 语义相似度（可选）：配置 `EMBEDDING_MODEL` 后调用 OpenAI 兼容 `/embeddings`，与字面分加权；解析时为每题计算向量，入库时一并保存。
+- 语义相似度（可选）：支持 OpenAI 兼容 `/embeddings` 或 LangChain Hugging Face 本地模型，与字面分加权；解析时为每题计算向量，入库时一并保存到 pgvector。
 - `score` ≥ 0.85 视为「疑似重复」（`duplicate=true`），查重阶段据此设置 `DraftQuestion.duplicateOf`（指向校本题库题目）。阈值为经验值，接入真实题库后需校准。
 - 只与同题型比较；`scope=all` 时还包含其他试卷中尚未入库的草稿题（用于发现重复上传），不包含本卷。
-- 向量调用计入 AI 用量（`purpose=embed` / `similar`）。当前为全量比对，适合万题以内；题量更大时换成 pgvector 等向量索引。
+- 远程向量调用计入 AI 用量（`purpose=embed` / `similar`），本地推理不计远程费用。小范围精确比对；大范围通过 HNSW 语义近邻、GiST 文字近邻分别召回，再按原混合分精排。索引部署见 [后端说明](../server/README.md#相似题索引升级)。
 
 ### AI 生成答案
 

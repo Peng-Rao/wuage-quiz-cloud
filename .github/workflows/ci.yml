@@ -34,7 +34,8 @@ jobs:
     runs-on: ubuntu-latest
     services:
       postgres:
-        image: postgres:17-alpine
+        # 与 Dockerfile.pgvector 相同：PostgreSQL 17 + pgvector
+        image: pgvector/pgvector:0.8.2-pg17
         env:
           POSTGRES_PASSWORD: postgres
           # 数据库默认时区设为非 UTC，检查时间换算
@@ -86,6 +87,7 @@ jobs:
           cache-to: type=gha,mode=max
       - name: 启动 compose（app、worker、PostgreSQL、Redis）并检查 /api/health
         run: |
+          docker compose build db
           docker compose up -d --no-build --wait --wait-timeout 180
           health=$(curl -fsS http://127.0.0.1:8000/api/health)
           echo "$health"

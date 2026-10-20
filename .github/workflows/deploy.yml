@@ -1,0 +1,75 @@
+# 自动部署：main 分支的 CI 全部通过后，构建 x86 镜像推送到镜像仓库，再在服务器上运行 deploy/deploy.sh 更新 app、worker。
+# 配置方法见 docs/deployment.md「自动部署」；未设置变量 DEPLOY_HOST 时跳过。
+# 也可在 Actions 页面手动运行（部署 main 的最新提交）。
+name: Deploy
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+# 部署依次进行，不中断正在进行的部署（排队中的旧部署会被更新的替换）
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: 部署到服务器
+    # 只部署本仓库 main 分支推送触发、CI 全部通过的提交；不部署 PR（包括复刻仓库中同名为 main 的分支）
+    if: >-
+      vars.DEPLOY_HOST != '' && (
+        (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
+        (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' &&
+         github.event.workflow_run.head_repository.full_name == github.repository))
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 30
+    env:
+      SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+      IMAGE: ${{ vars.REGISTRY }}/${{ vars.REGISTRY_NAMESPACE }}/fg-quiz-cloud
+      TARGET: ${{ vars.DEPLOY_USER || 'ubuntu' }}@${{ vars.DEPLOY_HOST }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ env.SHA }}
+          # 向服务器上的仓库推送提交需要完整历史
+          fetch-depth: 0
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ vars.REGISTRY }}
+          username: ${{ secrets.REGISTRY_USERNAME }}
+          password: ${{ secrets.REGISTRY_PASSWORD }}
+      # 复用 CI 构建同一提交时写入的缓存；镜像仓库中已有的层不会重复推送
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64
+          push: true
+          tags: ${{ env.IMAGE }}:${{ env.SHA }}
+          labels: org.opencontainers.image.revision=${{ env.SHA }}
+          cache-from: type=gha
+      - name: 配置 SSH
+        env:
+          SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+          PORT: ${{ vars.DEPLOY_PORT || '22' }}
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/id_deploy && chmod 600 ~/.ssh/id_deploy
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          printf 'Host *\n  Port %s\n  IdentityFile ~/.ssh/id_deploy\n  IdentitiesOnly yes\n  StrictHostKeyChecking yes\n  ServerAliveInterval 30\n' "$PORT" > ~/.ssh/config
+      # 服务器访问 GitHub 不稳定：直接把提交推送到服务器上的仓库，部署脚本据此快进
+      - name: 推送提交到服务器上的仓库
+        run: git push "$TARGET:wuage-quiz-cloud" "+$SHA:refs/deploy/latest"
+      # 运行该提交中的 deploy/deploy.sh（取自服务器仓库，不经过标准输入，避免脚本内命令读走脚本内容）
+      - name: 在服务器上运行 deploy/deploy.sh
+        run: |
+          # shellcheck disable=SC2029  # $SHA、$IMAGE 有意在本机展开
+          ssh "$TARGET" "f=\$(mktemp) && git -C wuage-quiz-cloud show $SHA:deploy/deploy.sh > \$f && bash \$f $IMAGE:$SHA $SHA; rc=\$?; rm -f \$f; exit \$rc"

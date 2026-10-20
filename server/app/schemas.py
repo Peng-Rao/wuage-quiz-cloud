@@ -561,6 +561,8 @@ class PaperSummary(Model):
     title: str
     meta: PaperMeta
     file_name: str
+    # 原卷文件类型 pdf / docx / image；PDF 可通过 /api/parse-jobs/{id}/pdf 预览
+    file_type: str = ""
     # 已入库题数；原卷拆出的题数（部分入库时大于前者）
     question_count: int
     source_question_count: int

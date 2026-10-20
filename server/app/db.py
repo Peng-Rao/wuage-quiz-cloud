@@ -6,11 +6,23 @@ from typing import Any
 
 from fastapi import Request
 
-from sqlalchemy import JSON, DateTime, Float, ForeignKey, Integer, String, Text, create_engine, inspect, text
+from sqlalchemy import JSON, DateTime, Float, ForeignKey, Index, Integer, String, Text, create_engine, event, inspect, text
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
+from pgvector.sqlalchemy import Vector
 
 from .config import get_settings
 
+
+class ListVector(Vector):
+    """pgvector 返回值统一成 list，兼容现有 API 和真值判断。"""
+    cache_ok = True
+
+    def result_processor(self, dialect, coltype):
+        process = super().result_processor(dialect, coltype)
+        def as_list(value):
+            result = process(value)
+            return None if result is None else [float(x) for x in result]
+        return as_list
 
 def utcnow() -> datetime:
     return datetime.now(timezone.utc)
@@ -115,6 +127,7 @@ class ParseBlock(Base):
 
 class DraftQuestion(Base):
     __tablename__ = "draft_question"
+    search_text: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     id: Mapped[str] = mapped_column(String(48), primary_key=True)
     job_id: Mapped[str] = mapped_column(ForeignKey("parse_job.id", ondelete="CASCADE"), index=True)
@@ -143,7 +156,7 @@ class DraftQuestion(Base):
     duplicate_of: Mapped[str | None] = mapped_column(String(48), nullable=True)
     status: Mapped[str] = mapped_column(String(8), default="draft")
     # 相似题检索用的文本向量（启用 EMBEDDING_MODEL 时）
-    embedding: Mapped[list[Any] | None] = mapped_column(JSON, nullable=True)
+    embedding: Mapped[list[Any] | None] = mapped_column(ListVector(), nullable=True)
     embedding_model: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
 
@@ -204,6 +217,7 @@ class BankQuestion(Base):
     """校本题库：入库快照、个人归属与审核记录。"""
 
     __tablename__ = "bank_question"
+    search_text: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     id: Mapped[str] = mapped_column(String(48), primary_key=True)
     school_id: Mapped[str] = mapped_column(String(64), index=True)
@@ -225,7 +239,7 @@ class BankQuestion(Base):
     coef: Mapped[float] = mapped_column(Float)
     images: Mapped[list[Any]] = mapped_column(JSON, default=list)
     meta: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
-    embedding: Mapped[list[Any] | None] = mapped_column(JSON, nullable=True)
+    embedding: Mapped[list[Any] | None] = mapped_column(ListVector(), nullable=True)
     embedding_model: Mapped[str | None] = mapped_column(String(64), nullable=True)
     # 出处：原卷文件名、题号、页码（试卷名称、学年、地区等在 meta 中）
     source_file_name: Mapped[str | None] = mapped_column(String(512), nullable=True)
@@ -279,7 +293,7 @@ class KnowledgeNode(Base):
     seq: Mapped[int] = mapped_column(Integer)
     is_leaf: Mapped[bool] = mapped_column(default=True)
     aliases: Mapped[list[Any]] = mapped_column(JSON, default=list)
-    embedding: Mapped[list[Any] | None] = mapped_column(JSON, nullable=True)
+    embedding: Mapped[list[Any] | None] = mapped_column(ListVector(), nullable=True)
     embedding_model: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
 
@@ -355,7 +369,35 @@ def add_missing_columns(eng=None) -> list[str]:  # noqa: ANN001
     return added
 
 
+def _update_search_text(mapper, connection, target):
+    from .similar import SEARCH_TEXT_MAX_CHARS, normalize, question_text
+    state = inspect(target)
+    if (state.pending or target.search_text is None or state.attrs.stem.history.has_changes()
+            or state.attrs.options.history.has_changes()):
+        target.search_text = normalize(question_text(target.stem, target.options))[:SEARCH_TEXT_MAX_CHARS]
+        if (not state.pending and not state.attrs.embedding.history.has_changes()
+                and (state.attrs.stem.history.has_changes() or state.attrs.options.history.has_changes())):
+            target.embedding, target.embedding_model = None, None
+
+
+for _question in (BankQuestion, DraftQuestion):
+    event.listen(_question, "before_insert", _update_search_text)
+    event.listen(_question, "before_update", _update_search_text)
+    Index(f"ix_{_question.__tablename__}_search_text_trgm", _question.search_text,
+          postgresql_using="gist", postgresql_ops={"search_text": "gist_trgm_ops(siglen=64)"})
+    _owner = _question.school_id if _question is BankQuestion else _question.job_id
+    Index(f"ix_{_question.__tablename__}_missing_search_text", _owner, _question.type, _question.id,
+          postgresql_where=_question.search_text.is_(None))
+
+Index("ix_bank_question_school_type_id", BankQuestion.school_id, BankQuestion.type, BankQuestion.id)
+Index("ix_draft_question_job_type_id", DraftQuestion.job_id, DraftQuestion.type, DraftQuestion.id)
+Index("ix_parse_job_school_status_kind_id", ParseJob.school_id, ParseJob.status, ParseJob.kind, ParseJob.id)
+
+
 def init_db() -> None:
+    with engine.begin() as conn:
+        conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+        conn.execute(text("CREATE EXTENSION IF NOT EXISTS pg_trgm"))
     Base.metadata.create_all(engine)
     add_missing_columns()
     migrate_coef_semantics()

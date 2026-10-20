@@ -23,12 +23,13 @@ RUN npm run build:api
 
 # ---------- Python 依赖（按 uv.lock 锁定版本） ----------
 FROM python:3.13-slim AS deps
-COPY --from=ghcr.io/astral-sh/uv:0.12 /uv /usr/local/bin/uv
+COPY --from=ghcr.io/astral-sh/uv:0.13 /uv /usr/local/bin/uv
 ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy UV_PROJECT_ENVIRONMENT=/opt/venv
 WORKDIR /app/server
 COPY server/pyproject.toml server/uv.lock ./
+ARG EMBEDDINGS_EXTRA=""
 # 下载缓存放在构建缓存里，不进入镜像
-RUN --mount=type=cache,target=/root/.cache/uv uv sync --frozen --no-dev --no-install-project
+RUN --mount=type=cache,target=/root/.cache/uv uv sync --frozen --no-dev --no-install-project ${EMBEDDINGS_EXTRA:+--extra embeddings}
 
 # ---------- 运行环境（不含 uv 与构建缓存） ----------
 FROM python:3.13-slim AS app
@@ -36,6 +37,15 @@ ENV PYTHONUNBUFFERED=1 \
     PATH=/opt/venv/bin:$PATH \
     DATA_DIR=/data \
     STATIC_DIR=/app/web
+# 本地解析的 Word 试卷用 LibreOffice 转成 PDF，生成「查看原图」的页面图；中文字体用 Noto CJK，
+# 西文字体用与 Times / Arial / Calibri / Cambria 等宽的替代字体，分页与原卷接近。
+# 国内构建可指定镜像源：--build-arg APT_MIRROR=mirrors.tencent.com
+ARG APT_MIRROR=""
+RUN if [ -n "$APT_MIRROR" ]; then sed -i "s#deb.debian.org#$APT_MIRROR#g" /etc/apt/sources.list.d/debian.sources; fi \
+ && apt-get update \
+ && apt-get install -y --no-install-recommends tini libreoffice-writer-nogui fonts-noto-cjk fonts-liberation2 \
+      fonts-crosextra-carlito fonts-crosextra-caladea \
+ && rm -rf /var/lib/apt/lists/*
 WORKDIR /app/server
 COPY --from=deps /opt/venv /opt/venv
 COPY server/app ./app
@@ -46,5 +56,8 @@ VOLUME ["/data"]
 EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
   CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=4)"
+# tini 作为 1 号进程回收孤儿进程：LibreOffice 启动脚本退出后留下的子进程会交给 1 号进程，
+# Python 不回收，积累的僵尸进程最终使转换无法创建线程
+ENTRYPOINT ["/usr/bin/tini", "--"]
 # 任务队列在进程内，只能运行 1 个 worker 进程；并发解析份数用 WORKER_CONCURRENCY 调整
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers"]

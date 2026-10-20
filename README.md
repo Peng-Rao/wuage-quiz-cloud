@@ -115,7 +115,7 @@ AI 组卷位于 `/compose`（仅管理员、组长），见下方「目前是演
 
 | 文档 | 内容 |
 | --- | --- |
-| [docs/deployment.md](docs/deployment.md) | 本地开发部署、Docker 开发模式（自动重载）、Docker 部署、HTTPS、备份与升级、对象存储、多架构镜像、常见问题 |
+| [docs/deployment.md](docs/deployment.md) | 本地开发部署、Docker 开发模式（自动重载）、Docker 部署、自动部署（GitHub Actions）、HTTPS、备份与升级、对象存储、多架构镜像、常见问题 |
 | [server/README.md](server/README.md) | 后端配置项、解析流水线、认证与权限接口、测试 |
 | [docs/ai-parse-api.md](docs/ai-parse-api.md) | 试卷解析接口契约 |
 | [docs/ai-paper-assembly.md](docs/ai-paper-assembly.md) | AI 组卷方案 |

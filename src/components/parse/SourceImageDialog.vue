@@ -18,6 +18,7 @@ const boxStyle = (b: [number, number, number, number]) => ({
 <template>
   <ModalDialog v-model="open" :title="title" :width="620">
     <LoadingState v-if="!images" label="正在加载原卷图片…" />
+    <p v-else-if="!images.length" class="empty">这道题暂无原卷图片，可能是原卷未能转换为页面图。</p>
     <div v-else class="pages">
       <figure v-for="img in images" :key="img.page" class="page">
         <div class="sheet">
@@ -36,5 +37,6 @@ const boxStyle = (b: [number, number, number, number]) => ({
 .sheet { position: relative; border: 1px solid var(--c-border); border-radius: var(--r-sm); overflow: hidden; background: #fff; }
 .sheet img { display: block; width: 100%; height: auto; }
 .box { position: absolute; border: 2px solid var(--c-primary); background: rgba(184, 86, 31, .1); border-radius: 3px; }
+.empty { margin: 0; padding: 32px 0; text-align: center; font-size: 14px; color: var(--c-text-3); }
 figcaption { font-size: 12px; color: var(--c-text-3); text-align: center; }
 </style>

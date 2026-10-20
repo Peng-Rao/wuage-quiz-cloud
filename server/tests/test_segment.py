@@ -344,3 +344,135 @@ async def test_inline_answers_do_not_lower_confidence(monkeypatch):
     seg = await segment(us, _llm_settings(), with_answer=True)
     assert [q.answer for q in seg.questions] == ["B", "C"]
     assert all(q.confidence >= 0.8 and "规则与大模型切分不一致" not in q.flags for q in seg.questions)
+
+
+# ---------------- 分值：试卷标注优先，其余按大题总分 / 整卷满分推算 ----------------
+
+def fujian_math_units(fill_header: str = "二、填空题（本大题有6小题，每小题4分，共24分）") -> list[Unit]:
+    """福建中考数学结构：选择 10×4、填空 6×4、解答 9 题共 86 分（逐题不标分值）。"""
+    lines = ["2024年厦门市初中毕业班模拟考试 数学", "（试卷满分：150分 考试时间：120分钟）",
+             "一、选择题（本大题有10小题，每小题4分，共40分）"]
+    lines += [x for i in range(1, 11) for x in (f"{i}．下列各数中，第{i}题最小的数是（ ）", "A．1 B．2 C．3 D．4")]
+    lines += [fill_header] + [f"{i}．计算第{i}题的结果为 ____．" for i in range(11, 17)]
+    lines += ["三、解答题（本大题有9小题，共86分）"] + [f"{i}．如图，求解第{i}题的值并说明理由．" for i in range(17, 26)]
+    return [Unit(f"u{i}", i, 1, "text", t) for i, t in enumerate(lines)]
+
+
+def test_fujian_section_total_uses_known_layout():
+    seg = rule_segment(fujian_math_units(), with_answer=False)
+    assert seg.paper_total == 150 and seg.sections[3].total == 86
+    scores = [q.score for q in seg.questions]
+    assert scores[:16] == [4.0] * 16
+    assert scores[16:] == [8, 8, 8, 8, 8, 10, 10, 12, 14] and sum(scores) == 150
+    assert {q.score_source for q in seg.questions[16:]} == {"section_total"}
+    assert "分值为默认值" not in seg.questions[20].flags
+
+
+def test_header_exceptions_and_printed_scores_win():
+    us = fujian_math_units("二、填空题（本大题有6小题，共26分，其中11题6分，其余每小题4分）")
+    us[-1] = Unit(us[-1].id, us[-1].seq, 1, "text", "25．（16分）如图，求解第25题的值并说明理由．")
+    seg = rule_segment(us, with_answer=False)
+    by_no = {q.printed_no: q for q in seg.questions}
+    assert by_no[11].score == 6 and by_no[12].score == 4
+    # 题号后标注的分值不改动；其余 8 题分剩下的 70 分（没有已知分布时尽量均分）
+    assert by_no[25].score == 16 and by_no[25].score_source == "question"
+    assert [by_no[n].score for n in range(17, 25)] == [8, 8, 9, 9, 9, 9, 9, 9]
+    assert sum(q.score for q in seg.questions) == 152  # 40 + 26 + 86：以试卷标注为准
+
+
+def test_per_blank_questions_take_the_remainder():
+    seg = rule_segment(fujian_math_units("二、填空题（第11题每空2分，其它每题4分，共28分）"), with_answer=False)
+    by_no = {q.printed_no: q for q in seg.questions}
+    assert by_no[11].score == 8 and by_no[11].score_source == "section_total"
+    assert sum(q.score for q in seg.questions) == 154
+
+
+def test_paper_total_only_lowers_unmarked_scores():
+    lines = ["2024年期中考试 物理（满分：100分）", "一、选择题"]
+    lines += [f"{i}．下列说法正确的是第{i}项（ ）\nA．甲 B．乙 C．丙 D．丁" for i in range(1, 21)]
+    us = [Unit(f"u{i}", i, 1, "text", t) for i, t in enumerate(lines)]
+    seg = rule_segment(us, with_answer=False)
+    # 20 题 × 默认 5 分 = 100，与满分一致：不调整
+    assert [q.score_source for q in seg.questions] == ["default"] * 20 and sum(q.score for q in seg.questions) == 100
+    us += [Unit("x1", 99, 1, "text", "二、计算题"), Unit("x2", 100, 1, "text", "21．（10分）求物体的速度．")]
+    seg = rule_segment(us, with_answer=False)
+    # 超出满分：标注的 10 分保留，默认分值按比例下调到合计 100
+    assert seg.questions[-1].score == 10 and sum(q.score for q in seg.questions) == 100
+    assert {q.score_source for q in seg.questions[:20]} == {"paper_total"}
+    # 少于满分（题目缺失）时不放大
+    seg = rule_segment(us[:12], with_answer=False)
+    assert sum(q.score for q in seg.questions) == 50
+
+
+async def test_llm_scores_follow_paper_sections(monkeypatch):
+    us = fujian_math_units()
+    rule = rule_segment(us, with_answer=False)
+    # 大模型把选择题都给成 5 分、解答题都给成 12 分（试卷没有逐题标注）
+    groups = [{"no": q.printed_no, "type": q.type, "score": 5 if q.type == "单选题" else 12,
+               "units": q.unit_ids, "answer_units": []} for q in rule.questions]
+    _mock_llm(monkeypatch, lambda req: _reply({"questions": groups}))
+    seg = await segment(us, _llm_settings(), with_answer=False)
+    assert seg.used_llm
+    scores = [q.score for q in seg.questions]
+    assert scores[:10] == [4.0] * 10  # 「每小题 4 分」优先于大模型
+    assert scores[16:] == [8, 8, 8, 8, 8, 10, 10, 12, 14] and sum(scores) == 150
+
+    # 大模型分值与大题总分一致时保留（如从题目中读到了分值）
+    llm_scores = [6, 8, 8, 9, 9, 10, 11, 12, 13]
+    for g, s in zip(groups[16:], llm_scores):
+        g["score"] = s
+    seg = await segment(us, _llm_settings(), with_answer=False)
+    assert [q.score for q in seg.questions[16:]] == llm_scores
+
+
+@pytest.mark.parametrize("header, each, total, count, special, per_blank", [
+    ("三、解答题（本大题有9小题，共86分）", None, 86, 9, {}, set()),
+    ("三、解答题（86分）", None, 86, None, {}, set()),
+    ("一、选择题（本大题10小题，每小题4分，共40分）", 4, 40, 10, {}, set()),
+    ("二、填空题（本大题有6小题，共26分，其中11题6分，其余每小题4分）", 4, 26, 6, {11: 6}, set()),
+    ("二、填空题（第11题每空2分，其它每题4分，共28分）", 4, 28, None, {}, {11}),
+    ("二．填空题（共6小题，11、13小题每空2分，其余小题，每题3分，满分28分）", 3, 28, 6, {}, {11, 13}),
+    ("二、填空题：本题共6小题，第11小题每空2分，共8分；第13小题第一空4分，第二空2分，共6分；其余每小题4分，共30分．",
+     4, 30, 6, {11: 8, 13: 6}, set()),
+    ("二、填空题（本大题共6小题，其中第11题每空1分，第12-16题每小题6分，共26分）",
+     None, 26, 6, {n: 6 for n in range(12, 17)}, {11}),
+    ("三、解答题（共9题，86分；其中17-21题每题8分，22-23题每题10分，第24题12分，第25题14分）",
+     None, None, 9, {17: 8, 18: 8, 19: 8, 20: 8, 21: 8, 22: 10, 23: 10, 24: 12, 25: 14}, set()),
+    ("三、计算题（共30分，19题6分，20题6分，21题6分，22题12分）", None, 30, None, {19: 6, 20: 6, 21: 6, 22: 12}, set()),
+    ("一、选择题（56分，共16题。1-12为单选题，每题3分；13-16为多选题，每题5分，漏选得3分，错选得0分）",
+     None, None, 16, {**{n: 3 for n in range(1, 13)}, **{n: 5 for n in range(13, 17)}}, set()),
+    ("一、听力（2023-2024学年，每小题1.5分，共30分）", 1.5, 30, None, {}, set()),
+])
+def test_section_header_scores(header, each, total, count, special, per_blank):
+    from app.pipeline.segment import _section_info
+    info = _section_info(header)
+    assert (info.each, info.total, info.count, info.special, info.per_blank) == (each, total, count, special, per_blank)
+
+
+def test_rescore_existing_drafts():
+    """已入库的旧结果（解答题默认 12 分）按试卷大题总分重算；试卷标注的分值保留。"""
+    from types import SimpleNamespace
+    from app.rescore import rescore
+    us = fujian_math_units()
+    blocks = [SimpleNamespace(id=u.id, seq=u.seq, page=1, bbox=[0, 0, 1, 1], type="text", content=u.text) for u in us]
+    rule = rule_segment(us, with_answer=False)
+    drafts = [SimpleNamespace(type=q.type, score=12.0 if q.type == "解答题" else 4.0, block_ids=q.unit_ids)
+              for q in rule.questions]
+    scores = rescore(blocks, drafts)
+    assert scores[:16] == [4.0] * 16 and scores[16:] == [8, 8, 8, 8, 8, 10, 10, 12, 14]
+
+
+def test_rescore_is_stable():
+    """重算结果再重算不变：与大题总分一致的分值不被整卷满分（与大题合计不符时）再次下调。"""
+    from types import SimpleNamespace
+    from app.rescore import rescore
+    us = fujian_math_units()
+    us[1] = Unit(us[1].id, us[1].seq, 1, "text", "（试卷满分：130分 考试时间：120分钟）")  # 与大题合计 150 不符
+    blocks = [SimpleNamespace(id=u.id, seq=u.seq, page=1, bbox=[0, 0, 1, 1], type="text", content=u.text) for u in us]
+    rule = rule_segment(us, with_answer=False)
+    drafts = [SimpleNamespace(type=q.type, score=12.0 if q.type == "解答题" else 4.0, block_ids=q.unit_ids)
+              for q in rule.questions]
+    first = rescore(blocks, drafts)
+    for d, score in zip(drafts, first):
+        d.score = score
+    assert rescore(blocks, drafts) == first and first[16:] == [8, 8, 8, 8, 8, 10, 10, 12, 14]

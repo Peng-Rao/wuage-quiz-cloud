@@ -27,7 +27,7 @@ AI 仍可「自由挑选」，但范围限定在程序给出的候选清单内�
 |---|---|---|---|
 | 大模型接入 | 在 [llm.py](../server/app/pipeline/llm.py) 中新增支持多轮对话与工具调用的流式函数 | LangChain / LangGraph、LlamaIndex | 工具调用循环约 200 行即可；沿用现有用量统计、失败重试与测试模拟方式，也符合项目「直接调 HTTP 接口、便于换厂商」的原则 |
 | 模型 | 通义千问 qwen-plus / qwen-max 或 deepseek-chat（非思考模式），均支持工具调用 | 思考模式与工具调用同时开启 | 各厂商对「思考 + 工具调用」的支持不一致，需实测。规划一步可用较强模型，复核用较便宜的模型 |
-| 候选题检索 | 复用 [bank.py](../server/app/bank.py) 的知识点子树、题型、难度筛选，以及 [similar.py](../server/app/similar.py) 的相似度去重 | 现在就引入专门的向量数据库 | 万题以内全量扫描够用；题量更大时换 PostgreSQL + pgvector |
+| 候选题检索 | 复用 [bank.py](../server/app/bank.py) 的知识点子树、题型、难度筛选，以及 [similar.py](../server/app/similar.py) 的相似度去重 | 另引入独立向量服务 | 现有 PostgreSQL + pgvector 已支持 HNSW 语义召回、GiST 文字召回和混合精排 |
 | 选题算法 | 贪心选题 + 逐步调整，纯 Python 实现，不加依赖 | 一开始就用 OR-Tools CP-SAT | 候选题通常不超过 200 道，贪心足够。约束变多（考试时长、同一材料题绑定等）时再换 CP-SAT（镜像约增加 30 MB），接口先预留 |
 | 赋分 | 按学段、学科、考试类型建立赋分模板（如新高考数学：单选 8×5、多选 3×6……），解答题按难度微调；AI 提出的调整须通过校验 | 完全由 AI 定分 | 分值要符合考试惯例，且必须凑整 |
 | 学生情况 | 结构化表单为主，辅以自由文本；可选上传成绩单、错题（PDF / Excel 复用现有解析流程）；薄弱点用 [knowledge.py](../server/app/pipeline/knowledge.py) 对应到知识树的具体知识点 | 只存一段自由文本 | 对应到知识点后算法才能使用；以后接入作答数据时结构不必改 |

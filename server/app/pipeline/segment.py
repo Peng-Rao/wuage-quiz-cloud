@@ -8,6 +8,7 @@
 import json
 import logging
 import re
+from collections import Counter
 from dataclasses import dataclass, field
 
 from ..config import Settings
@@ -29,6 +30,22 @@ SECTION_TYPES = [
     (re.compile(r"解答|计算|证明|简答|应用|实验|探究|推断|综合|阅读|流程"), "解答题"),
 ]
 SCORE_EACH_RE = re.compile(r"每(?:小)?题\s*(\d+(?:\.\d+)?)\s*分")
+# 大题总分：「共 86 分」「满分 24 分」「（86 分）」
+SCORE_TOTAL_RE = re.compile(r"(?:共|满分|计)\s*(\d+(?:\.\d+)?)\s*分|[（(]\s*(\d+(?:\.\d+)?)\s*分\s*[)）]")
+# 大题标题中单独说明分值的题（标题先去掉空白再识别）：
+#   「其中 11 题 6 分」「第 11 小题 12 分」「第 17 题，9 分，第 18 题 8 分」→ 该题分值
+#   「第 11 小题每空 2 分，共 8 分」「第 13 小题第一空 4 分，第二空 2 分，共 6 分」→ 该题分值
+#   「第 11 题每空 2 分」「11、13 小题每空 2 分」→ 空数未知，分值待推算
+# 「共 6 小题」「有 10 小题」中的数字是题数，不是题号
+_NOS = r"(?<![共有\d])(\d{1,3}(?:[、,，和]\d{1,3})*)(?:小)?题"
+SCORE_PAIR_RE = re.compile(rf"{_NOS}[，,：:]?(?:为|是)?(\d+(?:\.\d+)?)分")
+# 题号引用须带「第 / 其中」或为列表（11、13 小题），「本大题 10 小题」中的 10 是题数
+QUESTION_REF_RE = re.compile(r"(?:第|其中)(\d{1,3}(?:[、,，和]\d{1,3})*)(?:小)?题|(?<![共有\d])(\d{1,3}(?:[、,，和]\d{1,3})+)(?:小)?题")
+SECTION_COUNT_RE = re.compile(r"(?:共|有|本大?题|[，,（(])[共有]?(\d{1,3})(?:小|道)?题(?![为是]?\d)")
+# 「1-12 为单选题，每题 3 分」
+SCORE_RANGE_RE = re.compile(r"(?<!\d)(\d{1,3})[-~—–至](\d{1,3})(?!\d)")
+# 整卷满分：「试卷满分：150 分」「满分 150 分」「全卷共 100 分」（只在首个大题标题之前查找）
+PAPER_TOTAL_RE = re.compile(r"(?:满分|总分|全卷共|试卷共)[^0-9。；;]{0,6}?(\d{2,3})\s*分")
 # 题号：行首数字 + 顿号/点，排除 1.5 这类小数
 Q_START_RE = re.compile(r"^\s*(\d{1,3})\s*[.．、](?!\d)\s*")
 Q_SCORE_RE = re.compile(r"^\s*[（(]\s*(?:本小?题满分)?\s*(\d+(?:\.\d+)?)\s*分\s*[)）]\s*")
@@ -68,9 +85,30 @@ class Question:
     confidence: float
     section: int = 0
     flags: list[str] = field(default_factory=list)
+    # 分值来源：question 题号后标注 / section 大题「每小题 N 分」/ llm 大模型 / default 默认值，
+    # 以及按大题总分（section_total）、整卷满分（paper_total）推算
+    score_source: str = "default"
     # 阅读材料：英语阅读 / 完形填空原文、语文阅读选文等，同一篇材料下的各题共用
     material: str | None = None
     material_unit_ids: list[str] = field(default_factory=list)
+
+
+@dataclass
+class Section:
+    """大题标题中的题型与分值说明。"""
+
+    type: str | None
+    each: float | None = None    # 每小题分值
+    total: float | None = None   # 大题总分
+    special: dict[int, float] = field(default_factory=dict)  # 标题中单独说明分值的题号
+    per_blank: set[int] = field(default_factory=set)         # 按空计分、无法确定分值的题号
+    count: int | None = None                                 # 标题中的题数（共 N 小题）
+
+    def score_for(self, no: int | None) -> float | None:
+        """该题号在大题标题中的分值；按空计分的题未知。"""
+        if no in self.special:
+            return self.special[no]
+        return None if no in self.per_blank else self.each
 
 
 @dataclass
@@ -79,6 +117,8 @@ class Segmentation:
     preamble: list[Unit]           # 首题之前的标题、说明，用于试卷分类
     used_llm: bool = False
     warnings: list[str] = field(default_factory=list)
+    sections: dict[int, Section] = field(default_factory=dict)
+    paper_total: float | None = None
 
 
 def units_from_blocks(blocks: list[Block], ids: list[str]) -> list[Unit]:
@@ -315,20 +355,61 @@ def _classify_line(u: Unit) -> tuple[str, object]:
         return "notice", None
     m = SECTION_RE.match(t)
     if m and "题" in t and len(t) <= 80:
-        qtype = next((q for rx, q in SECTION_TYPES if rx.search(t)), None)
-        each = SCORE_EACH_RE.search(t)
-        return "section", (qtype, float(each.group(1)) if each else None)
+        return "section", _section_info(t)
     m = Q_START_RE.match(t)
     if m:
         return "question", int(m.group(1))
     return "content", None
 
 
+def _nos(text: str) -> list[int]:
+    return [int(x) for x in re.findall(r"\d+", text)]
+
+
+def _section_info(header: str) -> Section:
+    text = re.sub(r"\s+", "", header)
+    # 「第 11 小题每空 2 分，共 10 分；其余每小题 4 分，共 30 分」：大题总分取其中最大的「共 N 分」
+    totals = [float(m.group(1) or m.group(2)) for m in SCORE_TOTAL_RE.finditer(text)]
+    total = max(totals) if totals else None
+    count = SECTION_COUNT_RE.search(text)
+    each: float | None = None
+    special: dict[int, float] = {}
+    per_blank: set[int] = set()
+    # 按分句识别单独说明的题；「其余 / 其它」之后是其他题的说明，其中的「每小题 N 分」才是大题通用分值
+    for clause in re.split(r"[；;。．]|其余|其它|其他", text):
+        named = False
+        # 「17-21 题每题 8 分，22-23 题每题 10 分」：每个题号范围取其后、下一个范围之前的分值
+        ranges = list(SCORE_RANGE_RE.finditer(clause))
+        for i, r in enumerate(ranges):
+            a, b = int(r.group(1)), int(r.group(2))
+            stop = ranges[i + 1].start() if i + 1 < len(ranges) else len(clause)
+            if 0 < a < b <= a + 60 and (e := SCORE_EACH_RE.search(clause, r.end(), stop)):
+                special.update((n, float(e.group(1))) for n in range(a, b + 1))
+                named = True
+        rest = SCORE_RANGE_RE.sub("#", clause)
+        pairs = list(SCORE_PAIR_RE.finditer(rest))
+        special.update((n, float(m.group(2))) for m in pairs for n in _nos(m.group(1)))
+        nos = [n for m in QUESTION_REF_RE.finditer(rest) for n in _nos(m.group(1) or m.group(2)) if n not in special]
+        clause_total = re.search(r"共(\d+(?:\.\d+)?)分", rest)
+        # 「第 11 小题每空 2 分，共 8 分」：该题分值；「共 N 分」是整个大题的总分时不算
+        if len(nos) == 1 and clause_total and float(clause_total.group(1)) != total:
+            special[nos[0]] = float(clause_total.group(1))
+        elif nos and "空" in rest:
+            per_blank.update(nos)
+        named = named or bool(pairs) or bool(nos)
+        if not named and each is None and (e := SCORE_EACH_RE.search(clause)):
+            each = float(e.group(1))
+    return Section(next((q for rx, q in SECTION_TYPES if rx.search(text)), None),
+                   each, total, special, per_blank, int(count.group(1)) if count else None)
+
+
 def rule_segment(units: list[Unit], *, with_answer: bool) -> Segmentation:
     drafts: list[_Draft] = []
     preamble: list[Unit] = []
     answer_units: list[Unit] = []
-    section, section_type, section_score = 0, None, None
+    section, section_type = 0, None
+    sections: dict[int, Section] = {}
+    paper_total: float | None = None
     last_no: int | None = None
     in_answers = False
     # 大题标题之后、下一题之前的内容视为标题续行（折行的说明文字），不能接到上一题末尾
@@ -341,6 +422,8 @@ def rule_segment(units: list[Unit], *, with_answer: bool) -> Segmentation:
             answer_units.append(u)
             continue
         kind, val = _classify_line(u)
+        if not section and paper_total is None and kind != "section" and (m := PAPER_TOTAL_RE.search(u.text)):
+            paper_total = float(m.group(1))
         if kind == "answers" and drafts:
             in_answers = True
             continue
@@ -354,17 +437,17 @@ def rule_segment(units: list[Unit], *, with_answer: bool) -> Segmentation:
         if kind == "section":
             in_notice = False
             section += 1
-            section_type, section_score = val  # type: ignore[misc]
+            sections[section] = val  # type: ignore[assignment]
+            section_type = val.type  # type: ignore[union-attr]
             header_text = u.text
             if not drafts:
                 preamble.append(u)
             continue
         if kind == "content" and header_text is not None:
-            # 「每小题 5 分」可能被折到下一行，拼接后重新识别
+            # 「每小题 5 分」「共 86 分」可能被折到下一行，拼接后重新识别
             header_text += u.text
-            section_type = section_type or next((q for rx, q in SECTION_TYPES if rx.search(header_text)), None)
-            if section_score is None and (each := SCORE_EACH_RE.search(header_text)):
-                section_score = float(each.group(1))
+            sections[section] = _section_info(header_text)
+            section_type = sections[section].type
             if not drafts:
                 preamble.append(u)
             continue
@@ -373,7 +456,7 @@ def rule_segment(units: list[Unit], *, with_answer: bool) -> Segmentation:
             # 首题可以不从 1 开始（只上传了部分页），此时标记为题号不连续
             accept = last_no is None or n == last_no + 1 or n == 1 or last_no < n <= last_no + 3
             if accept:
-                d = _Draft(n, section, section_type, section_score,
+                d = _Draft(n, section, section_type, sections[section].score_for(n) if section in sections else None,
                            gap=last_no is not None and n not in (last_no + 1, 1) or last_no is None and n != 1)
                 d.unit_ids.append(u.id)
                 d.lines.append(Q_START_RE.sub("", u.text, count=1))
@@ -393,7 +476,8 @@ def rule_segment(units: list[Unit], *, with_answer: bool) -> Segmentation:
                  for d in drafts]
     if with_answer:
         finalize_answers(questions, units)
-    return Segmentation(questions=questions, preamble=preamble)
+    assign_scores(questions, sections, paper_total)
+    return Segmentation(questions=questions, preamble=preamble, sections=sections, paper_total=paper_total)
 
 
 def _strip_image_marks(text: str) -> str:
@@ -422,9 +506,12 @@ def _build(printed_no, lines, unit_ids, section, section_type, section_score, se
     qtype = llm_type if llm_type in QTYPES else infer_type(section_type, options, stem, ans)
     if qtype in ("单选题", "多选题") and not options:
         flags.append("选择题未识别到选项")
-    score = llm_score or q_score or section_score
-    if not score:
-        score = DEFAULT_SCORE[qtype]
+    # 试卷上的分值优先：题号后标注 > 大题「每小题 N 分」> 大模型给出 > 默认值
+    for score, source in ((q_score, "question"), (section_score, "section"), (llm_score, "llm")):
+        if score:
+            break
+    else:
+        score, source = DEFAULT_SCORE[qtype], "default"
         flags.append("分值为默认值")
 
     conf = 0.95
@@ -448,7 +535,87 @@ def _build(printed_no, lines, unit_ids, section, section_type, section_score, se
         flags.append("存在无法识别的字符")
 
     return Question(printed_no, qtype, float(score), stem.strip(), options, ans, ana, list(unit_ids),
-                    round(max(0.3, min(0.99, conf)), 2), section, flags)
+                    round(max(0.3, min(0.99, conf)), 2), section, flags, score_source=source)
+
+
+# ---------------- 分值推算 ----------------
+
+PAPER_SCORES = ("question", "section")
+# 常见大题的固定分值分布：(题数, 大题总分) → 各题分值（按题号顺序）
+KNOWN_LAYOUTS: dict[tuple[int, float], list[float]] = {
+    # 福建中考数学解答题（17–25 题，共 86 分）
+    (9, 86): [8, 8, 8, 8, 8, 10, 10, 12, 14],
+}
+
+
+def _split(total: float, n: int) -> list[float]:
+    """把大题剩余分值分给 n 道题：有已知分布时按分布，否则尽量均分为整数，余数给后面的题。"""
+    if (layout := KNOWN_LAYOUTS.get((n, total))) is not None:
+        return [float(x) for x in layout]
+    if total != int(total):
+        each = round(total / n, 1)
+        return [each] * (n - 1) + [round(total - each * (n - 1), 1)]
+    base, rest = divmod(int(total), n)
+    return [float(base)] * (n - rest) + [float(base + 1)] * rest
+
+
+def _scale(scores: list[float], total: float) -> list[float]:
+    """按比例缩放为整数分值且总和不变（最大余数法）。"""
+    raw = [x * total / sum(scores) for x in scores]
+    out = [float(int(x)) for x in raw]
+    for i in sorted(range(len(raw)), key=lambda i: raw[i] - out[i], reverse=True)[:int(round(total - sum(out)))]:
+        out[i] += 1
+    return out
+
+
+def _reliable(info: Section, n: int) -> bool:
+    """大题中识别到的题数与标题一致：标题写了题数时比较题数；只写了每题分值和总分时比较两者。"""
+    if info.count is not None:
+        return info.count == n
+    if info.each and info.total and not info.special and not info.per_blank:
+        return abs(info.each * n - info.total) < 1e-6
+    return True
+
+
+def assign_scores(questions: list[Question], sections: dict[int, Section], paper_total: float | None) -> None:
+    """试卷没有逐题标分值时，用大题总分、整卷满分推算，避免默认值使总分偏高。
+
+    试卷上标注的分值（题号后、每小题）不改动；大模型分值与大题总分一致时保留。
+    """
+    for no, info in sections.items():
+        qs = [q for q in questions if q.section == no]
+        free = [q for q in qs if q.score_source not in PAPER_SCORES]
+        # 题型未知的大题（如英语「听力」「阅读」）常含未识别的小节标题，题目归属不可靠
+        if not info.total or not free or not info.type or not _reliable(info, len(qs)):
+            continue
+        rest = info.total - sum(q.score for q in qs if q.score_source in PAPER_SCORES)
+        if rest < len(free):  # 余下不足每题 1 分：大题或题目识别有误，不推算
+            continue
+        current = sum(q.score for q in free)
+        if info.count is None and not rest / 2 <= current <= rest * 1.5:
+            continue  # 标题没写题数时无法核对归属：现有分值与总分相差过大，多半混入了下一大题的题
+        if all(q.score_source == "llm" for q in free) and abs(sum(q.score for q in free) - rest) < 1e-6:
+            # 大模型分值与大题总分一致：视同已按总分确定，整卷满分推算时不再调整（重算时结果不变）
+            for q in free:
+                q.score_source = "section_total"
+            continue
+        for q, score in zip(free, _split(rest, len(free))):
+            q.score, q.score_source = score, "section_total"
+            if "分值为默认值" in q.flags:
+                q.flags.remove("分值为默认值")
+            q.flags.append("分值按大题总分推算")
+
+    # 整卷满分：只在总分偏高时，按比例下调未在试卷上标注的分值（少识别了题目时总分偏低，不放大）
+    total = sum(q.score for q in questions)
+    free = [q for q in questions if q.score_source in ("llm", "default")]
+    if not paper_total or not free or total <= paper_total:
+        return
+    rest = paper_total - (total - sum(q.score for q in free))
+    if rest < len(free):
+        return
+    for q, score in zip(free, _scale([q.score for q in free], rest)):
+        q.score, q.score_source = score, "paper_total"
+        q.flags.append("分值按试卷满分推算")
 
 
 # ---------------- 大模型修正 ----------------
@@ -772,9 +939,11 @@ async def _segment(units: list[Unit], settings: Settings, *, with_answer: bool) 
 
     # 规则结果提供大题信息（类型、每题分值），按首个单元归属到对应大题
     rule_by_unit = {uid: q for q in rule.questions for uid in q.unit_ids}
+    refs = [next((rule_by_unit[i] for i in g["units"] if i in rule_by_unit), None) for g in groups]
+    # 按大模型分组计数：各大题实际得到「每小题 N 分」的题数
+    section_counts = Counter(ref.section if ref else 0 for ref in refs)
     questions: list[Question] = []
-    for g in groups:
-        ref = next((rule_by_unit[i] for i in g["units"] if i in rule_by_unit), None)
+    for g, ref in zip(groups, refs):
         # 版面顺序错乱时（如图中文字标签排在题号前），把带题号的单元提到最前
         head = next((k for k, i in enumerate(g["units"][:4]) if Q_START_RE.match(known[i].text)), 0)
         if head:
@@ -792,11 +961,19 @@ async def _segment(units: list[Unit], settings: Settings, *, with_answer: bool) 
         elif ref and ref.answer:
             section_answer = (ref.answer, ref.analysis, [])
         score = g["score"] if isinstance(g["score"], (int, float)) and g["score"] > 0 else None
-        rule_score = ref.score if ref and "分值为默认值" not in ref.flags else None
+        section = ref.section if ref else 0
+        qtype = g["type"] if g["type"] in QTYPES else (ref.type if ref else None)
+        # 大题「每小题 N 分」只用于可靠归属的同类型题：规则漏识别大题标题时，后面的题会被归入前一大题
+        info = rule.sections.get(section)
+        if info and printed_no in info.special:  # 标题中按题号说明的分值
+            each = info.special[printed_no]
+        elif info and info.type == qtype and _reliable(info, section_counts[section]):
+            each = info.score_for(printed_no)
+        else:
+            each = None
         # 答案区单元不计入题目区域，避免「查看原图」框到卷末答案
-        q = _build(printed_no, lines, g["units"], ref.section if ref else 0, None, None, section_answer, with_answer,
-                   llm_type=g["type"] if g["type"] in QTYPES else (ref.type if ref else None),
-                   llm_score=score or rule_score)
+        q = _build(printed_no, lines, g["units"], section, None, each, section_answer, with_answer,
+                   llm_type=qtype, llm_score=score)
         # 与规则结果一致则略微提升置信度，不一致或经过自动修正则进入待核对
         if g["repaired"]:
             q.confidence = round(max(0.3, q.confidence - 0.25), 2)
@@ -811,5 +988,7 @@ async def _segment(units: list[Unit], settings: Settings, *, with_answer: bool) 
 
     if with_answer:
         finalize_answers(questions, units)
+    assign_scores(questions, rule.sections, rule.paper_total)
     warnings = rule.warnings + ([f"大模型拆题有 {repairs} 处分组问题，已自动修正，相关题目已标记待核对"] if repairs else [])
-    return Segmentation(questions=questions, preamble=rule.preamble, used_llm=True, warnings=warnings)
+    return Segmentation(questions=questions, preamble=rule.preamble, used_llm=True, warnings=warnings,
+                        sections=rule.sections, paper_total=rule.paper_total)

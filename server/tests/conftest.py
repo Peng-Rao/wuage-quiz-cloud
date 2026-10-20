@@ -43,7 +43,16 @@ os.environ.update({
     "LLM_BASE_URL": "",
     "LLM_API_KEY": "",
     "LLM_MODEL": "",
+    "LLM_EXTRA_BODY": "{}",
+    # 在应用容器里测试时不能继承实际队列和本地模型配置。
+    "REDIS_URL": "",
+    "RUN_WORKER": "false",
+    "EMBEDDING_PROVIDER": "openai",
+    "EMBEDDING_MODEL": "",
     "VISION_MODEL": "",
+    "VISION_BASE_URL": "",
+    "VISION_API_KEY": "",
+    "VISION_EXTRA_BODY": "null",
     # 原有用例测试人工入库；自动入库的用例单独开启
     "AUTO_COMMIT": "false",
     # 测试不访问网络抓取单价
@@ -77,6 +86,9 @@ def scratch_engine():
         c.execute(text(f'DROP DATABASE IF EXISTS "{name}" WITH (FORCE)'))
         c.execute(text(f'CREATE DATABASE "{name}"'))
     eng = create_engine(TEST_DB.set(database=name), connect_args={"options": "-c timezone=UTC"})
+    with eng.begin() as conn:
+        conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+        conn.execute(text("CREATE EXTENSION IF NOT EXISTS pg_trgm"))
     yield eng
     eng.dispose()
     with admin.connect() as c:

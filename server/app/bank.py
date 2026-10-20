@@ -325,7 +325,7 @@ def _summaries(s: Session, school_id: str, job_ids: list[str] | None = None) -> 
                 meta.school = candidate
         out.append(PaperSummary(
             id=jid, title=meta.title or file_name.rsplit(".", 1)[0] or "未命名试卷", meta=meta, file_name=file_name,
-            question_count=n, source_question_count=max(drafts.get(jid, 0), n), total_score=score or 0,
+            file_type=job.file_type if job else "", question_count=n, source_question_count=max(drafts.get(jid, 0), n), total_score=score or 0,
             type_counts=types[jid], avg_coef=round(weighted / score if score else avg, 2) if avg is not None else None,
             updated_at=updated,
         ))

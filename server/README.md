@@ -90,6 +90,7 @@ uv run uvicorn app.main:app --port 8000 --reload
 | `app/pipeline/parsers/mineru_cloud.py` | v4 批量上传接口：申请上传地址 → PUT → 轮询 → 下载 zip → `content_list.json` 转 IR |
 | `app/pipeline/parsers/lite.py` | PyMuPDF 读取文字层，按行输出；按字号与基线识别上下标（O₂、x²），x^2、a_n、√(…) 转为上下标或 LaTeX；分式等二维公式仍为文字，扫描件、Word 不可用 |
 | `app/pipeline/parsers/router.py` | 引擎链与降级 |
+| `app/pipeline/docx_pdf.py` | 本地解析的 Word 用 LibreOffice 转 PDF 生成原图页面，按文字在 PDF 中定位各版面单元的页码与区域（图片取前后文字之间的 PDF 图片，公式等沿用相邻单元）；未安装 LibreOffice 或转换失败时没有原图，不影响解析 |
 | `app/pipeline/segment.py` | 大题标题 / 题号 / 选项 / 分值 / 卷末答案的规则切分；大模型分组校验与置信度 |
 | `app/pipeline/classify.py` | 试卷分类 |
 | `app/pipeline/llm.py` | OpenAI 兼容 `/chat/completions` 客户端（JSON 输出） |
@@ -186,6 +187,75 @@ uv run pytest
 - 内置知识树按知识领域组织（非教材章节），学校有正式知识体系时建议导入；相似题阈值需用真实题库校准。
 - 难度模型尚无学生作答数据，校准依赖老师调整过难度的评测样本。
 - 难度系数含义已改为「越高越难」，启动时会把旧数据一次性换算为 1 − 旧值（`app_meta.coef_semantics`）。
-- 本地 MinerU（`mineru_local`）：P3；Word 在未配置 MinerU 时无法解析（需要 LibreOffice 转换，P3）。
+- 本地 MinerU（`mineru_local`）：P3；Word 由本地解析（`docx`）处理，MinerU 仅作识别不出题目时的备选。
 - 大题标题后、第一题前的材料（如阅读材料）当前被视为标题说明而不归入题目，语文 / 英语试卷需在 P2 处理。
 - 轻量引擎按坐标排序，双栏试卷的阅读顺序可能错乱；双栏试卷请使用 MinerU。
+
+### 腾讯云 TokenHub 向量模型
+
+`EMBEDDING_PROVIDER=multimodal`、`EMBEDDING_MODEL=kinfra-vl-embedding-8b` 调用 TokenHub 的
+`/v1/embeddings/multimodal`（地址与 Key 默认沿用 `LLM_BASE_URL` / `LLM_API_KEY`）。该接口每次请求只返回一条向量，
+按 `EMBEDDING_CONCURRENCY`（默认 4）并发请求，限流或服务端错误时自动重试。向量固定 4096 维，超过 pgvector HNSW 的
+2000 维上限，`app.search_indexes` 改为对二值量化向量（`binary_quantize`，汉明距离）建 HNSW 索引召回，再按原向量余弦精排。
+迁移步骤与下文相同（迁移字段 → 回填 → 建索引），无需安装 embeddings extra。
+
+### 本地 Hugging Face 嵌入与 pgvector
+
+通过 `langchain-huggingface` 的 `HuggingFaceEmbeddings` 加载模型，默认在 CPU 上推理。
+中文题库可使用 `BAAI/bge-small-zh-v1.5`（512 维）；模型下载到 `/data/models`，持久卷在重启后复用缓存。
+Linux 的 PyTorch 使用 CPU wheel，避免下载 CUDA 运行库。每个启用语义检索的进程会各自加载一份模型。
+
+1. 构建镜像：`EMBEDDINGS_EXTRA=1 docker compose build app`。
+2. 在 `server/.env` 设置 `EMBEDDING_PROVIDER=huggingface`、`EMBEDDING_MODEL=BAAI/bge-small-zh-v1.5`。
+3. 将 PostgreSQL 17 服务更新到 compose 中的 pgvector 镜像。升级前先备份数据库，并暂停应用和 Worker 写入。
+4. 用新镜像执行 `python -m app.embedding_backfill --migrate-only`，把三个表的 JSON 向量转为 pgvector，保留已有值；迁移可重复执行。
+5. 启动服务后，执行 `python -m app.embedding_backfill` 回填正式题库；可用 `--school-id` 限定学校。
+
+回填按 `EMBEDDING_BATCH` 分批提交；同模型已有向量跳过，失败后重跑即可。
+可用 `--after-id` / `--before-id` 限定 ID 范围（均不包含边界），将互不重叠的区间分给多个进程并行回填。
+新解析的草稿题和正式入库流程沿用现有嵌入逻辑；草稿与知识点的历史向量会迁移类型，回填命令只生成正式题库向量。
+相似题检索按学校、题型及草稿范围过滤。1,000 道以内精确比对；更大范围分别通过 HNSW 余弦近邻、
+pg_trgm GiST 文字近邻召回，每路默认 200 条（`SIMILAR_CANDIDATES`），合并去重后沿用字面/语义混合评分精排。
+文字召回只索引前 2,000 个归一化字符，精排仍使用完整题干和选项；无向量或向量过期时仍可文字召回。
+大范围查询采用近似候选集，不保证与全量精排完全相同，可调高候选数量改善召回。
+本地推理不写入远程供应商的 token 费用。
+
+也可以叠加根目录的 `docker-compose.embeddings.yml`，统一给 app / worker 配置本地模型和 CPU 线程数：
+`docker compose -f docker-compose.yml -f docker-compose.embeddings.yml up -d --build`。
+已有数据库仍须先按上述步骤备份、暂停写入并运行迁移。
+
+### 题目分值
+
+拆题时分值按以下顺序确定，试卷上的分值优先（`app/pipeline/segment.py` 的 `assign_scores`）：
+
+1. 题号后标注的分值：「17．（8 分）」「（本小题满分 8 分）」。
+2. 大题标题：「每小题 4 分」，以及按题号单独说明的分值（「其中 11 题 6 分」「第 11 小题每空 2 分，共 8 分」
+   「17-21 题每题 8 分」「第 24 题 12 分」）；「第 11 题每空 2 分」这类空数未知的题留给第 3 步。
+   大模型拆题时，「每小题 N 分」只用于题型相同、题数与标题一致的大题，避免漏识别大题标题时错配。
+3. 大题总分「共 86 分」：减去已确定的分值后分给其余的题。福建中考数学解答题（9 题共 86 分）按
+   8、8、8、8、8、10、10、12、14 分配，其他情况尽量均分；大模型分值与总分一致时保留。
+4. 整卷满分「试卷满分：150 分」：总分仍偏高时，按比例下调未在试卷上标注的分值（总分偏低时不放大）。
+
+福建初中数学试卷多数只在解答题标题写「共 86 分」，此前解答题都按默认 12 分计，总分为 172 分。
+已解析的试卷用 `python -m app.rescore` 重算：默认只统计将改动的题，`--apply` 写入草稿题与正式题库
+（入库后改过分值的题不覆盖），`--job ID` 只处理指定任务。
+
+### Word 试卷原图补生成
+
+镜像内置 LibreOffice 后，新解析的 Word 试卷自动生成原图。此前本地解析的 Word 试卷没有页面图，「查看原图」为空，
+在 app 容器运行 `python -m app.docx_pages` 补生成：逐份转换、渲染页面图，并按实际位置更新版面单元、题目的原图区域与页码
+（同步正式题库的原卷页码）。已有页面图的任务跳过，失败可重跑；`--job ID` 只处理指定任务，`--limit N` 限制份数，
+`--force` 重新生成。LibreOffice 在同一进程内逐份转换，每份数秒。
+
+### 相似题索引升级
+
+更新代码后，在 app 容器运行 `python -m app.search_indexes`。
+此命令回填题库与草稿的 `search_text`，并使用 `CREATE INDEX CONCURRENTLY` 在线创建索引：
+
+- 文字召回：两张题目表的 GiST trigram 索引。
+- 语义召回：按模型和维度隔离的 HNSW 余弦索引，正式题库与草稿各一份。
+- 范围筛选：学校/题型/ID、任务/题型/ID、学校/任务状态/种类/ID 的 B-tree 索引。
+- 迁移兼容：仅索引缺失检索文本的行，快速判断是否需要暂时退回精确比对。
+
+命令可重跑，也会修复并发建索引失败留下的无效索引。更换嵌入模型并完成回填后，再运行一次即可。
+应用新增、修改题干或选项时同步更新检索文本，并作废旧向量；索引由 PostgreSQL 自动维护。

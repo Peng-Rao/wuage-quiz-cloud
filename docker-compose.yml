@@ -22,7 +22,10 @@ x-backend: &backend
 
 services:
   db:
-    image: postgres:17-alpine
+    image: fg-quiz-postgres:17-vector
+    build:
+      context: .
+      dockerfile: Dockerfile.pgvector
     environment:
       POSTGRES_DB: fg_quiz
       POSTGRES_USER: fg_quiz
@@ -60,7 +63,10 @@ services:
 
   app:
     <<: *backend
-    build: .
+    build:
+      context: .
+      args:
+        EMBEDDINGS_EXTRA: ${EMBEDDINGS_EXTRA:-}
     ports:
       - "8000:8000"
     depends_on:

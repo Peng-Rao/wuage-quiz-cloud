@@ -6,6 +6,7 @@ from ..schemas import SimilarQuestion, SimilarSearchRequest
 from ..services import current_school, get_question, question_source
 from ..similar import DUPLICATE_SCORE, Match, embed, question_text, search
 from ..usage import attribute, job_subject
+from ..config import get_settings
 
 router = APIRouter()
 
@@ -35,7 +36,7 @@ async def similar_to_draft(
     q = get_question(s, qid)
     attribute(s.info["user"].id, job_subject(s.get(ParseJob, q.job_id)))
     vector = q.embedding
-    if vector is None:
+    if vector is None or q.embedding_model != get_settings().embedding_model:
         got = await embed([question_text(q.stem, q.options)], purpose="similar")
         vector = got[0] if got else None
     matches = search(s, current_school(), question_text(q.stem, q.options), vector=vector, qtype=q.type,

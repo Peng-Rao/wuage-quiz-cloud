@@ -15,6 +15,7 @@ from ..storage import ObjectStore, get_store
 from ..usage import current_job
 from . import difficulty
 from .classify import classify
+from .docx_pdf import docx_to_pdf, locate_blocks
 from .files import normalize, pdf_page_count, render_pages
 from .knowledge import tag_job
 from .ir import Block
@@ -141,6 +142,12 @@ async def run_job(job_id: str) -> None:
         except AllParsersFailed as e:
             raise UserFacingError(str(e)) from e
         warnings.extend(w)
+        if doc.pdf is None and src.kind == "docx":
+            # 本地解析的 Word 没有版面：转成 PDF 供查看原图，并按文字定位各单元的实际页码与区域
+            pdf = await asyncio.to_thread(docx_to_pdf, src.data)
+            if pdf:
+                await asyncio.to_thread(locate_blocks, pdf, doc.blocks)
+                doc.pdf, doc.page_count = pdf, await asyncio.to_thread(pdf_page_count, pdf)
         page_count = doc.page_count or (pdf_page_count(doc.pdf) if doc.pdf else 0)
 
         block_ids = [f"b{job_id}_{b.seq}" for b in doc.blocks]

@@ -77,6 +77,8 @@ export interface PaperSummary {
   title: string
   meta: PaperMeta
   fileName: string
+  /** 原卷文件类型；PDF 可预览原卷（仅管理员、组长），来源任务缺失时为空 */
+  fileType: 'pdf' | 'docx' | 'image' | ''
   /** 已入库题数 */
   questionCount: number
   /** 原卷拆出的题数，部分入库时大于 questionCount */
