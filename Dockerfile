@@ -43,7 +43,7 @@ ENV PYTHONUNBUFFERED=1 \
 ARG APT_MIRROR=""
 RUN if [ -n "$APT_MIRROR" ]; then sed -i "s#deb.debian.org#$APT_MIRROR#g" /etc/apt/sources.list.d/debian.sources; fi \
  && apt-get update \
- && apt-get install -y --no-install-recommends libreoffice-writer-nogui fonts-noto-cjk fonts-liberation2 \
+ && apt-get install -y --no-install-recommends tini libreoffice-writer-nogui fonts-noto-cjk fonts-liberation2 \
       fonts-crosextra-carlito fonts-crosextra-caladea \
  && rm -rf /var/lib/apt/lists/*
 WORKDIR /app/server
@@ -56,5 +56,8 @@ VOLUME ["/data"]
 EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
   CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=4)"
+# tini 作为 1 号进程回收孤儿进程：LibreOffice 启动脚本退出后留下的子进程会交给 1 号进程，
+# Python 不回收，积累的僵尸进程最终使转换无法创建线程
+ENTRYPOINT ["/usr/bin/tini", "--"]
 # 任务队列在进程内，只能运行 1 个 worker 进程；并发解析份数用 WORKER_CONCURRENCY 调整
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers"]

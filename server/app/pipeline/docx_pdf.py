@@ -35,9 +35,16 @@ def soffice() -> str | None:
 def _profile() -> Path:
     """本进程复用的 LibreOffice 配置目录：首次转换时初始化（数秒），之后每份省去这一步。
 
-    不依赖 HOME 可写；按进程区分，同一容器内的多个进程互不争用配置目录的锁。
+    按进程区分，同一容器内的多个进程互不争用配置目录的锁。
     """
     return Path(tempfile.gettempdir()) / f"fg-lo-profile-{os.getpid()}"
+
+
+def _home() -> Path:
+    """LibreOffice 的 HOME：镜像中的用户没有可写的家目录，字体缓存、dconf 写入失败会每次重新扫描字体。"""
+    home = Path(tempfile.gettempdir()) / f"fg-lo-home-{os.getpid()}"
+    home.mkdir(exist_ok=True)
+    return home
 
 
 def docx_to_pdf(data: bytes, timeout: int = TIMEOUT) -> bytes | None:
@@ -53,7 +60,8 @@ def docx_to_pdf(data: bytes, timeout: int = TIMEOUT) -> bytes | None:
         cmd = [exe, f"-env:UserInstallation={profile.as_uri()}", "--headless", "--norestore",
                "--convert-to", "pdf", "--outdir", str(d), str(d / "in.docx")]
         # soffice 是启动脚本，实际进程是其子进程：放在独立进程组，超时时整组结束，不留下占用配置目录的进程
-        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True)
+        env = {**os.environ, "HOME": str(_home())}
+        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True, env=env)
         try:
             stdout, stderr = proc.communicate(timeout=timeout)
         except subprocess.TimeoutExpired:
