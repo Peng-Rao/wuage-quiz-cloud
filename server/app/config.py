@@ -85,12 +85,15 @@ class Settings(BaseSettings):
     # 相似题语义检索（可选）：OpenAI 兼容 /embeddings；地址与 Key 留空时沿用 LLM_BASE_URL / LLM_API_KEY
     # 如通义千问：EMBEDDING_MODEL=text-embedding-v4
     embedding_model: str = ""
-    embedding_provider: Literal["openai", "huggingface"] = "openai"
+    # openai：OpenAI 兼容 /embeddings，可批量；multimodal：/embeddings/multimodal（如腾讯云 TokenHub
+    # kinfra-vl-embedding-8b），每次请求一段文本，按 EMBEDDING_CONCURRENCY 并发；huggingface：本地模型
+    embedding_provider: Literal["openai", "multimodal", "huggingface"] = "openai"
     embedding_device: str = "cpu"
     embedding_cache_dir: str = "/data/models"
     embedding_base_url: str = ""
     embedding_api_key: str = ""
     embedding_batch: int = Field(10, ge=1)
+    embedding_concurrency: int = Field(4, ge=1, le=32)
     similar_candidates: int = Field(200, ge=20, le=2000)
 
     # 每个进程同时执行的任务数（解析、生成答案等；批量上传时其余排队），1–10。

@@ -105,3 +105,26 @@ def test_long_unique_text_fits_gist_index():
         assert len(q.search_text) == similar.SEARCH_TEXT_MAX_CHARS
         assert q.stem == stem
         assert similar.search(session, school, stem)[0].score == 1
+
+
+def test_high_dimensional_vectors_use_binary_quantized_index(monkeypatch):
+    school, dims, model = uuid.uuid4().hex[:16], 2048, "index-test-" + uuid.uuid4().hex[:6]
+    near = [1.0] * dims
+    far = [1.0 if i % 2 else -1.0 for i in range(dims)]
+    with SessionLocal() as session:
+        session.add(_question(school + "-near", school, "完全不同的文字甲", near, model=model))
+        session.add_all(_question(f"{school}-{i:03}", school, f"无关题目{i}", far, model=model) for i in range(30))
+        session.commit()
+    _, names = create_indexes()
+    index = vector_index(BankQuestion, model, dims)
+    assert "_hnsw_bit2048_" in index.name and index.name in names
+    monkeypatch.setattr(similar, "EXACT_SEARCH_LIMIT", 0)
+    with SessionLocal() as session:
+        result = similar.search(session, school, "查询文字", vector=near, model=model, qtype="单选题", min_score=0)
+        assert result[0].id == school + "-near" and result[0].semantic == 1
+        session.execute(text("SET LOCAL enable_seqscan=off"))
+        order = similar.ann_order(BankQuestion.embedding, near)
+        stmt = (select(BankQuestion.id).where(BankQuestion.embedding_model == model)
+                .where(text(f"vector_dims(embedding)={dims}")).order_by(order).limit(20))
+        plan = session.execute(text("EXPLAIN " + str(stmt.compile(engine, compile_kwargs={"literal_binds": True})))).all()
+        assert any(index.name in row[0] for row in plan)

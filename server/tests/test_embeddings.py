@@ -78,3 +78,44 @@ async def test_backfill_is_scoped_and_idempotent(monkeypatch):
         await backfill(school, st.model_copy(update={"embedding_model": "replacement"}))
     with SessionLocal() as session:
         assert session.get(BankQuestion, qid).embedding_model == "backfill-test"
+
+
+async def test_multimodal_embeds_one_text_per_request_and_retries(monkeypatch):
+    import json
+
+    import httpx
+    from sqlalchemy import select
+
+    from app.db import AiUsage
+    calls = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        calls.append(body)
+        assert request.url.path == "/v1/embeddings/multimodal"
+        assert request.headers["authorization"] == "Bearer k"
+        if len(calls) == 1:
+            return httpx.Response(429)  # 限流后重试
+        text = body["input"][0]["text"]
+        return httpx.Response(200, json={"data": [{"index": 0, "embedding": [float(len(text)), 1]}],
+                                         "usage": {"prompt_tokens": 3}})
+
+    monkeypatch.setattr(similar, "transport", httpx.MockTransport(handler))
+    monkeypatch.setattr(similar, "EMBED_RETRY_DELAY", 0)
+    s = Settings(embedding_provider="multimodal", llm_base_url="https://hub.test/v1", llm_api_key="k",
+                 embedding_model="mm-test", embedding_concurrency=1)
+    assert similar.embedding_enabled(s)
+    assert await similar.embed(["一", "二三", ""], s) == [[1.0, 1.0], [2.0, 1.0], [1.0, 1.0]]
+    assert len(calls) == 4
+    assert calls[-1] == {"model": "mm-test", "input": [{"type": "text", "text": " "}], "encoding_format": "float"}
+    with SessionLocal() as db:
+        rows = list(db.scalars(select(AiUsage).where(AiUsage.model == "mm-test")))
+    assert sum(r.prompt_tokens for r in rows) == 9
+
+
+async def test_multimodal_failure_falls_back(monkeypatch):
+    import httpx
+    monkeypatch.setattr(similar, "transport", httpx.MockTransport(lambda r: httpx.Response(400)))
+    s = Settings(embedding_provider="multimodal", llm_base_url="https://hub.test/v1", llm_api_key="k",
+                 embedding_model="mm-test")
+    assert await similar.embed(["题目"], s) is None

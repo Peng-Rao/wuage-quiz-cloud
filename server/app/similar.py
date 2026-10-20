@@ -24,6 +24,7 @@ from typing import Any
 
 import httpx
 from sqlalchemy import Float, case, cast, func, literal, select, text as sql_text
+from sqlalchemy.dialects.postgresql import BIT
 from pgvector.sqlalchemy import Vector
 from sqlalchemy.orm import Session, defer
 
@@ -45,6 +46,11 @@ FEATURE_CACHE_SIZE = 256
 FEATURE_CACHE_MAX_CHARS = 2000
 EXACT_SEARCH_LIMIT = 1000
 SEARCH_TEXT_MAX_CHARS = 2000
+# pgvector 的 HNSW 只支持 2000 维以内的 vector；更高维（如 4096）改用二值量化索引召回，再按原向量精排
+HNSW_MAX_DIMS = 2000
+# multimodal 接口逐条请求，限流或服务端错误时重试
+EMBED_RETRIES = 4
+EMBED_RETRY_DELAY = 1.0
 
 _LATEX_CMD = re.compile(r"\\[a-zA-Z]+")
 _BLANK = re.compile(r"_{2,}|＿+|—{2,}|（\s*）|\(\s*\)")
@@ -152,6 +158,8 @@ async def embed(texts: list[str], settings: Settings | None = None, *, purpose: 
         except (ImportError, OSError, RuntimeError, ValueError) as e:
             log.warning("本地嵌入模型失败，退回字面相似度：%s", e)
             return None
+    if s.embedding_provider == "multimodal":
+        return await _embed_multimodal(texts, s, purpose)
     url = (s.embedding_base_url or s.llm_base_url).rstrip("/") + "/embeddings"
     headers = {"Authorization": f"Bearer {s.embedding_api_key or s.llm_api_key}"}
     out: list[list[float]] = []
@@ -176,6 +184,66 @@ async def embed(texts: list[str], settings: Settings | None = None, *, purpose: 
         log.warning("获取向量失败，退回字面相似度：%s", e)
         return None
     return out if len(out) == len(texts) else None
+
+
+async def _post_with_retry(client: httpx.AsyncClient, url: str, payload: dict, headers: dict) -> dict[str, Any]:
+    for attempt in range(EMBED_RETRIES):
+        try:
+            r = await client.post(url, json=payload, headers=headers)
+            r.raise_for_status()
+            return r.json()
+        except (httpx.TransportError, httpx.HTTPStatusError) as e:
+            retryable = isinstance(e, httpx.TransportError) or e.response.status_code in (408, 429) \
+                or e.response.status_code >= 500
+            if not retryable or attempt == EMBED_RETRIES - 1:
+                raise
+            await asyncio.sleep(EMBED_RETRY_DELAY * 2 ** attempt)
+    raise AssertionError("unreachable")
+
+
+async def _embed_multimodal(texts: list[str], s: Settings, purpose: str) -> list[list[float]] | None:
+    """/embeddings/multimodal：每次请求返回一条融合向量，逐条并发请求。"""
+    url = (s.embedding_base_url or s.llm_base_url).rstrip("/") + "/embeddings/multimodal"
+    headers = {"Authorization": f"Bearer {s.embedding_api_key or s.llm_api_key}"}
+    limit = asyncio.Semaphore(s.embedding_concurrency)
+
+    async def one(client: httpx.AsyncClient, text: str) -> list[float] | None:
+        text = text[:2000] or " "
+        async with limit:
+            started = time.monotonic()
+            try:
+                body = await _post_with_retry(client, url, {
+                    "model": s.embedding_model, "input": [{"type": "text", "text": text}], "encoding_format": "float",
+                }, headers)
+                vector = [float(x) for x in body["data"][0]["embedding"]]
+            except (httpx.HTTPError, KeyError, IndexError, TypeError, ValueError) as e:
+                log.warning("获取向量失败，退回字面相似度：%s", e)
+                return None
+            used = body.get("usage") or {}
+            tokens = used.get("prompt_tokens") or used.get("total_tokens")
+            usage_log.record(
+                "llm", purpose, s.embedding_model,
+                prompt_tokens=int(tokens or usage_log.estimate_tokens(text)),
+                duration_ms=int((time.monotonic() - started) * 1000), estimated=tokens is None,
+            )
+            return vector
+
+    async with httpx.AsyncClient(timeout=60, transport=transport) as client:
+        out = await asyncio.gather(*(one(client, t) for t in texts))
+    return None if any(v is None for v in out) else list(out)
+
+
+def ann_order(column, vector: list[float]):
+    """语义近邻排序表达式，须与 search_indexes.vector_index 的索引表达式一致才能走索引。"""
+    dims = len(vector)
+    if dims <= HNSW_MAX_DIMS:
+        return cast(column, Vector(dims)).cosine_distance(vector)
+    query = func.binary_quantize(cast(literal(vector, Vector(dims)), Vector(dims)), type_=BIT(dims))
+    return binary_code(column, dims).op("<~>", return_type=Float)(query)
+
+
+def binary_code(column, dims: int):
+    return cast(func.binary_quantize(cast(column, Vector(dims))), BIT(dims))
 
 
 # ---------------- 检索 ----------------
@@ -226,7 +294,7 @@ def _candidates(s: Session, school_id: str, *, qtype: str | None, exclude_job: s
             semantic = stmt.where(
                 cls.embedding_model == literal(model, literal_execute=True),
                 func.vector_dims(cls.embedding) == literal(len(vector), literal_execute=True),
-            ).with_only_columns(*columns).order_by(distance).limit(pool)
+            ).with_only_columns(*columns).order_by(ann_order(cls.embedding, vector)).limit(pool)
             for row in s.execute(semantic):
                 recalled[row.id] = row
         yield from (recalled[key] for key in sorted(recalled))

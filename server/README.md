@@ -190,6 +190,14 @@ uv run pytest
 - 大题标题后、第一题前的材料（如阅读材料）当前被视为标题说明而不归入题目，语文 / 英语试卷需在 P2 处理。
 - 轻量引擎按坐标排序，双栏试卷的阅读顺序可能错乱；双栏试卷请使用 MinerU。
 
+### 腾讯云 TokenHub 向量模型
+
+`EMBEDDING_PROVIDER=multimodal`、`EMBEDDING_MODEL=kinfra-vl-embedding-8b` 调用 TokenHub 的
+`/v1/embeddings/multimodal`（地址与 Key 默认沿用 `LLM_BASE_URL` / `LLM_API_KEY`）。该接口每次请求只返回一条向量，
+按 `EMBEDDING_CONCURRENCY`（默认 4）并发请求，限流或服务端错误时自动重试。向量固定 4096 维，超过 pgvector HNSW 的
+2000 维上限，`app.search_indexes` 改为对二值量化向量（`binary_quantize`，汉明距离）建 HNSW 索引召回，再按原向量余弦精排。
+迁移步骤与下文相同（迁移字段 → 回填 → 建索引），无需安装 embeddings extra。
+
 ### 本地 Hugging Face 嵌入与 pgvector
 
 通过 `langchain-huggingface` 的 `HuggingFaceEmbeddings` 加载模型，默认在 CPU 上推理。

@@ -9,19 +9,22 @@ from sqlalchemy import Index, and_, cast, func, or_, select, text
 from sqlalchemy.orm import Session, load_only
 
 from .db import BankQuestion, DraftQuestion, ParseJob, engine
-from .similar import SEARCH_TEXT_MAX_CHARS, normalize, question_text
+from .similar import HNSW_MAX_DIMS, SEARCH_TEXT_MAX_CHARS, binary_code, normalize, question_text
 
 
 def vector_index(cls, model, dimensions):
     key = hashlib.sha256(model.encode()).hexdigest()[:12]
-    name = f"ix_{cls.__tablename__}_hnsw_{dimensions}_{key}"
+    binary = dimensions > HNSW_MAX_DIMS
+    name = f"ix_{cls.__tablename__}_hnsw_{'bit' if binary else ''}{dimensions}_{key}"
     # 临时 Table 防止每次运行将同名动态索引重复注册到 ORM 元数据。
     from sqlalchemy import Column, MetaData, String, Table
     table = Table(cls.__tablename__, MetaData(), Column("embedding", Vector()),
                   Column("embedding_model", String(64)))
-    expression = cast(table.c.embedding, Vector(dimensions)).label("embedding")
+    # 超过 2000 维时索引二值量化后的向量（汉明距离），召回后仍按原向量余弦精排
+    expression = (binary_code(table.c.embedding, dimensions) if binary
+                  else cast(table.c.embedding, Vector(dimensions))).label("embedding")
     return Index(name, expression, postgresql_using="hnsw",
-                 postgresql_ops={"embedding": "vector_cosine_ops"},
+                 postgresql_ops={"embedding": "bit_hamming_ops" if binary else "vector_cosine_ops"},
                  postgresql_where=and_(table.c.embedding_model == model,
                                        func.vector_dims(table.c.embedding) == dimensions),
                  postgresql_concurrently=True)
@@ -81,8 +84,8 @@ def create_indexes(eng=engine):
         for cls in (BankQuestion, DraftQuestion):
             # 空草稿表也为题库中已有的模型预建索引，后续解析完成即可使用。
             for model, dimensions in sorted(groups):
-                if not 1 <= dimensions <= 2000:
-                    continue  # pgvector HNSW vector 索引最多支持 2000 维。
+                if not 1 <= dimensions <= 64000:
+                    continue  # pgvector HNSW bit 索引最多支持 64000 维。
                 index = vector_index(cls, model, dimensions)
                 ensure(index)
             conn.execute(text(f"ANALYZE {cls.__tablename__}"))
