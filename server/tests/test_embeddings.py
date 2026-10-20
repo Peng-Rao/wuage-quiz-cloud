@@ -105,12 +105,13 @@ async def test_multimodal_embeds_one_text_per_request_and_retries(monkeypatch):
     s = Settings(embedding_provider="multimodal", llm_base_url="https://hub.test/v1", llm_api_key="k",
                  embedding_model="mm-test", embedding_concurrency=1)
     assert similar.embedding_enabled(s)
-    assert await similar.embed(["一", "二三", ""], s) == [[1.0, 1.0], [2.0, 1.0], [1.0, 1.0]]
-    assert len(calls) == 4
-    assert calls[-1] == {"model": "mm-test", "input": [{"type": "text", "text": " "}], "encoding_format": "float"}
+    # 空白文本不请求接口（接口会返回 400），对应位置为 None
+    assert await similar.embed(["一", "二三", " "], s) == [[1.0, 1.0], [2.0, 1.0], None]
+    assert len(calls) == 3
+    assert calls[-1] == {"model": "mm-test", "input": [{"type": "text", "text": "二三"}], "encoding_format": "float"}
     with SessionLocal() as db:
         rows = list(db.scalars(select(AiUsage).where(AiUsage.model == "mm-test")))
-    assert sum(r.prompt_tokens for r in rows) == 9
+    assert sum(r.prompt_tokens for r in rows) == 6
 
 
 async def test_multimodal_failure_falls_back(monkeypatch):

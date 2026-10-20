@@ -55,7 +55,8 @@ async def backfill(school_id=None, settings=None, *, after_id="", before_id=None
             for (qid, stem, options), vector in zip(snapshots, vectors):
                 q = session.get(BankQuestion, qid, with_for_update=True)
                 # 推理期间编辑过的题目留给下次回填，避免写入过期向量。
-                if q is not None and q.stem == stem and q.options == options:
+                # 题干为空（如纯图片题）没有向量，保持为空。
+                if vector and q is not None and q.stem == stem and q.options == options:
                     q.embedding, q.embedding_model = vector, st.embedding_model
                     count += 1
             session.commit()

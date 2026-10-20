@@ -147,7 +147,7 @@ def _embed_local(texts: list[str], s: Settings) -> list[list[float]]:
     return model.embed_documents([t[:2000] or " " for t in texts])
 
 
-async def embed(texts: list[str], settings: Settings | None = None, *, purpose: str = "embed") -> list[list[float]] | None:
+async def embed(texts: list[str], settings: Settings | None = None, *, purpose: str = "embed") -> list[list[float] | None] | None:
     """批量获取文本向量；未配置或调用失败时返回 None（调用方退回字面相似度）。"""
     s = settings or get_settings()
     if not texts or not embedding_enabled(s):
@@ -201,14 +201,19 @@ async def _post_with_retry(client: httpx.AsyncClient, url: str, payload: dict, h
     raise AssertionError("unreachable")
 
 
-async def _embed_multimodal(texts: list[str], s: Settings, purpose: str) -> list[list[float]] | None:
-    """/embeddings/multimodal：每次请求返回一条融合向量，逐条并发请求。"""
+async def _embed_multimodal(texts: list[str], s: Settings, purpose: str) -> list[list[float] | None] | None:
+    """/embeddings/multimodal：每次请求返回一条融合向量，逐条并发请求。
+    接口拒绝空白文本，题干为空（如纯图片题）的位置返回 None，不计为失败。"""
     url = (s.embedding_base_url or s.llm_base_url).rstrip("/") + "/embeddings/multimodal"
     headers = {"Authorization": f"Bearer {s.embedding_api_key or s.llm_api_key}"}
     limit = asyncio.Semaphore(s.embedding_concurrency)
 
-    async def one(client: httpx.AsyncClient, text: str) -> list[float] | None:
-        text = text[:2000] or " "
+    failed = object()
+
+    async def one(client: httpx.AsyncClient, text: str):
+        text = text[:2000]
+        if not text.strip():
+            return None
         async with limit:
             started = time.monotonic()
             try:
@@ -218,7 +223,7 @@ async def _embed_multimodal(texts: list[str], s: Settings, purpose: str) -> list
                 vector = [float(x) for x in body["data"][0]["embedding"]]
             except (httpx.HTTPError, KeyError, IndexError, TypeError, ValueError) as e:
                 log.warning("获取向量失败，退回字面相似度：%s", e)
-                return None
+                return failed
             used = body.get("usage") or {}
             tokens = used.get("prompt_tokens") or used.get("total_tokens")
             usage_log.record(
@@ -230,7 +235,7 @@ async def _embed_multimodal(texts: list[str], s: Settings, purpose: str) -> list
 
     async with httpx.AsyncClient(timeout=60, transport=transport) as client:
         out = await asyncio.gather(*(one(client, t) for t in texts))
-    return None if any(v is None for v in out) else list(out)
+    return None if any(v is failed for v in out) else list(out)
 
 
 def ann_order(column, vector: list[float]):
@@ -372,7 +377,7 @@ async def dedupe_job(s: Session, job_id: str, settings: Settings | None = None) 
     vectors = await embed([question_text(q.stem, q.options) for q in qs], settings)
     if vectors:
         for q, v in zip(qs, vectors):
-            q.embedding, q.embedding_model = v, settings.embedding_model
+            q.embedding, q.embedding_model = v, settings.embedding_model if v else None
     dup = 0
     for q in qs:
         best = search(s, job.school_id, question_text(q.stem, q.options), vector=q.embedding, qtype=q.type,
