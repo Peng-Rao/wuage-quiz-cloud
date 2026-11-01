@@ -1,0 +1,114 @@
+# 福格云上题库使用说明
+
+[项目介绍](../README.zh-CN.md)
+
+[![CI](https://github.com/Peng-Rao/wuage-quiz-cloud/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Peng-Rao/wuage-quiz-cloud/actions/workflows/ci.yml)
+![Node](https://img.shields.io/badge/node-24-339933?logo=nodedotjs&logoColor=white)
+![Vue](https://img.shields.io/badge/vue-3.5-4FC08D?logo=vuedotjs&logoColor=white)
+![TypeScript](https://img.shields.io/badge/typescript-5.9-3178C6?logo=typescript&logoColor=white)
+![Python](https://img.shields.io/badge/python-%E2%89%A53.11-3776AB?logo=python&logoColor=white)
+![FastAPI](https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-17-4169E1?logo=postgresql&logoColor=white)
+![Redis](https://img.shields.io/badge/Redis-8-DC382D?logo=redis&logoColor=white)
+![Docker Compose](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white)
+
+校本题库与试卷解析系统：上传试卷后自动拆题、标注知识点与难度、生成答案，老师审核入库后用于选题、组卷和导出 Word / PDF。
+
+技术栈：前端 Vue 3 + TypeScript + Vite + Vue Router + Pinia；后端 FastAPI（`server/`）+ PostgreSQL + Redis。
+
+## 快速开始
+
+完整步骤、配置说明、备份升级与常见问题见 **[部署指南](deployment.md)**。
+
+### Docker 部署（推荐）
+
+```bash
+cp server/.env.example server/.env                          # 可选：填写 MinerU、大模型等配置
+docker compose up -d --build                                # 访问 http://localhost:8000
+docker compose exec app python -m app.create_admin admin    # 首次：创建管理员
+```
+
+正式环境还需在仓库根目录 `.env` 中设置 `POSTGRES_PASSWORD`，HTTPS 部署设置 `COOKIE_SECURE=true`，详见[部署指南 · Docker 部署](deployment.md#docker-部署)。
+
+### 本地开发
+
+```bash
+docker compose up -d db redis          # PostgreSQL（本机 5433）与 Redis（本机 6380）
+
+cd server
+uv sync
+cp .env.example .env                   # 可选：填写 MinerU、大模型等配置
+uv run python -m app.create_admin admin
+uv run uvicorn app.main:app --port 8000 --reload
+
+# 另开终端，在仓库根目录
+npm install
+npm run dev                            # http://localhost:5173，/api 代理到 8000
+```
+
+详见[部署指南 · 本地开发部署](deployment.md#本地开发部署)。
+
+也可以全部在 Docker 中开发，代码修改后自动重载（前端访问 http://localhost:5173）：
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
+```
+
+详见[部署指南 · Docker 开发模式](deployment.md#docker-开发模式)。
+
+## 登录与三级权限
+
+系统没有默认账号或密码，首次使用先用 `create_admin` 创建管理员（见「快速开始」），密码交互输入，不写入代码或命令历史。前端访问 `/login` 登录；管理员在 `/users` 创建账号、分配学科、修改角色、停用账号或重置密码。修改账号后，其已有会话立即失效。
+
+账号管理页显示每个账号的「在线 / 多久前在线」，选择账号后可查看最后在线的具体时间。已登录页面每 30 秒发送心跳，最近 90 秒内有登录或心跳且会话仍有效即显示在线；多个设备任一会话活跃即可。退出登录、会话过期或被撤销后，该会话不再计入在线；关闭页面或断网后最多约 90 秒判为离线，管理员页面每 30 秒刷新状态。历史账号没有在线记录时显示「暂无在线记录」，升级后首次登录或心跳开始记录。
+
+| 角色 | 可用功能 | 数据范围 |
+| --- | --- | --- |
+| 管理员 | 全部功能、账号管理、评测与全校 AI 用量 | 全部学科 |
+| 组长 | 上传解析、AI 解答/知识点标注/辅助组卷、审核分配、手动组卷与下载 | 授权学科 |
+| 普通用户 | 选题、知识点查看、手动组卷、Word 下载与 PDF 打印 | 分配给本人且审核通过的题目，及其关联知识点 |
+
+上传前先在顶栏选择学科。入库后进入试卷详情，展开“审核与分配题目”，选择题目及归属用户，审核通过后普通用户即可查看。每道题目前归属一位用户；重新分配会替换原归属。撤回审核后立即停止后续读取。重新提交入库或变更学科会清除审核状态，需重新审核。入库后仍缺答案的题，可在试卷详情点「AI 补全答案」补生成，答案直接写入题库，这些题需核对后重新审核。管理员可在选题列表和试卷详情中点题目的「编辑」直接修改已入库的题（题型、分值、材料、题干、选项、答案、解析、知识点），修改同步到原卷解析结果，审核状态与归属不变。管理员还可在试卷详情点「编辑属性」修改试卷名称、学段学科、年级、试卷类型、地区、学年、学校与教材版本，同步到原卷与本卷已入库的题；改了学科的题需重新审核。历史题目默认未分配、未审核，由管理员或对应学科组长处理后再向普通用户开放。
+
+AI 组卷位于 `/compose`（仅管理员、组长），见下方「目前是演示实现的部分」。试题篮仅保存在当前页面内存中，刷新或退出后清空，避免共用浏览器时泄露上一个账号的题目。
+
+会话使用 HttpOnly、SameSite Cookie，服务端只保存会话令牌摘要；密码使用带独立盐的 scrypt 哈希。会话默认 12 小时。HTTPS 部署设置 `COOKIE_SECURE=true`，并将实际站点来源加入 `CORS_ORIGINS`；推荐前后端同源部署。生产启用前备份数据库；启动时自动补充用户/会话表和题目归属/审核字段，不改动已有题目内容。
+
+## 页面
+
+| 路由 | 页面 |
+| --- | --- |
+| `/login` | 账号密码登录 |
+| `/users` | 账号管理（仅管理员） |
+| `/` | 首页：学段学科切换、搜题、入口、最新试卷、我的组卷 |
+| `/chapter` | 章节选题：教材版本与册、章节目录（含各章节题数），场景 / 题型 / 难度 / 年份 / 地区 / 年级 / 学期筛选，同步套卷 |
+| `/knowledge` | 知识点选题：知识树（含题数）、知识点查询与多选，筛选同章节选题 |
+| `/papers` | 试卷选题：同步教学 / 阶段测试 / 升学备考 / 竞赛分类，按学段、年级、学科、版本、类型浏览已入库的整卷；`/papers/:id` 查看整卷，整卷加入试题篮或以原卷组卷 |
+| `/compose` | AI 组卷（Demo，仅管理员、组长）：用文字描述学生情况与要求，AI 整理成组卷蓝图，程序从题库选题并赋分；可多轮修改，确认后加入试题篮 |
+| `/paper` | 试卷编辑：调整大题与题目顺序（拖动 / ▲▼）、逐题或按大题赋分、排版设置、下载 Word / 导出 PDF / 答题卡 |
+| `/upload` | 试卷解析：上传 → 解析进度 → 核对入库 |
+
+## 目录
+
+- `src/styles/base.css` 设计令牌（颜色、字体、圆角）与通用样式
+- `src/data/mock.ts` 演示数据（首页列表、章节目录等）
+- `src/api/` 接口层：`parse/` 试卷解析、`bank/` 校本题库与试卷库，统一连接后端；mock 文件仅保留为参考，不作为登录后的数据源
+- `src/stores/` Pinia：学段学科、试题篮（题目快照、题序、分值，仅当前页面内存保存）
+- `src/components/` 顶栏、页脚、开关、难度分布条
+- `src/views/` 页面
+
+## 目前是演示实现的部分
+
+- `npm run dev` 与 `npm run dev:api` 等价，均连接真实后端，所有题库接口需要登录。
+- 章节选题使用厦门市小学、初中、高中现用版本的教材目录（`server/app/data/chapters/`，由 `server/scripts/crawl_textbooks.py`
+  从国家中小学智慧教育平台抓取）：每节对应若干知识点，按题目已标注的知识点归入章节。「最热」「分类（典型题、压轴题等）」「解题方法」暂无数据支持。
+- 首页展示授权范围内的真实试卷和当前试题篮；试卷编辑页的标题、考试时间为固定文案。
+- 数学公式：题目中以 `$…$` / `$$…$$` 包裹的 LaTeX 用 KaTeX 显示；编辑题目时可用可视化公式编辑器（MathLive，按需加载）插入或修改公式。
+- 「下载 Word」在浏览器中生成 `.docx`（`src/utils/docx.ts`）：公式转换为 Word 原生公式（LaTeX → KaTeX MathML → OMML，`src/utils/omml.ts`），
+  可在 Word 中直接编辑；题目配图嵌入文档；KaTeX 无法解析的公式保留原文。装订线以装订边距（gutter）表示。
+- 「导出 PDF」调用浏览器打印（已写好打印样式）。
+- AI 组卷为 Demo（方案见 `docs/ai-paper-assembly.md`）：
+  大模型只负责理解需求（每次生成调用 1 次，按知识点编号选择重点、给出各题型题量与难度），选题与赋分由程序完成（`server/app/compose.py`），
+  题目全部来自题库、总分准确；未配置大模型时按关键词匹配知识点。只做了一个学科的效果验证；学生情况不保存，刷新页面后对话清空；
+  题库中的题需已标注知识点才能侧重具体知识点。加入试题篮后试卷标题仍为试卷编辑页的固定文案。
+- 收藏、纠错、智能补题等按钮暂未接功能。

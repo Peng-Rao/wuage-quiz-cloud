@@ -14,7 +14,7 @@ Teachers upload a PDF, Word file or phone photo of an exam paper. The system spl
 ![Redis](https://img.shields.io/badge/Redis-Streams-DC382D?logo=redis&logoColor=white)
 ![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white)
 
-**English** · [简体中文（使用说明）](README.zh-CN.md)
+**English** · [简体中文](README.zh-CN.md)
 
 ![FG Quiz Cloud: paper upload and parsing screen](docs/screenshots/hero.png)
 
@@ -246,7 +246,7 @@ Full guide (production, HTTPS, object storage, backups, auto-deploy): **[docs/de
 │   ├── app/data/             # 23 knowledge trees, 25 textbook chapter catalogs
 │   ├── scripts/              # textbook catalog crawler, knowledge-tree builder
 │   └── tests/                # 259 tests
-├── docs/                     # API contract, deployment guide, AI paper-assembly design
+├── docs/                     # API contract, deployment guide, user guide, AI paper-assembly design
 ├── deploy/deploy.sh          # zero-downtime deploy with backup and auto-rollback
 └── docker-compose*.yml
 ```
@@ -268,7 +268,8 @@ These are honest limitations, kept as a roadmap:
 
 | Document | Content |
 |---|---|
-| [README.zh-CN.md](README.zh-CN.md) | Chinese user guide: roles, review workflow, page list |
+| [README.zh-CN.md](README.zh-CN.md) | This README in Chinese |
+| [docs/user-guide.zh-CN.md](docs/user-guide.zh-CN.md) | Chinese user guide: roles, review workflow, page list |
 | [docs/deployment.md](docs/deployment.md) | Deployment, configuration, backups, auto-deploy, FAQ |
 | [docs/ai-parse-api.md](docs/ai-parse-api.md) | Parsing API contract |
 | [docs/ai-paper-assembly.md](docs/ai-paper-assembly.md) | AI paper assembly: architecture and technology trade-offs |
