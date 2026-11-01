@@ -1,112 +1,290 @@
-# 福格云上题库
+<div align="center">
+
+# 福格云上题库 · FG Quiz Cloud
+
+**An AI-powered exam-paper parsing and question-bank platform for K-12 schools.**
+
+Teachers upload a PDF, Word file or phone photo of an exam paper. The system splits it into individual questions, tags knowledge points and difficulty, and generates answers. A teacher reviews the result before it goes into the school's question bank, where teachers can search, assemble new papers and export them to Word or PDF.
 
 [![CI](https://github.com/Peng-Rao/wuage-quiz-cloud/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Peng-Rao/wuage-quiz-cloud/actions/workflows/ci.yml)
-![Node](https://img.shields.io/badge/node-24-339933?logo=nodedotjs&logoColor=white)
-![Vue](https://img.shields.io/badge/vue-3.5-4FC08D?logo=vuedotjs&logoColor=white)
-![TypeScript](https://img.shields.io/badge/typescript-5.9-3178C6?logo=typescript&logoColor=white)
-![Python](https://img.shields.io/badge/python-%E2%89%A53.11-3776AB?logo=python&logoColor=white)
+![Vue](https://img.shields.io/badge/Vue-3.5-4FC08D?logo=vuedotjs&logoColor=white)
+![TypeScript](https://img.shields.io/badge/TypeScript-5.9-3178C6?logo=typescript&logoColor=white)
 ![FastAPI](https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white)
-![PostgreSQL](https://img.shields.io/badge/PostgreSQL-17-4169E1?logo=postgresql&logoColor=white)
-![Redis](https://img.shields.io/badge/Redis-8-DC382D?logo=redis&logoColor=white)
-![Docker Compose](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL_17-pgvector-4169E1?logo=postgresql&logoColor=white)
+![Redis](https://img.shields.io/badge/Redis-Streams-DC382D?logo=redis&logoColor=white)
+![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white)
 
-校本题库与试卷解析系统：上传试卷后自动拆题、标注知识点与难度、生成答案，老师审核入库后用于选题、组卷和导出 Word / PDF。
+**English** · [简体中文（使用说明）](README.zh-CN.md)
 
-技术栈：前端 Vue 3 + TypeScript + Vite + Vue Router + Pinia；后端 FastAPI（`server/`）+ PostgreSQL + Redis。
+<!-- SCREENSHOT PLACEHOLDER: replace docs/screenshots/hero.png -->
+![FG Quiz Cloud: parse review screen](docs/screenshots/hero.png)
 
-## 快速开始
+</div>
 
-完整步骤、配置说明、备份升级与常见问题见 **[部署指南](docs/deployment.md)**。
+---
 
-### Docker 部署（推荐）
+## At a glance
 
-```bash
-cp server/.env.example server/.env                          # 可选：填写 MinerU、大模型等配置
-docker compose up -d --build                                # 访问 http://localhost:8000
-docker compose exec app python -m app.create_admin admin    # 首次：创建管理员
+| | |
+|---|---|
+| **What** | A production system built for K-12 schools in Xiamen, China: it turns exam papers into a structured, searchable question bank shared by teachers |
+| **My role** | Sole developer: product design, AI pipeline, backend, frontend, DevOps |
+| **Timeline** | About 5 weeks from first commit to production, with automated deployment |
+| **Scale of code** | ~11.6k lines of Python (FastAPI), ~10.9k lines of Vue/TypeScript, **259 backend tests** on real PostgreSQL and Redis in CI |
+| **AI surface** | Exam classification, question segmentation, knowledge-point tagging, difficulty estimation, answer generation (text and vision), semantic duplicate detection, AI paper assembly |
+| **Core idea** | The LLM is one signal that gets checked, not the source of truth. Rules, validation and teacher review sit around every model call, so the system stays accurate, low-cost and auditable |
+
+---
+
+## The problem
+
+Every school keeps years of exam papers as scattered Word and PDF files. Turning them into a usable question bank by hand means retyping questions, re-entering formulas, and labelling each question with a topic and a difficulty. Generic "AI parsing" tools tend to fail in these ways:
+
+- **Math breaks.** MathType objects, Word equations and scanned formulas come out garbled.
+- **Questions split in the wrong places.** Sub-questions, shared reading passages, and answer keys at the end of the paper get mixed up.
+- **Models make things up.** An LLM asked to rewrite questions can quietly change them. An LLM asked to pick questions can return IDs that don't exist, or totals that add up to 148 instead of 150.
+- **Nobody can tell whether it's working or what it costs.**
+
+The system handles each of these explicitly.
+
+---
+
+## Product tour
+
+> Screenshots are placeholders. Drop images into [`docs/screenshots/`](docs/screenshots/) using the file names below.
+
+### 1 · Upload → AI parsing → review
+
+Drag in a PDF, a `.docx` or several phone photos. A live progress card (server-sent events) follows each stage. The review screen shows every parsed question with its type, score, answer, knowledge points, difficulty and a confidence flag. Teachers can merge, split or edit questions, and can open **the original page with the question's region highlighted** next to the parsed text.
+
+| Parse review | Original page with highlighted region |
+|---|---|
+| ![Parse review](docs/screenshots/parse-review.png) | ![Source view](docs/screenshots/source-view.png) |
+
+### 2 · Find questions by textbook chapter, knowledge point or paper
+
+The bank can be browsed three ways. **Chapter trees** come from the textbook editions actually used in Xiamen (25 subject/edition catalogs). **Knowledge trees** cover 23 stage/subject combinations. The **paper library** lists whole papers. All three have per-node question counts and filters for type, difficulty, year, region and grade.
+
+| Chapter picker | Knowledge-point picker |
+|---|---|
+| ![Chapter picker](docs/screenshots/chapter-pick.png) | ![Knowledge picker](docs/screenshots/knowledge-pick.png) |
+
+| Paper library | Paper detail and review/assignment |
+|---|---|
+| ![Paper library](docs/screenshots/papers.png) | ![Paper detail](docs/screenshots/paper-detail.png) |
+
+### 3 · AI paper assembly
+
+The teacher describes the class in plain language, for example "Grade 10, weak on functions and trigonometry, midterm review, medium difficulty". The LLM turns that into a **blueprint**: knowledge points × question types × difficulty × counts. A **deterministic solver** then picks real questions from the bank and assigns scores so the total is exact. Teachers can refine over several turns ("make it easier", "two more proof questions").
+
+![AI paper assembly](docs/screenshots/ai-compose.png)
+
+### 4 · Paper editor → native Word export
+
+Reorder sections and questions, set scores per question or per section, and paginate to A4 or A3. The app exports a **`.docx` with native, editable Word equations**, converted in the browser from LaTeX to MathML to OMML. It can also print to PDF or produce an answer sheet.
+
+![Paper editor](docs/screenshots/paper-editor.png)
+
+### 5 · Operations: accounts, AI cost, evaluation
+
+Three roles (admin, subject leader, teacher) with per-subject data scoping and live online status. There is a per-call **AI cost dashboard** and an **offline evaluation harness** for the parsing pipeline.
+
+| Accounts and permissions | AI cost analysis | Parse evaluation |
+|---|---|---|
+| ![Users](docs/screenshots/users.png) | ![Cost](docs/screenshots/ai-cost.png) | ![Eval](docs/screenshots/eval.png) |
+
+Dark mode is fully supported:
+
+![Dark mode](docs/screenshots/dark-mode.png)
+
+---
+
+## Architecture
+
+```mermaid
+flowchart LR
+    subgraph Browser["Browser · Vue 3 + TypeScript"]
+        UI[Pick · Compose · Review · Edit]
+        DOCX["DOCX exporter<br/>LaTeX → MathML → OMML"]
+    end
+
+    subgraph App["FastAPI app"]
+        API[REST + SSE API]
+        AUTH["Auth & row-level scoping<br/>(SQLAlchemy loader criteria)"]
+        COMPOSE["Paper-assembly solver"]
+    end
+
+    subgraph Workers["Workers (scale horizontally)"]
+        PIPE[Parsing pipeline]
+        ANS[Answer generation]
+    end
+
+    UI <--> API
+    API --> AUTH
+    API -- enqueue --> R[(Redis Streams<br/>consumer group)]
+    R --> PIPE & ANS
+    PIPE & ANS & API <--> PG[(PostgreSQL 17<br/>+ pgvector + pg_trgm)]
+    PIPE & API <--> S3[(Local disk / Tencent COS / Alibaba OSS)]
+    PIPE -.-> MINERU[[MinerU cloud OCR]]
+    PIPE & ANS & COMPOSE -.-> LLM[[OpenAI-compatible LLM<br/>DeepSeek · Qwen · TokenHub]]
 ```
 
-正式环境还需在仓库根目录 `.env` 中设置 `POSTGRES_PASSWORD`，HTTPS 部署设置 `COOKIE_SECURE=true`，详见[部署指南 · Docker 部署](docs/deployment.md#docker-部署)。
+### The parsing pipeline
 
-### 本地开发
-
-```bash
-docker compose up -d db redis          # PostgreSQL（本机 5433）与 Redis（本机 6380）
-
-cd server
-uv sync
-cp .env.example .env                   # 可选：填写 MinerU、大模型等配置
-uv run python -m app.create_admin admin
-uv run uvicorn app.main:app --port 8000 --reload
-
-# 另开终端，在仓库根目录
-npm install
-npm run dev                            # http://localhost:5173，/api 代理到 8000
+```mermaid
+flowchart LR
+    A[Upload] --> B["ocr<br/>parser chain:<br/>native DOCX → MinerU → PyMuPDF lite"]
+    B --> C["classify<br/>title rules + LLM:<br/>stage, subject, grade, type, region, year"]
+    C --> D["segment<br/>rule segmentation ⨯ LLM grouping<br/>→ cross-checked confidence"]
+    D --> E["knowledge + difficulty<br/>one LLM call per batch,<br/>constrained to the knowledge tree"]
+    E --> F["dedupe<br/>lexical + vector similarity"]
+    F --> G{confident?}
+    G -- yes --> H[(Auto-commit to bank)]
+    G -- no --> I[Teacher review queue]
 ```
 
-详见[部署指南 · 本地开发部署](docs/deployment.md#本地开发部署)。
+---
 
-也可以全部在 Docker 中开发，代码修改后自动重载（前端访问 http://localhost:5173）：
+## AI engineering highlights
+
+These are the design choices I would point to in this project.
+
+### 1. LLMs return references, never rewritten content
+
+During segmentation the model never retypes a question. It receives numbered **layout units** and returns only **groups of unit IDs** plus type and score. Question text is always rebuilt from the original parser output, so the model cannot change a formula or invent an option. The output is validated against the known IDs and repaired where possible. If the model drops most of the content, the run falls back to rule-based results. ([`segment.py`](server/app/pipeline/segment.py))
+
+### 2. Two independent signals produce a confidence score
+
+A hand-built rule segmenter (section headers, question numbers, options, scores, answer keys at the end) runs in parallel with the LLM. When they **agree**, confidence goes up. When they **disagree**, or the model's output needed repair, the question is flagged for review with a readable reason ("rules and LLM split differently"). Only confident questions with an answer and no duplicate are **auto-committed**; everything else goes to a teacher. ([`auto_commit.py`](server/app/auto_commit.py))
+
+### 3. Constrained generation for knowledge tagging
+
+Knowledge points must come from a curated tree. Small trees go into the prompt whole. For large trees the system first retrieves candidates and lets the model choose among them. Tags that aren't in the tree are kept but marked as such. Difficulty is estimated **in the same call** to save tokens, then blended with a position-based prior (`0.7 × LLM + 0.3 × baseline`). ([`knowledge.py`](server/app/pipeline/knowledge.py), [`difficulty.py`](server/app/pipeline/difficulty.py))
+
+### 4. "LLM plans, algorithm solves" for paper assembly
+
+Letting an LLM pick questions directly fails in predictable ways: wrong totals, invented IDs, banks too large for the context window, results that can't be reproduced. So the LLM makes **one** call to turn the request into a validated blueprint. A greedy solver then selects real questions (covering knowledge points, matching target difficulty, avoiding duplicates) and assigns scores from exam-style templates, scaled so the **total is always exact**. If the bank runs short, the gap is reported instead of hidden. I wrote the trade-off analysis in [`docs/ai-paper-assembly.md`](docs/ai-paper-assembly.md). ([`compose.py`](server/app/compose.py))
+
+### 5. An evaluation harness and model calibration
+
+Any paper a teacher has reviewed can be saved as a **gold sample**. One click re-parses all samples with the current configuration and reports:
+
+`split precision/recall · type accuracy · option accuracy · answer accuracy · knowledge top-3 hit & recall · difficulty MAE · metadata accuracy`
+
+The harness also fits a **linear calibration** (`y = a·x + b`) from teacher-adjusted difficulties back onto model output, showing MAE before and after. An admin can apply it with one click. This makes prompt and model changes measurable regressions instead of guesswork. ([`evaluation.py`](server/app/evaluation.py))
+
+### 6. Cost tracking for every call
+
+Every LLM and OCR call is recorded, failures included, with tokens, cached tokens, latency, purpose and subject. Cost is computed **at query time** from versioned prices that are **scraped daily** from vendor pricing pages (Tencent TokenHub, Alibaba Bailian, OpenRouter). Prices can be corrected afterwards and history recalculates. The dashboard shows cost per paper, per question, per pipeline stage and per model. ([`usage.py`](server/app/usage.py), [`pricing.py`](server/app/pricing.py))
+
+### 7. Graceful degradation
+
+Every AI component is optional. Without a MinerU token the system uses local parsing. Without an LLM it uses rule-based segmentation and keyword matching. Without embeddings it uses lexical similarity only. Word files are parsed **natively**, which is fast and costs no OCR, and only go to cloud OCR when the content is mostly images. The whole stack runs offline for development and CI.
+
+### 8. Hybrid semantic duplicate detection
+
+Similar questions are retrieved in two ways at once: **pgvector HNSW** for embeddings and **pg_trgm** for text. The results are then re-ranked with a blended score. For high-dimensional multimodal embeddings (4096-d, above HNSW's 2000-d limit), the index uses **binary-quantized vectors** (Hamming distance) and re-ranks by the original cosine similarity. Embedding providers can be swapped: OpenAI-compatible, Tencent multimodal, or local Hugging Face models. ([`similar.py`](server/app/similar.py))
+
+### 9. Math stays correct end to end
+
+- **Input:** MathType OLE objects are converted by a custom **MTEF v5 binary decoder**, Word equations by an **OMML** converter, both to LaTeX. Sub/superscripts in PDFs are recovered from font size and baseline position.
+- **Display:** KaTeX, with a MathLive visual formula editor.
+- **Output:** LaTeX → MathML → OMML, giving **native Word equations** that stay editable after export.
+- **Original-page view:** Word files are rendered through LibreOffice. Parsed units are located on the rendered PDF pages so teachers can compare against the source.
+
+---
+
+## Engineering highlights
+
+- **Distributed task queue on Redis Streams.** Consumer groups with deduplication, lease renewal, `XAUTOCLAIM` takeover of tasks from dead workers, re-queueing on startup, and handing tasks back on graceful shutdown. Workers scale with `docker compose up --scale worker=N`. ([`worker.py`](server/app/worker.py))
+- **Row-level authorization in the ORM.** Every request's database session has `with_loader_criteria` rules attached. A teacher can only load questions assigned to them and approved, and a subject leader only their own subjects, **including in aggregates and counts**. One query can't forget the permission check. ([`auth.py`](server/app/auth.py))
+- **Security basics.** scrypt with a per-user salt, HttpOnly SameSite cookies, only hashed session tokens stored server-side, login rate limiting by account and IP, and all sessions revoked when a role or password changes.
+- **Pluggable object storage.** Local disk, Tencent COS or Alibaba OSS, with browser direct upload via pre-signed URLs and a migration tool between backends.
+- **CI/CD with automatic rollback.** CI runs type-check and build, Ruff, pytest against real PostgreSQL+pgvector and Redis, then builds the Docker image and smoke-tests the Compose stack. On `main`, the deploy workflow pushes the image and SSHes into the server. There it **backs up the database, switches containers, waits for health checks, and rolls back to the previous image and commit if they fail**. ([`deploy.sh`](deploy/deploy.sh))
+- **Multi-arch image.** amd64/arm64, non-root user, `tini` as PID 1 to reap LibreOffice's orphaned processes (a real production bug, fixed in [`aeb9603`](https://github.com/Peng-Rao/wuage-quiz-cloud/commit/aeb9603)).
+
+---
+
+## Tech stack
+
+| Layer | Technology |
+|---|---|
+| Frontend | Vue 3.5, TypeScript 5.9, Vite, Pinia, Vue Router, KaTeX, MathLive, JSZip (DOCX generation) |
+| Backend | Python 3.13, FastAPI, SQLAlchemy 2, Pydantic v2, httpx, PyMuPDF, LibreOffice (headless) |
+| Data | PostgreSQL 17 + pgvector (HNSW) + pg_trgm, Redis 8 (Streams) |
+| AI | OpenAI-compatible chat API (DeepSeek, Qwen, Tencent TokenHub), vision models, MinerU OCR, text and multimodal embeddings, optional local `sentence-transformers` |
+| Infra | Docker (multi-stage, multi-arch), Docker Compose, GitHub Actions, Tencent COS / Alibaba OSS |
+| Quality | pytest (259 tests), respx (HTTP mocking), fakeredis, Ruff, vue-tsc |
+
+---
+
+## Quick start
 
 ```bash
-docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
+cp server/.env.example server/.env        # optional: MinerU token, LLM endpoint & key
+docker compose up -d --build              # app + worker + PostgreSQL + Redis → http://localhost:8000
+docker compose exec app python -m app.create_admin admin   # create the first admin (password prompted)
 ```
 
-详见[部署指南 · Docker 开发模式](docs/deployment.md#docker-开发模式)。
+The app runs **without any API keys** (local parsing and rule-based segmentation). Add `LLM_BASE_URL`, `LLM_API_KEY` and `LLM_MODEL` in `server/.env` to turn on the AI features.
 
-## 登录与三级权限
+Local development with hot reload:
 
-系统没有默认账号或密码，首次使用先用 `create_admin` 创建管理员（见「快速开始」），密码交互输入，不写入代码或命令历史。前端访问 `/login` 登录；管理员在 `/users` 创建账号、分配学科、修改角色、停用账号或重置密码。修改账号后，其已有会话立即失效。
+```bash
+docker compose up -d db redis
+cd server && uv sync && uv run uvicorn app.main:app --port 8000 --reload
+```
 
-账号管理页显示每个账号的「在线 / 多久前在线」，选择账号后可查看最后在线的具体时间。已登录页面每 30 秒发送心跳，最近 90 秒内有登录或心跳且会话仍有效即显示在线；多个设备任一会话活跃即可。退出登录、会话过期或被撤销后，该会话不再计入在线；关闭页面或断网后最多约 90 秒判为离线，管理员页面每 30 秒刷新状态。历史账号没有在线记录时显示「暂无在线记录」，升级后首次登录或心跳开始记录。
+```bash
+npm install && npm run dev                # http://localhost:5173, proxies /api → :8000
+```
 
-| 角色 | 可用功能 | 数据范围 |
-| --- | --- | --- |
-| 管理员 | 全部功能、账号管理、评测与全校 AI 用量 | 全部学科 |
-| 组长 | 上传解析、AI 解答/知识点标注/辅助组卷、审核分配、手动组卷与下载 | 授权学科 |
-| 普通用户 | 选题、知识点查看、手动组卷、Word 下载与 PDF 打印 | 分配给本人且审核通过的题目，及其关联知识点 |
+Full guide (production, HTTPS, object storage, backups, auto-deploy): **[docs/deployment.md](docs/deployment.md)**
 
-上传前先在顶栏选择学科。入库后进入试卷详情，展开“审核与分配题目”，选择题目及归属用户，审核通过后普通用户即可查看。每道题目前归属一位用户；重新分配会替换原归属。撤回审核后立即停止后续读取。重新提交入库或变更学科会清除审核状态，需重新审核。入库后仍缺答案的题，可在试卷详情点「AI 补全答案」补生成，答案直接写入题库，这些题需核对后重新审核。管理员可在选题列表和试卷详情中点题目的「编辑」直接修改已入库的题（题型、分值、材料、题干、选项、答案、解析、知识点），修改同步到原卷解析结果，审核状态与归属不变。管理员还可在试卷详情点「编辑属性」修改试卷名称、学段学科、年级、试卷类型、地区、学年、学校与教材版本，同步到原卷与本卷已入库的题；改了学科的题需重新审核。历史题目默认未分配、未审核，由管理员或对应学科组长处理后再向普通用户开放。
+---
 
-AI 组卷位于 `/compose`（仅管理员、组长），见下方「目前是演示实现的部分」。试题篮仅保存在当前页面内存中，刷新或退出后清空，避免共用浏览器时泄露上一个账号的题目。
+## Repository layout
 
-会话使用 HttpOnly、SameSite Cookie，服务端只保存会话令牌摘要；密码使用带独立盐的 scrypt 哈希。会话默认 12 小时。HTTPS 部署设置 `COOKIE_SECURE=true`，并将实际站点来源加入 `CORS_ORIGINS`；推荐前后端同源部署。生产启用前备份数据库；启动时自动补充用户/会话表和题目归属/审核字段，不改动已有题目内容。
+```
+├── src/                      # Vue 3 frontend
+│   ├── views/                #   pages: pick, compose, papers, editor, upload/review, users, cost, eval
+│   ├── components/           #   question cards, review panel, formula editor, source viewer…
+│   ├── utils/docx.ts, omml.ts#   in-browser DOCX export with native Word equations
+│   └── api/                  #   typed API clients
+├── server/
+│   ├── app/pipeline/         # parsing pipeline: parsers/, classify, segment, knowledge, difficulty, answer, vision
+│   ├── app/api/              # FastAPI routers
+│   ├── app/compose.py        # AI paper-assembly solver
+│   ├── app/similar.py        # hybrid lexical + vector retrieval
+│   ├── app/worker.py         # Redis Streams task queue
+│   ├── app/evaluation.py     # evaluation harness and difficulty calibration
+│   ├── app/data/             # 23 knowledge trees, 25 textbook chapter catalogs
+│   ├── scripts/              # textbook catalog crawler, knowledge-tree builder
+│   └── tests/                # 259 tests
+├── docs/                     # API contract, deployment guide, AI paper-assembly design
+├── deploy/deploy.sh          # zero-downtime deploy with backup and auto-rollback
+└── docker-compose*.yml
+```
 
-## 页面
+---
 
-| 路由 | 页面 |
-| --- | --- |
-| `/login` | 账号密码登录 |
-| `/users` | 账号管理（仅管理员） |
-| `/` | 首页：学段学科切换、搜题、入口、最新试卷、我的组卷 |
-| `/chapter` | 章节选题：教材版本与册、章节目录（含各章节题数），场景 / 题型 / 难度 / 年份 / 地区 / 年级 / 学期筛选，同步套卷 |
-| `/knowledge` | 知识点选题：知识树（含题数）、知识点查询与多选，筛选同章节选题 |
-| `/papers` | 试卷选题：同步教学 / 阶段测试 / 升学备考 / 竞赛分类，按学段、年级、学科、版本、类型浏览已入库的整卷；`/papers/:id` 查看整卷，整卷加入试题篮或以原卷组卷 |
-| `/compose` | AI 组卷（Demo，仅管理员、组长）：用文字描述学生情况与要求，AI 整理成组卷蓝图，程序从题库选题并赋分；可多轮修改，确认后加入试题篮 |
-| `/paper` | 试卷编辑：调整大题与题目顺序（拖动 / ▲▼）、逐题或按大题赋分、排版设置、下载 Word / 导出 PDF / 答题卡 |
-| `/upload` | 试卷解析：上传 → 解析进度 → 核对入库 |
+## What I'd do next
 
-## 目录
+These are honest limitations, kept as a roadmap:
 
-- `src/styles/base.css` 设计令牌（颜色、字体、圆角）与通用样式
-- `src/data/mock.ts` 演示数据（首页列表、章节目录等）
-- `src/api/` 接口层：`parse/` 试卷解析、`bank/` 校本题库与试卷库，统一连接后端；mock 文件仅保留为参考，不作为登录后的数据源
-- `src/stores/` Pinia：学段学科、试题篮（题目快照、题序、分值，仅当前页面内存保存）
-- `src/components/` 顶栏、页脚、开关、难度分布条
-- `src/views/` 页面
+- **Assembly v2:** student profiles, conversational tool calling with streaming, and swapping the greedy solver for CP-SAT as constraints grow (designed in [`docs/ai-paper-assembly.md`](docs/ai-paper-assembly.md)).
+- **Mastery modelling:** estimate per-knowledge-point mastery from grade sheets and response data before adopting IRT.
+- **Schema migrations:** move from additive startup migrations to Alembic.
+- **Bank scale:** a question↔knowledge-point join table and indexes for banks of tens of thousands of questions.
 
-## 目前是演示实现的部分
+---
 
-- `npm run dev` 与 `npm run dev:api` 等价，均连接真实后端，所有题库接口需要登录。
-- 章节选题使用厦门市小学、初中、高中现用版本的教材目录（`server/app/data/chapters/`，由 `server/scripts/crawl_textbooks.py`
-  从国家中小学智慧教育平台抓取）：每节对应若干知识点，按题目已标注的知识点归入章节。「最热」「分类（典型题、压轴题等）」「解题方法」暂无数据支持。
-- 首页展示授权范围内的真实试卷和当前试题篮；试卷编辑页的标题、考试时间为固定文案。
-- 数学公式：题目中以 `$…$` / `$$…$$` 包裹的 LaTeX 用 KaTeX 显示；编辑题目时可用可视化公式编辑器（MathLive，按需加载）插入或修改公式。
-- 「下载 Word」在浏览器中生成 `.docx`（`src/utils/docx.ts`）：公式转换为 Word 原生公式（LaTeX → KaTeX MathML → OMML，`src/utils/omml.ts`），
-  可在 Word 中直接编辑；题目配图嵌入文档；KaTeX 无法解析的公式保留原文。装订线以装订边距（gutter）表示。
-- 「导出 PDF」调用浏览器打印（已写好打印样式）。
-- AI 组卷为 Demo（方案见 `docs/ai-paper-assembly.md`）：
-  大模型只负责理解需求（每次生成调用 1 次，按知识点编号选择重点、给出各题型题量与难度），选题与赋分由程序完成（`server/app/compose.py`），
-  题目全部来自题库、总分准确；未配置大模型时按关键词匹配知识点。只做了一个学科的效果验证；学生情况不保存，刷新页面后对话清空；
-  题库中的题需已标注知识点才能侧重具体知识点。加入试题篮后试卷标题仍为试卷编辑页的固定文案。
-- 收藏、纠错、智能补题等按钮暂未接功能。
+## Documentation
+
+| Document | Content |
+|---|---|
+| [README.zh-CN.md](README.zh-CN.md) | Chinese user guide: roles, review workflow, page list |
+| [docs/deployment.md](docs/deployment.md) | Deployment, configuration, backups, auto-deploy, FAQ |
+| [docs/ai-parse-api.md](docs/ai-parse-api.md) | Parsing API contract |
+| [docs/ai-paper-assembly.md](docs/ai-paper-assembly.md) | AI paper assembly: architecture and technology trade-offs |
+| [server/README.md](server/README.md) | Backend modules, pipeline and configuration reference |
