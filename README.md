@@ -16,8 +16,7 @@ Teachers upload a PDF, Word file or phone photo of an exam paper. The system spl
 
 **English** · [简体中文（使用说明）](README.zh-CN.md)
 
-<!-- SCREENSHOT PLACEHOLDER: replace docs/screenshots/hero.png -->
-![FG Quiz Cloud: parse review screen](docs/screenshots/hero.png)
+![FG Quiz Cloud: paper upload and parsing screen](docs/screenshots/hero.png)
 
 </div>
 
@@ -51,8 +50,6 @@ The system handles each of these explicitly.
 
 ## Product tour
 
-> Screenshots are placeholders. Drop images into [`docs/screenshots/`](docs/screenshots/) using the file names below.
-
 ### 1 · Upload → AI parsing → review
 
 Drag in a PDF, a `.docx` or several phone photos. A live progress card (server-sent events) follows each stage. The review screen shows every parsed question with its type, score, answer, knowledge points, difficulty and a confidence flag. Teachers can merge, split or edit questions, and can open **the original page with the question's region highlighted** next to the parsed text.
@@ -69,33 +66,21 @@ The bank can be browsed three ways. **Chapter trees** come from the textbook edi
 |---|---|
 | ![Chapter picker](docs/screenshots/chapter-pick.png) | ![Knowledge picker](docs/screenshots/knowledge-pick.png) |
 
-| Paper library | Paper detail and review/assignment |
-|---|---|
-| ![Paper library](docs/screenshots/papers.png) | ![Paper detail](docs/screenshots/paper-detail.png) |
-
 ### 3 · AI paper assembly
 
 The teacher describes the class in plain language, for example "Grade 10, weak on functions and trigonometry, midterm review, medium difficulty". The LLM turns that into a **blueprint**: knowledge points × question types × difficulty × counts. A **deterministic solver** then picks real questions from the bank and assigns scores so the total is exact. Teachers can refine over several turns ("make it easier", "two more proof questions").
-
-![AI paper assembly](docs/screenshots/ai-compose.png)
 
 ### 4 · Paper editor → native Word export
 
 Reorder sections and questions, set scores per question or per section, and paginate to A4 or A3. The app exports a **`.docx` with native, editable Word equations**, converted in the browser from LaTeX to MathML to OMML. It can also print to PDF or produce an answer sheet.
 
-![Paper editor](docs/screenshots/paper-editor.png)
+![Paper editor](docs/screenshots/papers.png)
 
 ### 5 · Operations: accounts, AI cost, evaluation
 
-Three roles (admin, subject leader, teacher) with per-subject data scoping and live online status. There is a per-call **AI cost dashboard** and an **offline evaluation harness** for the parsing pipeline.
+Three roles (admin, subject leader, teacher) with per-subject data scoping and live online status. There is a per-call **AI cost dashboard** and an **offline evaluation harness** for the parsing pipeline. Dark mode is fully supported.
 
-| Accounts and permissions | AI cost analysis | Parse evaluation |
-|---|---|---|
-| ![Users](docs/screenshots/users.png) | ![Cost](docs/screenshots/ai-cost.png) | ![Eval](docs/screenshots/eval.png) |
-
-Dark mode is fully supported:
-
-![Dark mode](docs/screenshots/dark-mode.png)
+![AI cost analysis](docs/screenshots/ai-cost.png)
 
 ---
 
