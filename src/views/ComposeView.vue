@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useRouter } from 'vue-router'
-import { bankApi, type ComposeMessage, type ComposeResult } from '@/api/bank'
+import { bankApi, type ComposeMessage, type ComposeModels, type ComposeResult } from '@/api/bank'
 import MathText from '@/components/MathText.vue'
 import MaterialText from '@/components/MaterialText.vue'
 import LoadingState from '@/components/LoadingState.vue'
@@ -26,6 +26,8 @@ const DIFF_CLASS = { 容易: 'easy', 适中: 'mid', 较难: 'hard' } as const
 
 const messages = ref<ComposeMessage[]>([])
 const input = ref('')
+const models = ref<ComposeModels | null>(null)
+const model = ref('')
 const total = ref(100)
 const difficulty = ref(0.45)
 const busy = ref(false)
@@ -34,6 +36,11 @@ const result = ref<ComposeResult | null>(null)
 const chatBox = ref<HTMLElement>()
 let requestSeq = 0
 
+onMounted(async () => {
+  models.value = await bankApi.listComposeModels().catch(() => null)
+})
+
+const alternateModels = computed(() => models.value?.models.filter((id) => id !== models.value?.defaultModel) ?? [])
 const count = computed(() => result.value?.sections.reduce((a, s) => a + s.items.length, 0) ?? 0)
 /** 各大题及题号（全卷连续编号） */
 const sections = computed(() => {
@@ -62,6 +69,7 @@ async function send(text = input.value) {
   try {
     const r = await bankApi.compose({
       stage: stage.value, subject: subject.value, total: total.value, difficulty: difficulty.value, messages: history.slice(-20),
+      model: model.value || undefined,
     })
     if (seq !== requestSeq) return
     result.value = r
@@ -133,6 +141,12 @@ function toBasket() {
       </div>
 
       <div class="settings">
+        <label v-if="models?.defaultModel" class="model">模型
+          <select v-model="model" :disabled="busy">
+            <option value="">默认（{{ models.defaultModel }}）</option>
+            <option v-for="id in alternateModels" :key="id" :value="id">{{ id }}</option>
+          </select>
+        </label>
         <label>总分
           <input v-model.number="total" type="number" min="10" max="300" step="1" :disabled="busy">分
         </label>
@@ -172,6 +186,7 @@ function toBasket() {
                 （目标 {{ result.difficulty.toFixed(2) }}）
               </span>
               <span v-if="!result.ai" class="tag">关键词匹配</span>
+              <span v-else-if="result.model" class="tag">{{ result.model }}</span>
             </div>
           </div>
           <button class="btn btn-primary" :disabled="busy || !count" @click="toBasket">加入试题篮并编辑</button>
@@ -233,6 +248,8 @@ function toBasket() {
 .msg.pending { color: var(--c-text-4); }
 .settings { display: flex; flex-wrap: wrap; gap: 8px 16px; font-size: 13px; color: var(--c-text-3); border-top: 1px solid var(--c-divider); padding-top: 12px; }
 .settings label { display: flex; align-items: center; gap: 6px; }
+.settings .model { flex: 1 1 100%; }
+.settings select { max-width: 100%; min-height: 28px; border: 1px solid var(--c-border); border-radius: 4px; padding: 0 6px; background: var(--c-surface); color: var(--c-text-2); font: inherit; }
 .settings input[type=number] { width: 60px; height: 28px; border: 1px solid var(--c-border); border-radius: 4px; padding: 0 6px; text-align: center; font-family: inherit; }
 .settings .diff { flex: 1; min-width: 200px; }
 .settings .diff input { flex: 1; accent-color: var(--c-primary); }

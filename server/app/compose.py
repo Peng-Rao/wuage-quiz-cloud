@@ -267,6 +267,13 @@ def _conversation(messages: list[ComposeMessage]) -> str:
 
 
 async def compose(s: Session, school_id: str, req: ComposeRequest) -> ComposeResult:
+    settings = get_settings()
+    if req.model is not None:
+        if req.model not in settings.compose_model_ids:
+            raise ValueError("所选模型不可用于 AI 组卷，请重新选择")
+        if req.model != settings.llm_model:
+            settings = settings.model_copy(update={"llm_model": req.model, "llm_extra_body": settings.compose_models[req.model]})
+
     # 候选只需要题干、题型、难度和知识点；大字段只为最终选中的题读取。
     questions = list(s.execute(select(
         BankQuestion.id, BankQuestion.stem, BankQuestion.type, BankQuestion.coef, BankQuestion.knowledge_points,
@@ -282,7 +289,6 @@ async def compose(s: Session, school_id: str, req: ComposeRequest) -> ComposeRes
 
     bp: Blueprint | None = None
     note = ""
-    settings = get_settings()
     if settings.llm_enabled:
         system = SYSTEM.format(
             stage=req.stage, subject=req.subject, max_questions=MAX_QUESTIONS,
@@ -334,5 +340,5 @@ async def compose(s: Session, school_id: str, req: ComposeRequest) -> ComposeRes
         sections=[ComposeSection(type=t, score=sum(scores[q.id] for q in qs),
                                  items=[ComposeItem(question=bank_out(selected[q.id]), score=scores[q.id]) for q in qs])
                   for t, qs in sel.sections],
-        focus=focus, gaps=gaps, ai=bp.ai,
+        focus=focus, gaps=gaps, ai=bp.ai, model=settings.llm_model if bp.ai else None,
     )

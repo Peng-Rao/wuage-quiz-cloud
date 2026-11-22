@@ -71,6 +71,8 @@ class Settings(BaseSettings):
     llm_timeout: float = 300.0
     # 附加到请求体的厂商参数（JSON），如通义千问关闭思考：{"enable_thinking": false}
     llm_extra_body: dict[str, Any] = {}
+    # AI 组卷可选的其他模型：模型 ID → 请求参数，沿用大模型的地址和 Key。
+    compose_models: dict[str, dict[str, Any]] = {}
     # 看图模型（可选）：题目含配图时改用该模型并附上图片，如通义千问 qwen3-vl-plus；留空则大模型看不到图片。
     # 地址与 Key 留空时沿用 LLM_BASE_URL / LLM_API_KEY；附加参数留空时沿用 LLM_EXTRA_BODY
     vision_model: str = ""
@@ -153,6 +155,12 @@ class Settings(BaseSettings):
     @property
     def llm_enabled(self) -> bool:
         return bool(self.llm_base_url and self.llm_api_key and self.llm_model)
+
+    @property
+    def compose_model_ids(self) -> list[str]:
+        if not self.llm_enabled:
+            return []
+        return list(dict.fromkeys([self.llm_model, *self.compose_models]))
 
     @property
     def vision_enabled(self) -> bool:

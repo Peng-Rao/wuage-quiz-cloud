@@ -270,6 +270,9 @@ export const mockBankApi: BankApi = {
   async answerTask() {
     return null
   },
+  async listComposeModels() {
+    return { defaultModel: null, models: [] }
+  },
   async compose() {
     await sleep(300)
     throw new Error('AI 组卷需要连接后端：请用 npm run dev:api 启动（演示数据题量太少，无法组卷）')
