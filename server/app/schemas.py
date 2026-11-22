@@ -671,11 +671,17 @@ class ComposeMessage(Model):
 class ComposeRequest(Model):
     stage: str
     subject: str
+    model: str | None = Field(default=None, min_length=1, max_length=64)
     # 老师当前的设置；对话中要求改变时以大模型整理的蓝图为准
     total: int = Field(default=100, ge=10, le=300)
     difficulty: float = Field(default=0.45, ge=0.05, le=0.95)
     # 完整对话，最后一条为老师本次的要求
     messages: list[ComposeMessage] = Field(min_length=1, max_length=20)
+
+
+class ComposeModels(Model):
+    default_model: str | None
+    models: list[str]
 
 
 class ComposeItem(Model):
@@ -713,3 +719,4 @@ class ComposeResult(Model):
     gaps: list[str]
     # 需求是否由大模型理解；未配置或调用失败时为 false（按关键词匹配知识点）
     ai: bool
+    model: str | None = None

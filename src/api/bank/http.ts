@@ -1,7 +1,7 @@
 import { query, request } from '../request'
 import type { AnswerTask } from '../parse/types'
 import type {
-  BankApi, BankQuestion, ComposeResult, Page, PaperDetail, PaperPage, QuestionFacets, TextbookVersion,
+  BankApi, BankQuestion, ComposeModels, ComposeResult, Page, PaperDetail, PaperPage, QuestionFacets, TextbookVersion,
 } from './types'
 
 export const httpBankApi: BankApi = {
@@ -25,5 +25,6 @@ export const httpBankApi: BankApi = {
   generateAnswers: (id, questionIds) =>
     request<AnswerTask>('POST', `/api/papers/${encodeURIComponent(id)}/generate-answers`, { questionIds }),
   answerTask: (id) => request<AnswerTask | null>('GET', `/api/papers/${encodeURIComponent(id)}/answer-task`),
+  listComposeModels: () => request<ComposeModels>('GET', '/api/compose/models'),
   compose: (req) => request<ComposeResult>('POST', '/api/compose', req),
 }

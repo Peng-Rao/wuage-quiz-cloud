@@ -70,6 +70,7 @@ def llm_reply(monkeypatch):
     def install(reply):
         def handler(request: httpx.Request) -> httpx.Response:
             body = json.loads(request.content)
+            seen["model"], seen["temperature"] = body["model"], body["temperature"]
             seen["system"], seen["user"] = body["messages"][0]["content"], body["messages"][1]["content"]
             content = json.dumps(reply(seen["system"]), ensure_ascii=False)
             return httpx.Response(200, json={"choices": [{"message": {"content": content}}]})
@@ -178,7 +179,32 @@ def test_compose_llm_failure_falls_back(client, monkeypatch):
     monkeypatch.setattr(llm, "transport", httpx.MockTransport(lambda _: httpx.Response(500)))
     res = _post(client, "光合作用").json()
     assert res["ai"] is False and res["reply"].startswith("大模型暂时不可用")
+    assert res["model"] is None
     assert [f["name"] for f in res["focus"]] == ["光合作用"]
+
+
+def test_compose_model_selection(client, llm_reply, monkeypatch):
+    seen = llm_reply(lambda _: {"sections": [{"type": "单选题", "count": 2}]})
+    settings = get_settings()
+    monkeypatch.setattr(settings, "llm_extra_body", {"temperature": 0.2})
+    monkeypatch.setattr(settings, "compose_models", {"kimi-test": {"temperature": 1.0}, "qwen-test": {}})
+    assert client.get("/api/compose/models").json() == {
+        "defaultModel": "qwen-test", "models": ["qwen-test", "kimi-test"],
+    }
+
+    selected = _post(client, model="kimi-test")
+    assert selected.status_code == 200 and selected.json()["model"] == "kimi-test"
+    assert (seen["model"], seen["temperature"]) == ("kimi-test", 1.0)
+
+    assert _post(client, model="not-configured").status_code == 400
+    assert seen["model"] == "kimi-test"
+    for params in ({}, {"model": "qwen-test"}):
+        assert _post(client, **params).json()["model"] == "qwen-test"
+        assert (seen["model"], seen["temperature"]) == ("qwen-test", 0.2)
+
+
+def test_compose_models_without_llm(client):
+    assert client.get("/api/compose/models").json() == {"defaultModel": None, "models": []}
 
 
 def test_compose_without_knowledge_points_warns(client):

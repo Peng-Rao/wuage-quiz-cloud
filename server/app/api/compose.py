@@ -3,12 +3,20 @@ from sqlalchemy.orm import Session
 
 from ..auth import require_subject
 from ..compose import compose
+from ..config import get_settings
 from ..db import get_session
-from ..schemas import ComposeRequest, ComposeResult
+from ..schemas import ComposeModels, ComposeRequest, ComposeResult
 from ..services import current_school
 from ..usage import attribute
 
 router = APIRouter()
+
+
+@router.get("/api/compose/models", response_model=ComposeModels)
+def list_compose_models() -> ComposeModels:
+    settings = get_settings()
+    return ComposeModels(default_model=settings.llm_model if settings.llm_enabled else None,
+                         models=settings.compose_model_ids)
 
 
 @router.post("/api/compose", response_model=ComposeResult)

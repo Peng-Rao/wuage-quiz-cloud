@@ -171,11 +171,17 @@ export interface ComposeMessage {
 export interface ComposeRequest {
   stage: string
   subject: string
+  model?: string
   /** 老师当前的设置；对话中要求改变时以返回结果为准 */
   total: number
   difficulty: number
   /** 完整对话，最后一条为本次的要求 */
   messages: ComposeMessage[]
+}
+
+export interface ComposeModels {
+  defaultModel: string | null
+  models: string[]
 }
 
 export interface ComposeSection {
@@ -200,6 +206,7 @@ export interface ComposeResult {
   gaps: string[]
   /** 需求是否由大模型理解；否则为按关键词匹配 */
   ai: boolean
+  model: string | null
 }
 
 export interface BankApi {
@@ -224,6 +231,7 @@ export interface BankApi {
   generateAnswers(paperId: string, questionIds?: string[]): Promise<AnswerTask>
   /** 本卷最近一次 AI 生成答案任务的进度，没有时为 null */
   answerTask(paperId: string): Promise<AnswerTask | null>
+  listComposeModels(): Promise<ComposeModels>
   /** AI 组卷：按学生情况与要求从题库选题并赋分；多轮修改时传入完整对话，整份试卷重新生成 */
   compose(req: ComposeRequest): Promise<ComposeResult>
 }
