@@ -1,0 +1,144 @@
+/* 设计变量（design tokens）唯一的定义处：颜色、圆角、阴影、动效，以及暗色主题的覆盖值。
+   组件 scoped 样式直接用 var(--c-*)；Tailwind 工具类经 tailwind.css 的 @theme inline 映射到同一批变量。
+   主题由 utils/theme.ts 写到 <html data-theme>。 */
+:root {
+  color-scheme: light;
+
+  /* 品牌 */
+  --c-primary: #B8561F;       /* 主色 · 福格橙 */
+  --c-primary-dark: #8F4115;
+  --c-logo: #C96A30;          /* 标识橙 */
+  --c-primary-soft: #FBEEE4;  /* 浅橙底 */
+  --c-primary-tint: #FDF6F0;  /* 更浅的橙底 */
+  --c-primary-line: #E9B894;
+  --c-primary-line-soft: #EEDACD;
+  --c-highlight: #F4B98C;
+  --c-hero: #B8561F;          /* 首页横幅 */
+  --c-sand: #F5EDE2;          /* 登录页欢迎区 */
+
+  /* 中性 */
+  --c-ink: #1B2430;           /* 墨色 */
+  --c-text-2: #3A424C;
+  --c-text-3: #6A6F76;        /* 辅助文字 */
+  --c-text-4: #8A8F95;
+  --c-paper: #F6F5F1;         /* 纸色背景 */
+  --c-paper-2: #F3F1EB;
+  --c-surface: #FFFFFF;
+  --c-surface-2: #FCFBF8;
+  --c-border: #E4E1D8;
+  --c-border-strong: #C9C5BA;
+  --c-divider: #EFECE4;
+  --c-toggle-off: #D8D4C8;
+  --c-inverse: #1B2430;       /* 深色块（配白字） */
+  --shadow-rgb: 27 36 48;
+  --c-shimmer: rgba(255, 255, 255, .75);
+
+  /* 难度 */
+  --c-easy: #6E9E6B;
+  --c-mid: #D9922E;
+  --c-hard: #B23A2A;
+  --c-mid-text: #A3620F;
+
+  /* 状态 */
+  --c-danger: #A0301F;
+  --c-danger-soft: #FBEAE6;
+  --c-danger-line: #EFC2B8;
+  --c-success: #3F7340;
+  --c-success-soft: #E9F1E7;
+  --c-success-line: #C8DCC4;
+  --c-warn: #6B4E0F;
+  --c-warn-soft: #F8EFD9;
+  --c-warn-hover: #F2E2BD;
+  --c-warn-line: #F0D9B5;
+  --c-accent: #B5661B;        /* AI 生成、部分完成等提示 */
+  --c-info: #50749B;
+  --c-info-soft: #F0F5FA;
+  --c-info-line: #D9E3EF;
+
+  --font-sans: "Noto Sans SC", system-ui, sans-serif;
+  --font-serif: "Noto Serif SC", "Songti SC", serif;
+  /* 英语题：西文用 Times，夹带的中文回落到宋体 */
+  --font-en: "Times New Roman", Times, "Noto Serif", "Noto Serif SC", "Songti SC", serif;
+  /* 语文诗词 */
+  --font-kai: "Kaiti SC", STKaiti, KaiTi, "楷体", "Noto Serif SC", serif;
+  /* 英语音标 */
+  --font-ipa: "Lucida Sans Unicode", "Arial Unicode MS", "Segoe UI", "Noto Sans", sans-serif;
+
+  --r-sm: 6px;
+  --r-md: 8px;
+  --r-lg: 12px;
+  --r-full: 999px;
+  --container: 1320px;
+
+  /* 阴影：颜色取 --shadow-rgb，暗色下自动变深 */
+  --shadow-xs: 0 1px 2px rgb(var(--shadow-rgb) / .05);
+  --shadow-sm: 0 1px 2px rgb(var(--shadow-rgb) / .04), 0 2px 6px -1px rgb(var(--shadow-rgb) / .07);
+  --shadow-md: 0 2px 4px rgb(var(--shadow-rgb) / .04), 0 8px 20px -6px rgb(var(--shadow-rgb) / .14);
+  --shadow-lg: 0 12px 32px rgb(var(--shadow-rgb) / .12);
+  --shadow-xl: 0 20px 48px rgb(var(--shadow-rgb) / .22);
+  /* 键盘焦点环 */
+  --ring: 0 0 0 3px color-mix(in srgb, var(--c-primary) 30%, transparent);
+
+  /* 动效：时长与缓动统一取这里；系统开启“减少动态效果”时 base.css 会把时长压到近 0 */
+  --ease-out: cubic-bezier(.22, 1, .36, 1);
+  --ease-in-out: cubic-bezier(.65, 0, .35, 1);
+  --dur-fast: 120ms;
+  --dur: 200ms;
+  --dur-slow: 320ms;
+}
+
+
+/* 暗色主题：只作用于屏幕，打印始终用浅色 */
+@media screen {
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+
+    --c-primary: #D2733A;
+    --c-primary-dark: #E58C55;
+    --c-logo: #D9793C;
+    --c-primary-soft: #3A2619;
+    --c-primary-tint: #2A211B;
+    --c-primary-line: #7A4A2C;
+    --c-primary-line-soft: #4A3326;
+    --c-hero: #7E3C16;
+    --c-sand: #1F1B17;
+
+    --c-ink: #E6E3DC;
+    --c-text-2: #C9C6BF;
+    --c-text-3: #9EA2A8;
+    --c-text-4: #7F848A;
+    --c-paper: #13171C;
+    --c-paper-2: #0F1216;
+    --c-surface: #1B2027;
+    --c-surface-2: #1F252D;
+    --c-border: #313841;
+    --c-border-strong: #4A525C;
+    --c-divider: #272D35;
+    --c-toggle-off: #434B55;
+    --c-inverse: #303844;
+    --shadow-rgb: 0 0 0;
+    --c-shimmer: rgba(255, 255, 255, .06);
+
+    --c-easy: #7FB27B;
+    --c-mid: #E0A048;
+    --c-hard: #D2584A;
+    --c-mid-text: #E3A85A;
+
+    --c-danger: #F08C7C;
+    --c-danger-soft: #3A1F1B;
+    --c-danger-line: #6A3229;
+    --c-success: #8CC489;
+    --c-success-soft: #1C2B1E;
+    --c-success-line: #36553A;
+    --c-warn: #E3C47A;
+    --c-warn-soft: #322A18;
+    --c-warn-hover: #42371F;
+    --c-warn-line: #574626;
+    --c-accent: #E39D5E;
+    --c-info: #8DB0D6;
+    --c-info-soft: #1B2532;
+    --c-info-line: #2F3F52;
+    /* 暗底上细阴影不显，用略重的一档 */
+    --shadow-xs: 0 1px 2px rgb(0 0 0 / .3);
+  }
+}

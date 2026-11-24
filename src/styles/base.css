@@ -1,129 +1,13 @@
-/* 颜色一律走变量；暗色值在下方 [data-theme="dark"] 中覆盖（主题由 utils/theme.ts 写到 <html>） */
-:root {
-  color-scheme: light;
-
-  /* 品牌 */
-  --c-primary: #B8561F;       /* 主色 · 福格橙 */
-  --c-primary-dark: #8F4115;
-  --c-logo: #C96A30;          /* 标识橙 */
-  --c-primary-soft: #FBEEE4;  /* 浅橙底 */
-  --c-primary-tint: #FDF6F0;  /* 更浅的橙底 */
-  --c-primary-line: #E9B894;
-  --c-primary-line-soft: #EEDACD;
-  --c-highlight: #F4B98C;
-  --c-hero: #B8561F;          /* 首页横幅 */
-  --c-sand: #F5EDE2;          /* 登录页欢迎区 */
-
-  /* 中性 */
-  --c-ink: #1B2430;           /* 墨色 */
-  --c-text-2: #3A424C;
-  --c-text-3: #6A6F76;        /* 辅助文字 */
-  --c-text-4: #8A8F95;
-  --c-paper: #F6F5F1;         /* 纸色背景 */
-  --c-paper-2: #F3F1EB;
-  --c-surface: #FFFFFF;
-  --c-surface-2: #FCFBF8;
-  --c-border: #E4E1D8;
-  --c-border-strong: #C9C5BA;
-  --c-divider: #EFECE4;
-  --c-toggle-off: #D8D4C8;
-  --c-inverse: #1B2430;       /* 深色块（配白字） */
-  --shadow-rgb: 27 36 48;
-  --c-shimmer: rgba(255, 255, 255, .75);
-
-  /* 难度 */
-  --c-easy: #6E9E6B;
-  --c-mid: #D9922E;
-  --c-hard: #B23A2A;
-  --c-mid-text: #A3620F;
-
-  /* 状态 */
-  --c-danger: #A0301F;
-  --c-danger-soft: #FBEAE6;
-  --c-danger-line: #EFC2B8;
-  --c-success: #3F7340;
-  --c-success-soft: #E9F1E7;
-  --c-success-line: #C8DCC4;
-  --c-warn: #6B4E0F;
-  --c-warn-soft: #F8EFD9;
-  --c-warn-hover: #F2E2BD;
-  --c-warn-line: #F0D9B5;
-  --c-accent: #B5661B;        /* AI 生成、部分完成等提示 */
-  --c-info: #50749B;
-  --c-info-soft: #F0F5FA;
-  --c-info-line: #D9E3EF;
-
-  --font-sans: "Noto Sans SC", system-ui, sans-serif;
-  --font-serif: "Noto Serif SC", "Songti SC", serif;
-  /* 英语题：西文用 Times，夹带的中文回落到宋体 */
-  --font-en: "Times New Roman", Times, "Noto Serif", "Noto Serif SC", "Songti SC", serif;
-  /* 语文诗词 */
-  --font-kai: "Kaiti SC", STKaiti, KaiTi, "楷体", "Noto Serif SC", serif;
-  /* 英语音标 */
-  --font-ipa: "Lucida Sans Unicode", "Arial Unicode MS", "Segoe UI", "Noto Sans", sans-serif;
-
-  --r-sm: 6px;
-  --r-md: 8px;
-  --r-lg: 12px;
-  --container: 1320px;
-}
-
-/* 暗色主题：只作用于屏幕，打印始终用浅色 */
+/* 基础样式；设计变量见 tokens.css */
 @media screen {
-  :root[data-theme="dark"] {
-    color-scheme: dark;
-
-    --c-primary: #D2733A;
-    --c-primary-dark: #E58C55;
-    --c-logo: #D9793C;
-    --c-primary-soft: #3A2619;
-    --c-primary-tint: #2A211B;
-    --c-primary-line: #7A4A2C;
-    --c-primary-line-soft: #4A3326;
-    --c-hero: #7E3C16;
-    --c-sand: #1F1B17;
-
-    --c-ink: #E6E3DC;
-    --c-text-2: #C9C6BF;
-    --c-text-3: #9EA2A8;
-    --c-text-4: #7F848A;
-    --c-paper: #13171C;
-    --c-paper-2: #0F1216;
-    --c-surface: #1B2027;
-    --c-surface-2: #1F252D;
-    --c-border: #313841;
-    --c-border-strong: #4A525C;
-    --c-divider: #272D35;
-    --c-toggle-off: #434B55;
-    --c-inverse: #303844;
-    --shadow-rgb: 0 0 0;
-    --c-shimmer: rgba(255, 255, 255, .06);
-
-    --c-easy: #7FB27B;
-    --c-mid: #E0A048;
-    --c-hard: #D2584A;
-    --c-mid-text: #E3A85A;
-
-    --c-danger: #F08C7C;
-    --c-danger-soft: #3A1F1B;
-    --c-danger-line: #6A3229;
-    --c-success: #8CC489;
-    --c-success-soft: #1C2B1E;
-    --c-success-line: #36553A;
-    --c-warn: #E3C47A;
-    --c-warn-soft: #322A18;
-    --c-warn-hover: #42371F;
-    --c-warn-line: #574626;
-    --c-accent: #E39D5E;
-    --c-info: #8DB0D6;
-    --c-info-soft: #1B2532;
-    --c-info-line: #2F3F52;
-  }
   /* 题图多为透明底黑线稿，暗色下垫白底 */
   :root[data-theme="dark"] :is(.images, .figs) img { background: #fff; border-radius: 4px; }
 }
 
 * { box-sizing: border-box; }
+
+/* 始终预留滚动条位置：切换页面、列表加载前后内容高度变化时，页面不再左右跳动 */
+html { scrollbar-gutter: stable; }
 
 body {
   margin: 0;
@@ -131,9 +15,26 @@ body {
   color: var(--c-ink);
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
 }
 
-a { color: var(--c-primary); text-decoration: none; }
+::selection { background: color-mix(in srgb, var(--c-primary) 22%, transparent); }
+
+/* 键盘操作时的焦点环；鼠标点击不显示。组件里另写了焦点样式的以组件为准 */
+:focus-visible { outline: 2px solid var(--c-primary); outline-offset: 2px; }
+/* 输入框：聚焦时边框变主色并加一圈柔和光晕（组件里写了边框颜色的，光晕仍会出现） */
+:where(input:not([type=checkbox], [type=radio], [type=range], [type=file]), select, textarea) {
+  transition: border-color var(--dur) var(--ease-out), box-shadow var(--dur) var(--ease-out), background-color var(--dur) var(--ease-out);
+}
+:where(input:not([type=checkbox], [type=radio], [type=range], [type=file]), select, textarea):focus-visible {
+  outline: none; border-color: var(--c-primary); box-shadow: var(--ring);
+}
+
+/* 图片：异步解码，缩放时用高质量插值；页面图、题图的懒加载与淡入见 components/LazyImg.vue */
+img { image-rendering: auto; }
+
+a { color: var(--c-primary); text-decoration: none; transition: color var(--dur-fast) ease; }
 a:hover { color: var(--c-primary-dark); text-decoration: underline; }
 button, input { font-family: inherit; }
 button { cursor: pointer; }
@@ -144,6 +45,7 @@ button { cursor: pointer; }
   background: var(--c-surface);
   border: 1px solid var(--c-border);
   border-radius: var(--r-lg);
+  box-shadow: var(--shadow-xs);
 }
 .card-title { margin: 0; font-size: 15px; font-weight: 600; }
 .serif { font-family: var(--font-serif); }
@@ -184,6 +86,17 @@ button { cursor: pointer; }
 .btn-outline { border-color: var(--c-primary); color: var(--c-primary); }
 .btn-link { border: none; background: transparent; padding: 0; font-size: 13px; color: var(--c-text-3); }
 .btn-link.is-primary { color: var(--c-primary); }
+/* 按钮的过渡与按下反馈；:where 不增加优先级，组件里写的悬停样式照常生效 */
+:where(.btn, .chip, .tag) {
+  transition: background-color var(--dur) var(--ease-out), border-color var(--dur) var(--ease-out),
+    color var(--dur) var(--ease-out), box-shadow var(--dur) var(--ease-out), transform var(--dur-fast) var(--ease-out);
+}
+:where(.btn:not(.btn-primary, .btn-outline, .btn-link, .btn-danger)):hover:not(:disabled) { border-color: var(--c-border-strong); color: var(--c-ink); }
+:where(.btn-outline):hover:not(:disabled) { background: var(--c-primary-tint); }
+:where(.btn-primary) { box-shadow: 0 1px 2px rgb(var(--shadow-rgb) / .12), inset 0 1px 0 rgb(255 255 255 / .12); }
+:where(.btn-primary):hover:not(:disabled) { box-shadow: 0 4px 12px -2px color-mix(in srgb, var(--c-primary) 45%, transparent), inset 0 1px 0 rgb(255 255 255 / .12); }
+:where(.btn:not(.btn-link), .chip):active:not(:disabled) { transform: translateY(1px) scale(.985); }
+:where(.chip):hover:not(.is-solid) { background: var(--c-primary-tint); }
 
 /* 难度条 */
 .dist { display: flex; overflow: hidden; background: var(--c-divider); }
@@ -215,3 +128,38 @@ button { cursor: pointer; }
 }
 /* 英语题的题号、选项标号用西文字体 */
 .lay-en { font-family: var(--font-en); }
+
+/* ---- 动效 ----
+   进场动画只用 animation-fill-mode: backwards：结束后不留 transform，不影响元素里的 fixed / sticky 与层叠 */
+@keyframes fade-in { from { opacity: 0; } }
+@keyframes rise-in { from { opacity: 0; transform: translateY(8px); } }
+@keyframes pop-in { from { opacity: 0; transform: translateY(-4px) scale(.98); } }
+@keyframes shimmer { to { transform: translateX(100%); } }
+
+/* 列表逐项进场：v-for 里设 :style="{ '--i': index }"，前 12 项依次错开，之后的同时出现 */
+.anim-rise { animation: rise-in var(--dur-slow) var(--ease-out) backwards; animation-delay: calc(min(var(--i, 0), 12) * 28ms); }
+.anim-fade { animation: fade-in var(--dur-slow) var(--ease-out) backwards; }
+
+/* 可点击卡片：悬停微微浮起 */
+.card-hover { transition: border-color var(--dur) var(--ease-out), box-shadow var(--dur) var(--ease-out), transform var(--dur) var(--ease-out); }
+.card-hover:hover { border-color: var(--c-primary-line); box-shadow: var(--shadow-md); }
+
+/* 骨架块：未知尺寸的内容占位（图片、卡片）；扫光颜色随主题 */
+.skeleton-block { position: relative; overflow: hidden; background: var(--c-divider); }
+.skeleton-block::after {
+  content: ''; position: absolute; inset: 0; transform: translateX(-100%);
+  background: linear-gradient(100deg, transparent 20%, var(--c-shimmer) 50%, transparent 80%);
+  animation: shimmer 1.6s ease-in-out infinite;
+}
+
+/* 系统开启“减少动态效果”：去掉位移与渐变动画 */
+@media (prefers-reduced-motion: reduce) {
+  :root { --dur-fast: 1ms; --dur: 1ms; --dur-slow: 1ms; }
+  *, *::before, *::after { animation-duration: 1ms !important; animation-iteration-count: 1 !important; transition-duration: 1ms !important; }
+  .anim-rise, .anim-fade { animation: none; }
+  .skeleton-block::after { display: none; }
+  ::view-transition-group(*), ::view-transition-old(*), ::view-transition-new(*) { animation: none !important; }
+}
+@media print {
+  .anim-rise, .anim-fade { animation: none; }
+}

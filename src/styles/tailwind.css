@@ -1,0 +1,72 @@
+/* Tailwind CSS v4，渐进接入。
+   - 只引入 theme 与 utilities，不引入 preflight：基础样式仍由 base.css 负责，现有页面外观不变。
+   - Tailwind 的输出都在 @layer 里，未分层的 base.css 与各组件 scoped 样式始终优先，
+     所以给旧模板加工具类不会意外覆盖原有样式；新写的模板可以直接用工具类。
+   - 颜色、圆角、阴影、缓动全部映射到 tokens.css 的同一批变量（@theme inline），并清空 Tailwind 自带色板，
+     只能用品牌色：bg-surface、text-ink、border-border、text-primary、rounded-lg、shadow-md、ease-out……
+   - 暗色：dark: 变体跟随 <html data-theme="dark">（utils/theme.ts），与变量的暗色覆盖一致。 */
+@layer theme, base, components, utilities;
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/utilities.css" layer(utilities);
+
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+@theme inline {
+  --color-*: initial;
+  --color-white: #fff;
+  --color-black: #000;
+  --color-transparent: transparent;
+  --color-current: currentColor;
+
+  --color-primary: var(--c-primary);
+  --color-primary-dark: var(--c-primary-dark);
+  --color-primary-soft: var(--c-primary-soft);
+  --color-primary-tint: var(--c-primary-tint);
+  --color-primary-line: var(--c-primary-line);
+  --color-logo: var(--c-logo);
+  --color-sand: var(--c-sand);
+
+  --color-ink: var(--c-ink);
+  --color-text-2: var(--c-text-2);
+  --color-text-3: var(--c-text-3);
+  --color-text-4: var(--c-text-4);
+  --color-paper: var(--c-paper);
+  --color-paper-2: var(--c-paper-2);
+  --color-surface: var(--c-surface);
+  --color-surface-2: var(--c-surface-2);
+  --color-border: var(--c-border);
+  --color-border-strong: var(--c-border-strong);
+  --color-divider: var(--c-divider);
+  --color-inverse: var(--c-inverse);
+
+  --color-easy: var(--c-easy);
+  --color-mid: var(--c-mid);
+  --color-hard: var(--c-hard);
+
+  --color-danger: var(--c-danger);
+  --color-danger-soft: var(--c-danger-soft);
+  --color-success: var(--c-success);
+  --color-success-soft: var(--c-success-soft);
+  --color-warn: var(--c-warn);
+  --color-warn-soft: var(--c-warn-soft);
+  --color-accent: var(--c-accent);
+  --color-info: var(--c-info);
+  --color-info-soft: var(--c-info-soft);
+
+  --font-*: initial;
+  --font-sans: var(--font-sans);
+  --font-serif: var(--font-serif);
+
+  --radius-sm: var(--r-sm);
+  --radius-md: var(--r-md);
+  --radius-lg: var(--r-lg);
+
+  /* 字体、阴影、缓动与 tokens.css 同名：tokens.css 未分层，优先于此处，这里只为让 shadow-*、ease-* 工具类可用 */
+  --shadow-xs: var(--shadow-xs);
+  --shadow-sm: var(--shadow-sm);
+  --shadow-md: var(--shadow-md);
+  --shadow-lg: var(--shadow-lg);
+  --shadow-xl: var(--shadow-xl);
+  --ease-out: var(--ease-out);
+  --ease-in-out: var(--ease-in-out);
+}
