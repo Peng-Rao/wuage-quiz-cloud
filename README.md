@@ -224,6 +224,8 @@ cd server && uv sync && uv run uvicorn app.main:app --port 8000 --reload
 npm install && npm run dev                # http://localhost:5173, proxies /api → :8000
 ```
 
+On an Apple silicon Mac, you can also run the full stack with [Apple Container](docs/deployment.md#apple-container-部署).
+
 Full guide (production, HTTPS, object storage, backups, auto-deploy): **[docs/deployment.md](docs/deployment.md)**
 
 ---

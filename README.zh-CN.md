@@ -224,6 +224,8 @@ cd server && uv sync && uv run uvicorn app.main:app --port 8000 --reload
 npm install && npm run dev                # http://localhost:5173，/api 代理到 :8000
 ```
 
+Apple 芯片 Mac 也可以用 [Apple Container](docs/deployment.md#apple-container-部署) 启动完整服务。
+
 完整指南（生产环境、HTTPS、对象存储、备份、自动部署）：**[docs/deployment.md](docs/deployment.md)**
 
 ---

@@ -5,7 +5,7 @@
 | 组件 | 说明 |
 | --- | --- |
 | 前端 | Vue 3 + Vite，构建后是纯静态文件 |
-| 后端 `server/` | FastAPI，提供 `/api`；Docker 部署时同时提供前端页面 |
+| 后端 `server/` | FastAPI，提供 `/api`；容器部署时同时提供前端页面 |
 | 依赖服务 | PostgreSQL 17（必需）、Redis 8（可选，任务队列） |
 
 后台任务（解析试卷、生成答案等）有两种运行方式：
@@ -13,11 +13,12 @@
 - **未配置 `REDIS_URL`**：在网页服务进程内执行，只需启动一个进程，适合本地开发。
 - **配置了 `REDIS_URL`**：网页服务只负责入队，由独立的 Worker 进程（`python -m app.worker`）执行，可启动多个。Docker Compose 部署默认使用这种方式。
 
-三种部署方式：
+## 部署方式
 
 - [本地开发部署](#本地开发部署)：前后端直接在本机运行，代码修改后自动重载。
 - [Docker 开发模式](#docker-开发模式)：全部在容器中运行，代码修改后同样自动重载，本机只需 Docker。
 - [Docker 部署](#docker-部署)：一条命令启动全部服务，用于测试环境和正式环境。
+- [Apple Container 部署](#apple-container-部署)：在 Apple 芯片的 Mac 上启动网页、Worker、PostgreSQL 和 Redis。
 
 ---
 
@@ -463,6 +464,35 @@ docker compose up -d --no-build
 ```
 
 前端构建阶段固定在构建机的原生架构上运行（产物与架构无关），交叉构建只有 Python 依赖安装一步经过模拟器，通常在一分钟内完成。
+
+---
+
+## Apple Container 部署
+
+适用于 macOS 26 或更新版本的 Apple 芯片 Mac。本项目使用 Apple Container 1.6.1 验证。安装 Apple Container 后，在仓库根目录执行下方命令。[Apple Container 发布页](https://github.com/apple/container/releases)
+
+```bash
+container system start
+bash deploy/apple-container.sh up
+curl http://127.0.0.1:8000/api/health
+container exec -it fg-quiz-apple-app python -m app.create_admin admin
+```
+
+打开 http://127.0.0.1:8000/login 并用刚创建的管理员登录。脚本用项目的两个 Dockerfile 构建 ARM64 镜像，先启动 PostgreSQL 17（含 pgvector）和 Redis 8，再依次启动网页服务和 Worker。默认只发布 Mac 本机的网页端口。
+
+- 应用配置仍使用可选的 `server/.env`，模板为 `server/.env.example`。Apple Container 按字面读取 `KEY=value`，字符串值无需外层引号，JSON 内的引号照常保留。注释放在单独的行。
+- 默认连接脚本启动的数据库和 Redis。可在运行脚本时通过终端环境变量设置 `POSTGRES_PASSWORD`、`DATABASE_URL`、`REDIS_URL` 或构建参数 `EMBEDDINGS_EXTRA`。数据库默认密码为 `fg-quiz-local`，`POSTGRES_PASSWORD` 仅用于首次初始化数据库。脚本传给容器的连接地址优先于 `server/.env` 中的同名项。
+- 8000 端口已占用时，使用 `APPLE_CONTAINER_PORT=8080 bash deploy/apple-container.sh up`。并行部署多套时，为每套设置不同的 `APPLE_CONTAINER_PROJECT` 和端口，并在 `up`、`down` 时使用相同的项目名。
+
+| 操作 | 命令 |
+| --- | --- |
+| 查看状态 | `container list --all` |
+| 查看日志 | `container logs fg-quiz-apple-app` 或 `container logs fg-quiz-apple-worker` |
+| 更新代码后重新构建并启动 | `bash deploy/apple-container.sh up` |
+| 修改配置后用已有镜像重建容器 | `bash deploy/apple-container.sh up --no-build` |
+| 停止服务并移除容器（保留数据） | `bash deploy/apple-container.sh down` |
+
+PostgreSQL 和 Redis 数据分别保存在 `fg-quiz-apple-pg`、`fg-quiz-apple-redis` 命名卷中。使用本地存储时，上传文件与页面图保存在 `~/Library/Application Support/fg-quiz-apple/data`，由网页服务和 Worker 共同挂载。`up` 会重建四个容器并复用这些数据。如果手动重启了 PostgreSQL 或 Redis，再运行一次 `up --no-build`，让网页服务和 Worker 使用当前的容器 IP。启动超时后可按脚本提示查看对应容器日志，再次运行 `up` 即可重试。
 
 ---
 
