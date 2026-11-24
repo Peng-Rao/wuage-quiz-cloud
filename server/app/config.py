@@ -148,6 +148,12 @@ class Settings(BaseSettings):
     # 页面渲染分辨率（查看原图）
     page_dpi: int = 110
 
+    # 管理后台（/admin）：首次启动时若还没有 root 账号，用这两项创建（之后可删除，改密码请在后台操作）。
+    # 也可运行 uv run python -m app.create_root EMAIL 交互创建
+    console_root_email: str = ""
+    console_root_password: str = ""
+    console_session_hours: int = 8
+
     @property
     def db_url(self) -> str:
         return self.database_url

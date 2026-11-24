@@ -8,6 +8,12 @@ import {
   PURPOSE_LABELS, SOURCE_LABELS, formatCost, formatDuration, formatPercent, formatTokens,
 } from '@/utils/usage'
 
+// 管理后台复用本页：传入后台的接口与标签
+const props = withDefaults(defineProps<{ api?: Pick<typeof usageApi, 'analysis' | 'prices'>; badge?: string }>(), {
+  api: () => usageApi,
+  badge: '仅管理员',
+})
+
 // ---- 日期区间（北京时间）----
 const BJ = 8 * 3600_000
 const iso = (t: number) => new Date(t + BJ).toISOString().slice(0, 10)
@@ -48,7 +54,7 @@ async function load() {
   loading.value = true
   error.value = ''
   try {
-    const result = await usageApi.analysis(start.value, end.value)
+    const result = await props.api.analysis(start.value, end.value)
     if (id === seq) data.value = result
   } catch (e) {
     if (id === seq) error.value = (e as Error).message
@@ -67,7 +73,7 @@ function custom() {
 }
 onMounted(() => {
   load()
-  usageApi.prices().then(p => (prices.value = p)).catch(() => {})
+  props.api.prices().then(p => (prices.value = p)).catch(() => {})
 })
 
 // ---- 展示 ----
@@ -147,7 +153,7 @@ function cachedText(p: ModelPrice): string {
         <h1>AI 成本分析</h1>
         <p>大模型与 MinerU 的调用费用：按调用时的单价计算，仅供估算，以厂商账单为准。</p>
       </div>
-      <span class="tag">仅管理员</span>
+      <span class="tag">{{ props.badge }}</span>
     </div>
 
     <div class="toolbar">

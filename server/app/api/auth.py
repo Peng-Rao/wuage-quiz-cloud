@@ -220,10 +220,14 @@ def delete_user(user_id: str, actor: User = Depends(admin)):
         user = s.get(User, user_id)
         if not user:
             raise HTTPException(404, "用户不存在")
-        s.execute(delete(LoginSession).where(LoginSession.user_id == user_id))
-        s.execute(delete(UploadOwner).where(UploadOwner.user_id == user_id))
-        # Preserve shared papers, questions and review history; remove personal ownership.
-        s.execute(update(ParseJob).where(ParseJob.owner_id == user_id).values(owner_id=None))
-        s.execute(update(BankQuestion).where(BankQuestion.owner_id == user_id).values(owner_id=None))
-        s.delete(user)
+        remove_user(s, user)
         s.commit()
+
+
+def remove_user(s, user: User) -> None:
+    """删除账号（调用方提交事务）：保留共享的试卷、题目与审核记录，只解除个人归属。"""
+    s.execute(delete(LoginSession).where(LoginSession.user_id == user.id))
+    s.execute(delete(UploadOwner).where(UploadOwner.user_id == user.id))
+    s.execute(update(ParseJob).where(ParseJob.owner_id == user.id).values(owner_id=None))
+    s.execute(update(BankQuestion).where(BankQuestion.owner_id == user.id).values(owner_id=None))
+    s.delete(user)

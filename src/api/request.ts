@@ -11,8 +11,11 @@ export async function request<T>(method: string, path: string, body?: unknown): 
   })
   if (!res.ok) {
     const err = await res.json().catch(() => null)
-    if (res.status === 401 && !path.startsWith("/api/auth/") && window.location.pathname !== "/login") {
-      window.location.replace("/login")
+    // 管理后台与题库各自登录：后台接口失效时回到后台登录页
+    const isConsole = path.startsWith('/api/admin/')
+    const loginPage = isConsole ? '/admin/login' : '/login'
+    if (res.status === 401 && !path.startsWith(isConsole ? '/api/admin/auth/' : '/api/auth/') && window.location.pathname !== loginPage) {
+      window.location.replace(isConsole ? `${loginPage}?redirect=${encodeURIComponent(window.location.pathname)}` : loginPage)
     }
     throw Object.assign(new Error(err?.message ?? `请求失败（HTTP ${res.status}）`), { status: res.status })
   }

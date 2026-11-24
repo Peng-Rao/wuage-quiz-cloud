@@ -41,6 +41,24 @@ uv run uvicorn app.main:app --port 8000 --reload
 
 账号密码和会话均不存明文；登录失败按账号与来源地址限流。修改角色、学科、密码或停用账号将撤销其所有会话。前后端推荐同源，跨源开发须正确配置 `CORS_ORIGINS`。HTTPS 设置 `COOKIE_SECURE=true`。
 
+## 管理后台（/admin）
+
+独立于题库账号的运维后台：后台账号用**邮箱 + 密码**登录（Cookie `quiz_console`，只发往 `/api/admin`），题库账号无法访问后台，反之亦然。
+
+```bash
+uv run python -m app.create_root root@example.com   # 创建 root 账号，交互输入密码
+```
+
+也可在首次启动前设置 `CONSOLE_ROOT_EMAIL` / `CONSOLE_ROOT_PASSWORD`：还没有 root 时自动创建，之后可删除这两个变量。
+
+- **root** 拥有全部权限，并在「后台账号」中为其他邮箱开通后台、按模块授权：`exams` 试卷管理、`users` 用户管理、`keys` 密钥配置、`ai` 价格与用量。权限或密码变化后该账号需重新登录。只有 root 能查看「操作记录」。
+- **试卷管理**（`/api/admin/exams`）：全部学科的上传试卷，查看题目、解析阶段与 AI 费用，下载原始文件，修改试卷属性，重试 / 取消，移出试卷库或彻底删除（AI 用量记录保留）。
+- **用户与在线**（`/api/admin/users`）：与题库「账号管理」相同的角色、学科授权，另可查看有效会话数并强制下线。
+- **密钥配置**（`/api/admin/settings`）：大模型、看图模型、向量检索、MinerU 的地址 / Key / 模型，以及计费来源。保存到 `app_setting` 表并覆盖环境变量，各进程（含独立 Worker）5 秒内生效、无需重启；「恢复」即删除覆盖、回到环境变量。接口只返回密钥掩码，操作记录不含密钥值；可「测试连接」。
+- **模型单价 / AI 用量**（`/api/admin/prices`、`/api/admin/usage/*`）：AI 成本分析；立即抓取单价、设置手动单价（阶梯、缓存价、峰谷时段），之后的调用按手动单价计价，定时抓取不会用 `LLM_PRICES` 覆盖后台设置的单价；「重新计价」按调用时的单价重算历史费用。
+- 所有修改记录在 `console_audit` 表（操作人、对象、摘要）。
+- 题库原来的「账号管理」（`/users`）与「AI 成本」（`/usage`）页面已并入后台，旧地址跳转到 `/admin/users`、`/admin/usage`；题库管理员在页头点「管理后台」进入，需另有后台账号。
+
 ## 配置
 
 在线状态：`POST /api/auth/heartbeat` 使用当前登录 Cookie 更新心跳，不延长会话有效期；`GET /api/users` 仅向管理员返回 `isOnline` 与 `lastSeenAt`（UTC）。最近 90 秒内有登录或心跳且会话未过期的启用账号视为在线；最后在线时间持久保存，退出或撤销会话后仍可查看。启动时自动为旧用户表、会话表添加可空的 `last_seen_at` 列；旧账号在首次登录或心跳前暂无在线记录。

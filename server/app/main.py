@@ -1,4 +1,6 @@
+import asyncio
 import logging
+import time
 from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI, HTTPException, Request
@@ -6,9 +8,11 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 
-from .api import auth, bank, batches, compose, review, eval, files, jobs, knowledge, questions, similar, usage
+from . import runtime_settings
+from .api import auth, bank, batches, compose, console, review, eval, files, jobs, knowledge, questions, similar, usage
 from .auth import admin, current_user, staff
 from .config import get_settings
+from .console import ensure_root_from_env
 from .db import SessionLocal, init_db
 from .knowledge_tree import seed_builtin
 from .services import current_school
@@ -20,6 +24,8 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     init_db()
+    runtime_settings.sync(force=True)
+    ensure_root_from_env()
     with SessionLocal() as s:
         # 同步当前学校的内置知识树。
         changed, removed = seed_builtin(s, current_school())
@@ -38,6 +44,14 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def sync_runtime_settings(request: Request, call_next):
+    # 管理后台修改的配置（API Key 等）按版本号同步到本进程；未到检查间隔时不访问数据库
+    if time.monotonic() - runtime_settings._state["checked"] >= runtime_settings.SYNC_INTERVAL:
+        await asyncio.to_thread(runtime_settings.sync)
+    return await call_next(request)
 
 
 @app.middleware("http")
@@ -69,6 +83,7 @@ def health() -> dict:
 
 
 app.include_router(auth.router)
+app.include_router(console.router)
 app.include_router(review.router)
 app.include_router(files.router, dependencies=[Depends(current_user)])
 app.include_router(jobs.router, dependencies=[Depends(staff)])

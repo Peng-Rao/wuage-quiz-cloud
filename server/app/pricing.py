@@ -404,6 +404,26 @@ def _save(s: Session, provider: str, model: str, source: str, currency: str, tie
     return "new" if latest is None else "changed"
 
 
+CONSOLE_NOTE = "管理后台"
+
+
+def console_override(s: Session, provider: str, model: str) -> bool:
+    """该模型最近一次手动单价是否在管理后台设置：是则定时抓取不再用 LLM_PRICES 等环境变量覆盖它。"""
+    latest = s.scalars(select(ModelPrice.notes).where(ModelPrice.provider == provider, ModelPrice.model == model,
+                                                      ModelPrice.source == "manual")
+                       .order_by(ModelPrice.fetched_at.desc(), ModelPrice.id.desc()).limit(1)).first()
+    return bool(latest and latest.startswith(CONSOLE_NOTE))
+
+
+def save_manual(provider: str, model: str, currency: str, tiers: list[dict[str, Any]], cache_ratio: float | None,
+                peak: dict[str, Any] | None, notes: str, now: datetime | None = None) -> str:
+    """管理后台设置手动单价（优先于各来源的抓取单价），返回 new / changed / unchanged。"""
+    with SessionLocal() as s:
+        result = _save(s, provider, model, "manual", currency, tiers, cache_ratio, notes, now or utcnow(), peak)
+        s.commit()
+    return result
+
+
 def refresh(settings: Settings | None = None, client: httpx.Client | None = None,
             now: datetime | None = None) -> list[str]:
     """抓取各来源单价并写入 model_price，返回每个模型、每个来源的结果说明（* 为计费来源）。"""
@@ -418,7 +438,7 @@ def refresh(settings: Settings | None = None, client: httpx.Client | None = None
             ratio = settings.llm_model_cache_ratio.get(model, settings.llm_cache_hit_ratio)
             per_source: list[tuple[str, list[dict[str, Any]], str, str | None]] = []
             manual = settings.llm_prices.get(model)
-            if manual and "input" in manual and "output" in manual:
+            if manual and "input" in manual and "output" in manual and not console_override(s, "llm", model):
                 per_source.append(("manual", [{
                     "max_input": None, "input": manual["input"], "output": manual["output"], "input_offpeak": None,
                     "output_offpeak": None, "cached_input": manual.get("cached_input"), "cached_input_offpeak": None,
@@ -443,7 +463,7 @@ def refresh(settings: Settings | None = None, client: httpx.Client | None = None
                              + (f"（{len(tiers)} 档）" if len(tiers) > 1 else "")
                              + (f"（闲时 {first['input_offpeak']} / {first['output_offpeak']}）" if first.get("input_offpeak") else "")
                              + f" [{result}]")
-        if settings.mineru_price_per_page is not None:
+        if settings.mineru_price_per_page is not None and not console_override(s, "mineru", "mineru"):
             result = _save(s, "mineru", "mineru", "manual", manual_currency,
                            [{"per_page": settings.mineru_price_per_page}], None, "MINERU_PRICE_PER_PAGE", now)
             lines.append(f"*MinerU：{settings.mineru_price_per_page} {manual_currency}/页 [{result}]")

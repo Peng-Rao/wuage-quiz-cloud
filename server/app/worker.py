@@ -61,6 +61,9 @@ return 1
 
 
 async def run_task(kind: str, job_id: str) -> None:
+    # 使用管理后台最新保存的 API Key、模型等配置
+    from .runtime_settings import sync
+    await asyncio.to_thread(sync)
     if kind == "answer":
         await run_answer_task(job_id)
     elif kind == "knowledge":

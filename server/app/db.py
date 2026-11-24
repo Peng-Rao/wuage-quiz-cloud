@@ -65,6 +65,54 @@ class UploadOwner(Base):
     user_id: Mapped[str] = mapped_column(ForeignKey("app_user.id"))
 
 
+# ---------------- 管理后台（独立于题库账号） ----------------
+
+class ConsoleAccount(Base):
+    """管理后台账号：邮箱 + 密码登录。root 拥有全部权限并为其他账号授权；其余账号按 permissions 访问各模块。"""
+
+    __tablename__ = "console_account"
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    email: Mapped[str] = mapped_column(String(254), unique=True)
+    display_name: Mapped[str] = mapped_column(String(64))
+    password_hash: Mapped[str] = mapped_column(String(256))
+    is_root: Mapped[bool] = mapped_column(default=False)
+    permissions: Mapped[list[Any]] = mapped_column(JSON, default=list)
+    active: Mapped[bool] = mapped_column(default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class ConsoleSession(Base):
+    __tablename__ = "console_session"
+    token_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    account_id: Mapped[str] = mapped_column(ForeignKey("console_account.id", ondelete="CASCADE"), index=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class AppSetting(Base):
+    """在管理后台修改的配置（如大模型 API Key），覆盖环境变量；value 为 JSON 文本。删除该行即恢复环境变量。"""
+
+    __tablename__ = "app_setting"
+    key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    value: Mapped[str] = mapped_column(Text)
+    updated_by: Mapped[str | None] = mapped_column(String(254), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class ConsoleAudit(Base):
+    """管理后台操作记录：谁在何时做了什么（不记录密钥与密码的值）。"""
+
+    __tablename__ = "console_audit"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    actor: Mapped[str] = mapped_column(String(254))
+    action: Mapped[str] = mapped_column(String(64))
+    target: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    detail: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+
+
 class ParseBatch(Base):
     """一次批量上传：包含多份试卷，每份各自一个解析任务。"""
 
