@@ -236,7 +236,7 @@ function resetFilters() {
     <LoadingState v-if="loading && result.items.length" compact label="正在更新题目…" />
     <div class="list" :class="{ dim: loading }">
       <QuestionCard
-        v-for="(q, i) in result.items" :key="q.id" :q="q" :no="(page - 1) * PAGE_SIZE + i + 1"
+        v-for="(q, i) in result.items" :key="q.id" class="anim-rise" :style="{ '--i': i }" :q="q" :no="(page - 1) * PAGE_SIZE + i + 1"
         :show-answer="showAns(q.id)" :in-basket="basket.has(q.id)"
         @toggle-answer="ansOpen[q.id] = !showAns(q.id)" @toggle-basket="basket.toggle(fromBank(q))"
         :can-similar="auth.isStaff" @similar="openSimilar(q, (page - 1) * PAGE_SIZE + i + 1)"
@@ -304,6 +304,7 @@ function resetFilters() {
 .total b { color: var(--c-primary); font-weight: 600; }
 
 .list { display: flex; flex-direction: column; gap: 14px; transition: opacity .15s; }
+.list { transition: opacity var(--dur) var(--ease-out); }
 .list.dim { opacity: .55; }
 .empty { padding: 40px; text-align: center; color: var(--c-text-4); font-size: 14px; line-height: 1.9; }
 .empty.err { color: var(--c-hard); }

@@ -48,8 +48,12 @@ async function submit() {
 </template>
 
 <style scoped>
-.login { min-height: 100vh; display: grid; place-items: center; padding: 32px 16px; background: var(--c-paper); }
-.panel { width: 100%; max-width: 400px; background: var(--c-surface); border: 1px solid var(--c-border); border-radius: var(--r-lg); padding: 32px; box-shadow: 0 12px 32px rgb(var(--shadow-rgb) / .06); }
+.login {
+  min-height: 100vh; display: grid; place-items: center; padding: 32px 16px;
+  background: radial-gradient(70% 50% at 50% 0%, color-mix(in srgb, var(--c-primary) 9%, transparent), transparent 70%), var(--c-paper);
+}
+.panel { animation: rise-in var(--dur-slow) var(--ease-out) backwards; width: 100%; max-width: 400px; background: var(--c-surface); border: 1px solid var(--c-border); border-radius: var(--r-lg); padding: 32px; box-shadow: var(--shadow-lg); }
+@media (prefers-reduced-motion: reduce) { .panel { animation: none; } }
 .brand { display: flex; align-items: center; gap: 10px; margin-bottom: 28px; }
 .mark { width: 32px; height: 27px; }
 .brand b { display: block; color: var(--c-primary); letter-spacing: 1px; }

@@ -47,6 +47,9 @@ function onDocClick(e: MouseEvent) {
 function onKey(e: KeyboardEvent) {
   if (e.key === 'Escape') open.value = false
 }
+// 页面滚动后页头加一道阴影，与内容区分开
+const scrolled = ref(false)
+function onScroll() { scrolled.value = window.scrollY > 4 }
 let heartbeatTimer: ReturnType<typeof setInterval> | undefined
 function onVisibilityChange() {
   if (document.visibilityState === 'visible') void auth.heartbeat()
@@ -54,6 +57,8 @@ function onVisibilityChange() {
 onMounted(() => {
   document.addEventListener('click', onDocClick)
   document.addEventListener('keydown', onKey)
+  window.addEventListener('scroll', onScroll, { passive: true })
+  onScroll()
   void auth.heartbeat()
   heartbeatTimer = setInterval(() => { void auth.heartbeat() }, 30_000)
   document.addEventListener('visibilitychange', onVisibilityChange)
@@ -61,19 +66,20 @@ onMounted(() => {
 onBeforeUnmount(() => {
   document.removeEventListener('click', onDocClick)
   document.removeEventListener('keydown', onKey)
+  window.removeEventListener('scroll', onScroll)
   clearInterval(heartbeatTimer)
   document.removeEventListener('visibilitychange', onVisibilityChange)
 })
 </script>
 
 <template>
-  <header class="header">
+  <header class="header" :class="{ scrolled }">
     <div class="container bar">
       <BrandLogo />
 
       <div ref="picker" class="picker">
         <button class="picker-btn" :aria-expanded="open" @click="open = !open">
-          <span class="stage">{{ stage }}</span><span>{{ subject }}</span><span class="caret">▼</span>
+          <span class="stage">{{ stage }}</span><span>{{ subject }}</span><span class="caret" :class="{ up: open }">▼</span>
         </button>
         <div v-if="open" class="picker-pop">
           <div v-for="(subs, name) in availableStages" :key="name" class="picker-row">
@@ -96,7 +102,7 @@ onBeforeUnmount(() => {
       </nav>
 
       <RouterLink to="/paper" class="basket-btn">
-        试题篮<span class="badge">{{ basket.count }}</span>
+        试题篮<span :key="basket.count" class="badge">{{ basket.count }}</span>
       </RouterLink>
       <button class="theme-btn" :title="`主题：${THEME_LABELS[themePref]}（点击切换）`" :aria-label="`主题：${THEME_LABELS[themePref]}`" @click="cycleTheme">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -116,7 +122,16 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .account { display:flex;align-items:center;gap:10px;font-size:12px;flex-shrink:0; }.account small { display:block;color:var(--c-text-4);margin-top:2px; }.account button { font-size:12px; }
-.header { position: sticky; top: 0; z-index: 20; background: var(--c-surface); border-bottom: 1px solid var(--c-border); }
+/* 半透明毛玻璃页头：滚动时下方内容透出；不支持 backdrop-filter 时退回实色 */
+.header {
+  position: sticky; top: 0; z-index: 20; background: var(--c-surface); border-bottom: 1px solid var(--c-border);
+  transition: box-shadow var(--dur) var(--ease-out), background-color var(--dur) var(--ease-out);
+}
+@supports (backdrop-filter: blur(1px)) {
+  .header { background: color-mix(in srgb, var(--c-surface) 84%, transparent); backdrop-filter: saturate(1.5) blur(14px); }
+}
+.header.scrolled { box-shadow: var(--shadow-sm); }
+@media print { .header { position: static; backdrop-filter: none; box-shadow: none; } }
 .bar { height: 60px; display: flex; align-items: center; gap: 20px; }
 
 .picker { position: relative; flex-shrink: 0; }
@@ -126,11 +141,15 @@ onBeforeUnmount(() => {
   font-size: 14px; color: var(--c-ink);
 }
 .stage { color: var(--c-primary); font-weight: 600; }
-.caret { font-size: 10px; color: var(--c-text-4); }
+.caret { font-size: 10px; color: var(--c-text-4); transition: transform var(--dur) var(--ease-out); }
+.caret.up { transform: rotate(180deg); }
+.picker-btn { transition: border-color var(--dur) var(--ease-out); }
+.picker-btn:hover { border-color: var(--c-border-strong); }
 .picker-pop {
   position: absolute; top: 42px; left: 0; width: 420px; max-width: calc(100vw - 32px); background: var(--c-surface);
-  border: 1px solid var(--c-border); border-radius: var(--r-lg); box-shadow: 0 12px 32px rgb(var(--shadow-rgb) / .12);
+  border: 1px solid var(--c-border); border-radius: var(--r-lg); box-shadow: var(--shadow-lg);
   padding: 16px; display: flex; flex-direction: column; gap: 14px;
+  transform-origin: top left; animation: pop-in var(--dur) var(--ease-out);
 }
 .picker-row { display: flex; gap: 14px; align-items: flex-start; }
 .picker-stage { width: 36px; flex-shrink: 0; font-size: 13px; color: var(--c-text-4); padding-top: 5px; }
@@ -142,6 +161,7 @@ onBeforeUnmount(() => {
 .nav-item {
   flex-shrink: 0; white-space: nowrap; height: 60px; padding: 0 12px; font-size: 15px;
   display: flex; align-items: center; color: var(--c-text-2); border-bottom: 2px solid transparent;
+  transition: color var(--dur) var(--ease-out), border-color var(--dur) var(--ease-out);
 }
 .nav-item:hover { color: var(--c-primary); text-decoration: none; }
 .nav-item.is-active { color: var(--c-primary); font-weight: 600; border-bottom-color: var(--c-primary); }
@@ -151,6 +171,7 @@ onBeforeUnmount(() => {
   background: var(--c-surface); color: var(--c-primary); border-radius: var(--r-md); font-size: 14px;
   display: flex; align-items: center; gap: 8px;
 }
+.basket-btn { transition: background-color var(--dur) var(--ease-out); }
 .basket-btn:hover { text-decoration: none; background: var(--c-primary-soft); }
 .badge {
   min-width: 20px; height: 20px; border-radius: 10px; background: var(--c-inverse); color: #fff; font-size: 12px;
@@ -160,6 +181,10 @@ onBeforeUnmount(() => {
   flex-shrink: 0; width: 34px; height: 34px; padding: 0; border: 1px solid var(--c-border); border-radius: var(--r-md);
   background: var(--c-paper); color: var(--c-text-3); display: flex; align-items: center; justify-content: center;
 }
+.badge { animation: badge-bump var(--dur-slow) var(--ease-out); font-variant-numeric: tabular-nums; }
+@keyframes badge-bump { 40% { transform: scale(1.25); } }
+@media (prefers-reduced-motion: reduce) { .badge { animation: none; } }
+.theme-btn { transition: color var(--dur) var(--ease-out), border-color var(--dur) var(--ease-out); }
 .theme-btn:hover { color: var(--c-primary); border-color: var(--c-primary-line); }
 .theme-btn svg { width: 18px; height: 18px; }
 .avatar {

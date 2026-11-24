@@ -209,7 +209,7 @@ async function addPaper(p: PaperSummary) {
           <p v-if="papersError" class="tip err">{{ papersError }}</p>
           <LoadingState v-else-if="!papers" label="正在加载同步套卷…" :rows="3" />
           <p v-else-if="!papers.length" class="tip">试卷库中还没有{{ stage }}{{ subject }}的试卷。</p>
-          <div v-for="p in papers ?? []" :key="p.id" class="paper-row">
+          <div v-for="(p, i) in papers ?? []" :key="p.id" class="paper-row anim-rise" :style="{ '--i': i }">
             <span class="tag">{{ p.meta.paperType || '试卷' }}</span>
             <div class="paper-main">
               <RouterLink :to="`/papers/${p.id}`" class="paper-title">{{ p.title }}</RouterLink>

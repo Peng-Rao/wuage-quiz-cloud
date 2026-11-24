@@ -272,7 +272,7 @@ function replaceAndGo() {
 
       <div class="list">
         <QuestionCard
-          v-for="(q, i) in qs" :key="q.id" :q="q" :no="q.source?.no ?? i + 1" in-paper
+          v-for="(q, i) in qs" :key="q.id" class="anim-rise" :style="{ '--i': i }" :q="q" :no="q.source?.no ?? i + 1" in-paper
           :show-answer="showAns(q.id)" :in-basket="basket.has(q.id)"
           @toggle-answer="ansOpen[q.id] = !showAns(q.id)" @toggle-basket="basket.toggle(fromBank(q))"
           :can-edit="auth.isAdmin" @edit="openEdit(q, q.source?.no ?? i + 1)"

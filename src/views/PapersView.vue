@@ -162,7 +162,7 @@ async function addPaper(p: PaperSummary) {
 
     <div v-else class="card list" :class="{ dim: loading }" :aria-busy="loading">
       <LoadingState v-if="loading" compact label="正在更新试卷…" />
-      <div v-for="p in data?.items" :key="p.id" class="paper-row">
+      <div v-for="(p, i) in data?.items" :key="p.id" class="paper-row anim-rise" :style="{ '--i': i }">
         <span class="tag">{{ p.meta.paperType || '试卷' }}</span>
         <div class="main">
           <RouterLink :to="`/papers/${p.id}`" class="title">{{ p.title }}</RouterLink>
@@ -235,7 +235,7 @@ async function addPaper(p: PaperSummary) {
 .empty.err { color: var(--c-hard); }
 .small { font-size: 12px; }
 
-.list { padding: 4px 22px; transition: opacity .15s; }
+.list { padding: 4px 22px; transition: opacity var(--dur) var(--ease-out); }
 .list.dim { opacity: .55; }
 .paper-row { display: flex; align-items: flex-start; gap: 14px; padding: 16px 0; border-bottom: 1px dashed var(--c-divider); }
 .paper-row:last-child { border-bottom: none; }

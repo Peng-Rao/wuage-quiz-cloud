@@ -59,7 +59,7 @@ function go(delta: number) { offset.value = Math.max(0, offset.value + delta * P
         <table class="adm-table">
           <thead><tr><th>试卷</th><th>学科</th><th>上传者</th><th>状态</th><th class="num">题目 / 入库</th><th class="num">页数</th><th class="num">AI 费用</th><th>上传时间</th></tr></thead>
           <tbody>
-            <tr v-for="e in data.items" :key="e.id" class="clickable" tabindex="0" @click="router.push(`/admin/exams/${e.id}`)" @keydown.enter="router.push(`/admin/exams/${e.id}`)">
+            <tr v-for="(e, i) in data.items" :key="e.id" class="clickable anim-fade" :style="{ animationDelay: `${Math.min(i, 12) * 20}ms` }" tabindex="0" @click="router.push(`/admin/exams/${e.id}`)" @keydown.enter="router.push(`/admin/exams/${e.id}`)">
               <td class="title-cell"><b>{{ e.title || e.fileName }}</b><span class="sub">{{ e.title ? e.fileName + ' · ' : '' }}{{ e.fileType.toUpperCase() }}</span></td>
               <td>{{ e.subject || '—' }}</td>
               <td>{{ e.owner?.displayName ?? '—' }}<span v-if="e.owner" class="sub">{{ e.owner.username }}</span></td>

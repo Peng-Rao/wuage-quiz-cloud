@@ -20,4 +20,9 @@ const route = useRoute()
 <style scoped>
 .layout { min-height: 100vh; display: flex; flex-direction: column; }
 .layout > :deep(main) { flex: 1; }
+/* 切换页面时新页面淡入。只动 opacity：不留 transform，页面里的 fixed / sticky 元素位置不受影响 */
+.layout > :deep(main) { animation: fade-in var(--dur-slow) var(--ease-out) backwards; }
+@media (prefers-reduced-motion: reduce), print {
+  .layout > :deep(main) { animation: none; }
+}
 </style>

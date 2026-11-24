@@ -4,26 +4,27 @@
 .adm-head h1 { font-size: 24px; margin: 0 0 6px; }
 .adm-head p { margin: 0; color: var(--c-text-3); font-size: 14px; line-height: 1.7; }
 .adm-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
-.adm-card { background: var(--c-surface); border: 1px solid var(--c-border); border-radius: var(--r-lg); padding: 20px; }
+.adm-card { background: var(--c-surface); border: 1px solid var(--c-border); border-radius: var(--r-lg); padding: 20px; box-shadow: var(--shadow-xs); }
 .adm-card + .adm-card { margin-top: 16px; }
 .adm-card h2 { font-size: 16px; margin: 0 0 14px; display: flex; align-items: center; gap: 8px; }
 .adm-card h2 small { font-weight: 400; color: var(--c-text-4); font-size: 12px; }
 
 .adm-toolbar { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 14px; }
-.adm-toolbar input, .adm-toolbar select { height: 36px; padding: 0 10px; border: 1px solid var(--c-border); border-radius: var(--r-sm); background: var(--c-surface); color: var(--c-ink); }
+.adm-toolbar input, .adm-toolbar select { transition: border-color var(--dur) var(--ease-out), box-shadow var(--dur) var(--ease-out); height: 36px; padding: 0 10px; border: 1px solid var(--c-border); border-radius: var(--r-sm); background: var(--c-surface); color: var(--c-ink); }
 .adm-toolbar input[type=search] { min-width: 240px; flex: 1; max-width: 360px; }
 
 .adm-table-wrap { overflow-x: auto; }
 .adm-table { width: 100%; border-collapse: collapse; font-size: 13px; }
 .adm-table th { text-align: left; font-weight: 500; color: var(--c-text-3); padding: 10px 12px; border-bottom: 1px solid var(--c-border); white-space: nowrap; background: var(--c-surface-2); }
-.adm-table td { padding: 12px; border-bottom: 1px solid var(--c-divider); vertical-align: middle; }
+.adm-table td { padding: 12px; border-bottom: 1px solid var(--c-divider); vertical-align: middle; transition: background-color var(--dur-fast) ease; }
+.adm-table tbody tr:last-child td { border-bottom: none; }
 .adm-table tr.clickable { cursor: pointer; }
 .adm-table tr.clickable:hover td, .adm-table tr.selected td { background: var(--c-primary-tint); }
 .adm-table .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .adm-table .sub { display: block; color: var(--c-text-4); font-size: 12px; margin-top: 3px; }
 .adm-empty { text-align: center; color: var(--c-text-4); padding: 36px 0; font-size: 14px; }
 
-.adm-badge { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; padding: 2px 8px; border-radius: 999px; background: var(--c-paper-2); color: var(--c-text-3); white-space: nowrap; }
+.adm-badge { font-variant-numeric: tabular-nums; display: inline-flex; align-items: center; gap: 5px; font-size: 12px; padding: 2px 8px; border-radius: 999px; background: var(--c-paper-2); color: var(--c-text-3); white-space: nowrap; }
 .adm-badge.ok { background: var(--c-success-soft); color: var(--c-success); }
 .adm-badge.warn { background: var(--c-warn-soft); color: var(--c-warn); }
 .adm-badge.bad { background: var(--c-danger-soft); color: var(--c-danger); }

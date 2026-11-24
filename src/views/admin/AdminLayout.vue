@@ -104,9 +104,11 @@ async function savePassword() {
 .brand b { display: block; font-size: 15px; color: var(--c-primary); letter-spacing: 1px; }
 .brand small { display: block; font-size: 12px; color: var(--c-text-3); margin-top: 2px; }
 nav { display: flex; flex-direction: column; gap: 2px; flex: 1; overflow-y: auto; }
-.nav-item { display: flex; align-items: center; gap: 10px; padding: 9px 10px; border-radius: var(--r-md); color: var(--c-text-2); font-size: 14px; text-decoration: none; }
+.nav-item { display: flex; align-items: center; gap: 10px; padding: 9px 10px; border-radius: var(--r-md); color: var(--c-text-2); font-size: 14px; text-decoration: none; transition: background-color var(--dur) var(--ease-out), color var(--dur) var(--ease-out); }
 .nav-item:hover { background: var(--c-paper-2); color: var(--c-ink); text-decoration: none; }
-.nav-item.active { background: var(--c-primary-soft); color: var(--c-primary); font-weight: 600; }
+.nav-item.active { background: var(--c-primary-soft); color: var(--c-primary); font-weight: 600; box-shadow: inset 3px 0 0 var(--c-primary); }
+.nav-item svg { transition: transform var(--dur) var(--ease-out); }
+.nav-item:hover svg { transform: translateX(1px); }
 .nav-item svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; flex-shrink: 0; }
 .me { border-top: 1px solid var(--c-divider); padding: 14px 6px 0; display: flex; flex-direction: column; gap: 10px; }
 .who { display: flex; align-items: center; gap: 10px; min-width: 0; }
@@ -117,6 +119,8 @@ nav { display: flex; flex-direction: column; gap: 2px; flex: 1; overflow-y: auto
 .me-actions { display: flex; gap: 12px; flex-wrap: wrap; }
 .to-app { font-size: 12px; color: var(--c-text-3); }
 .main { min-width: 0; }
+.main > :deep(main) { animation: fade-in var(--dur-slow) var(--ease-out) backwards; }
+@media (prefers-reduced-motion: reduce) { .main > :deep(main) { animation: none; } }
 .foot .btn { height: 30px; font-size: 13px; }
 :deep(.foot) { display: flex; justify-content: flex-end; gap: 8px; }
 
@@ -126,6 +130,7 @@ nav { display: flex; flex-direction: column; gap: 2px; flex: 1; overflow-y: auto
   .brand { padding: 0; }
   nav { flex-direction: row; overflow-x: auto; flex: none; gap: 4px; padding-bottom: 2px; }
   .nav-item { white-space: nowrap; padding: 7px 10px; }
+  .nav-item.active { box-shadow: none; }
   .me { flex-direction: row; align-items: center; justify-content: space-between; flex-wrap: wrap; padding-top: 10px; }
   .to-app { display: none; }
 }

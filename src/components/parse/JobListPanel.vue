@@ -56,7 +56,7 @@ function meta(j: JobListItem): string {
     <template v-else-if="jobs.length">
       <div class="columns" aria-hidden="true"><span>试卷文件</span><span>解析状态</span><span>上传时间</span><span>操作</span></div>
       <ul class="list" :aria-busy="loading">
-        <li v-for="j in jobs" :key="j.id" class="item" :class="j.status">
+        <li v-for="(j, i) in jobs" :key="j.id" class="item anim-rise" :class="j.status" :style="{ '--i': i }">
           <button class="main" :title="j.fileName" @click="$emit('open', j.id)">
             <span class="file-icon" :class="{ word: fileType(j.fileName) === 'DOCX', image: ['JPG', 'JPEG', 'PNG'].includes(fileType(j.fileName)) }" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H6a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8Z"/><path d="M14 3v5h5M8 13h8m-8 4h5"/></svg></span>
             <span class="file-copy"><span class="name">{{ j.fileName }}</span><span class="file-kind">{{ fileType(j.fileName) }}<span v-if="j.status === 'done'"> · {{ j.questionCount }} 道题</span></span></span>

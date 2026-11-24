@@ -210,7 +210,7 @@ function toBasket() {
 
       <div v-if="showHistory" class="history">
         <p v-if="!sessions.length" class="history-empty">还没有{{ stage }}{{ subject }}的组卷记录。组卷后会自动保存在这里，只有你自己能看到。</p>
-        <div v-for="s in sessions" :key="s.id" class="session" :class="{ current: s.id === sessionId }">
+        <div v-for="(s, i) in sessions" :key="s.id" class="session anim-rise" :class="{ current: s.id === sessionId }" :style="{ '--i': i }">
           <button class="session-main" :disabled="!!opening" @click="openSession(s.id)">
             <b>{{ s.title }}</b>
             <span v-if="s.preview">{{ s.preview }}</span>
@@ -238,7 +238,7 @@ function toBasket() {
             <button v-if="sessions.length > 3" class="btn-link is-primary" @click="showHistory = true">查看全部 {{ sessions.length }} 条 →</button>
           </div>
         </div>
-        <div v-for="(m, i) in messages" :key="i" class="msg" :class="m.role">{{ m.content }}</div>
+        <div v-for="(m, i) in messages" :key="i" class="msg anim-rise" :class="m.role">{{ m.content }}</div>
         <div v-if="busy" class="msg assistant pending"><LoadingState compact label="AI 正在组卷…" /></div>
       </div>
 
@@ -304,7 +304,7 @@ function toBasket() {
 
         <section v-for="s in sections" :key="s.type" class="sec">
           <h2>{{ s.heading }}</h2>
-          <article v-for="it in s.items" :key="it.question.id" class="q">
+          <article v-for="(it, i) in s.items" :key="it.question.id" class="q anim-rise" :style="{ '--i': i }">
             <MaterialText v-if="it.question.material" :text="it.question.material" initial="collapsed" />
             <div class="q-stem serif" :class="`lay-${layout}`">
               <span class="no">{{ it.no }}{{ noSep(layout) }}</span><span class="score">（{{ it.score }} 分）</span><MathText :text="it.question.stem" />

@@ -32,13 +32,21 @@ function onBackdrop(e: MouseEvent) {
 <style scoped>
 .modal {
   max-width: calc(100vw - 32px); max-height: calc(100vh - 48px); padding: 0; border: none;
-  border-radius: var(--r-lg); box-shadow: 0 20px 48px rgb(var(--shadow-rgb) / .22); color: var(--c-ink);
+  border-radius: var(--r-lg); box-shadow: var(--shadow-xl); color: var(--c-ink); background: var(--c-surface);
 }
-.modal::backdrop { background: rgb(var(--shadow-rgb) / .45); }
+/* 打开时弹窗轻微上浮放大、遮罩淡入（关闭仍即时，不拖慢操作） */
+.modal[open] { animation: modal-in var(--dur-slow) var(--ease-out); }
+.modal::backdrop { background: rgb(var(--shadow-rgb) / .45); backdrop-filter: blur(2px); }
+.modal[open]::backdrop { animation: backdrop-in var(--dur) ease-out; }
+@keyframes modal-in { from { opacity: 0; transform: translateY(8px) scale(.98); } }
+@keyframes backdrop-in { from { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .modal[open], .modal[open]::backdrop { animation: none; }
+}
 .inner { display: flex; flex-direction: column; max-height: calc(100vh - 48px); }
 .head { display: flex; align-items: center; justify-content: space-between; padding: 16px 20px; border-bottom: 1px solid var(--c-divider); }
-.close { border: none; background: transparent; font-size: 22px; line-height: 1; color: var(--c-text-3); padding: 0 4px; }
-.close:hover { color: var(--c-ink); }
+.close { width: 30px; height: 30px; display: grid; place-items: center; border: none; border-radius: var(--r-sm); background: transparent; font-size: 22px; line-height: 1; color: var(--c-text-3); padding: 0; transition: background-color var(--dur-fast) ease, color var(--dur-fast) ease; }
+.close:hover { color: var(--c-ink); background: var(--c-paper-2); }
 .body { padding: 18px 20px; overflow: auto; }
 .foot { display: flex; justify-content: flex-end; gap: 8px; padding: 12px 20px; border-top: 1px solid var(--c-divider); background: var(--c-surface-2); }
 </style>

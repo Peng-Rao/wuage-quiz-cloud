@@ -33,6 +33,15 @@ apply()
 
 const ORDER: ThemePref[] = ['system', 'light', 'dark']
 export function cycleTheme() {
-  themePref.value = ORDER[(ORDER.indexOf(themePref.value) + 1) % ORDER.length]
+  const next = ORDER[(ORDER.indexOf(themePref.value) + 1) % ORDER.length]
+  // 支持 View Transitions 的浏览器里新旧主题交叉淡入，不再整页瞬间换色；系统要求减少动态效果时直接切换
+  if (!('startViewTransition' in document) || matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    themePref.value = next
+    return
+  }
+  document.startViewTransition(() => {
+    themePref.value = next
+    apply()
+  })
 }
 export const THEME_LABELS: Record<ThemePref, string> = { system: '跟随系统', light: '浅色', dark: '暗色' }

@@ -81,7 +81,7 @@ onUnmounted(() => { clearInterval(timer); document.removeEventListener('visibili
           <table class="adm-table">
             <thead><tr><th>账号</th><th>角色 / 学科</th><th>在线状态</th><th class="num">会话</th><th class="num">上传</th></tr></thead>
             <tbody>
-              <tr v-for="u in list" :key="u.id" class="clickable" :class="{ selected: editing === u.id }" tabindex="0" @click="edit(u)" @keydown.enter="edit(u)">
+              <tr v-for="(u, i) in list" :key="u.id" class="clickable anim-fade" :style="{ animationDelay: `${Math.min(i, 12) * 20}ms` }" :class="{ selected: editing === u.id }" tabindex="0" @click="edit(u)" @keydown.enter="edit(u)">
                 <td><b>{{ u.displayName }}</b><span class="sub">{{ u.username }}{{ u.active ? '' : ' · 已停用' }}</span></td>
                 <td>{{ ROLE_NAMES[u.role] }}<span class="sub">{{ u.role === 'admin' ? '全部学科' : u.subjects.join('、') }}</span></td>
                 <td><span class="presence" :class="{ on: u.isOnline }" :title="u.lastSeenAt ? `最后在线：${fmtTime(u.lastSeenAt)}` : ''"><i class="adm-dot"></i>{{ u.isOnline ? '在线' : u.lastSeenAt ? `${ago(u.lastSeenAt, now)}在线` : '从未登录' }}</span></td>

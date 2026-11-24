@@ -86,8 +86,9 @@ const paperTitle = computed(() => props.q.source?.title || props.q.source?.fileN
 </template>
 
 <style scoped>
-.qc { overflow: hidden; transition: border-color .15s; }
-.qc.in-basket { border-color: var(--c-primary-line); }
+.qc { overflow: hidden; transition: border-color var(--dur) var(--ease-out), box-shadow var(--dur) var(--ease-out); }
+.qc:hover { border-color: var(--c-border-strong); box-shadow: var(--shadow-sm); }
+.qc.in-basket, .qc.in-basket:hover { border-color: var(--c-primary-line); }
 .qc-tag {
   display: inline-block; margin: 0; padding: 6px 16px; font-size: 13px; color: var(--c-primary);
   background: var(--c-primary-soft); border-bottom-right-radius: var(--r-md);
@@ -111,6 +112,7 @@ const paperTitle = computed(() => props.q.source?.title || props.q.source?.fileN
 .fold { align-self: center; margin-top: -6px; border: none; background: none; padding: 2px 10px; font-size: 13px; color: var(--c-primary); font-family: var(--font-sans); }
 .fold:hover { background: var(--c-primary-soft); border-radius: var(--r-sm); }
 .qc-answer {
+  animation: rise-in var(--dur) var(--ease-out);
   margin: 0 22px 14px; padding: 12px 16px; background: var(--c-paper); border-radius: var(--r-md);
   display: flex; flex-direction: column; gap: 6px; font-size: 14px; line-height: 1.8;
 }

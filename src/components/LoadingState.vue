@@ -34,6 +34,9 @@ withDefaults(defineProps<{
 .copy { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
 .label { font-size: 14px; font-weight: 500; line-height: 1.6; }
 .detail { font-size: 12px; color: var(--c-text-3); line-height: 1.7; }
+/* 整块加载状态延迟一小会儿再淡入：接口很快返回时不闪一下；占位高度一开始就在，版面不跳 */
+.loading-state:not(.compact) { animation: ls-in var(--dur-slow) var(--ease-out) 120ms backwards; }
+@keyframes ls-in { from { opacity: 0; } }
 .compact { display: inline-flex; width: auto; min-height: 0; padding: 0; gap: 0; vertical-align: middle; color: inherit; }
 .compact .status-line { gap: 8px; }
 .compact .spinner { width: 14px; height: 14px; border-color: currentColor; border-top-color: transparent; }
@@ -49,5 +52,6 @@ withDefaults(defineProps<{
 @media (prefers-reduced-motion: reduce) {
   .spinner { animation: none; }
   .skeleton::after { animation: none; display: none; }
+  .loading-state:not(.compact) { animation: none; }
 }
 </style>
