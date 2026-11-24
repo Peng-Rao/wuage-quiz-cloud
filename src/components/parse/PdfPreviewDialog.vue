@@ -1,10 +1,13 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { parseApi } from '@/api/parse'
 import ModalDialog from '@/components/ModalDialog.vue'
 import LoadingState from '@/components/LoadingState.vue'
 
-const props = defineProps<{ jobId: string; fileName: string }>()
+const props = defineProps<{ jobId: string; fileName: string; fileType?: string }>()
+// Word 与拍照上传的试卷由服务端转换为 PDF；Word 首次预览需转换，稍慢
+const converted = computed(() => !!props.fileType && props.fileType !== 'pdf')
+const pdfName = computed(() => (props.fileName.toLowerCase().endsWith('.pdf') ? props.fileName : `${props.fileName.replace(/\.[^.]+$/, '')}.pdf`))
 const open = defineModel<boolean>({ required: true })
 const url = ref('')
 const loading = ref(false)
@@ -44,16 +47,19 @@ watch([open, () => props.jobId, attempt], async ([isOpen, jobId], _, onCleanup) 
         <span class="file-name">{{ fileName }}</span>
         <div v-if="url" class="actions">
           <a class="btn" :href="url" target="_blank" rel="noopener">新窗口打开</a>
-          <a class="btn" :href="url" :download="fileName">下载 PDF</a>
+          <a class="btn" :href="url" :download="pdfName">下载 PDF</a>
         </div>
       </div>
-      <LoadingState v-if="loading" label="正在加载 PDF…" />
+      <LoadingState v-if="loading" :label="converted ? '正在生成 PDF…' : '正在加载 PDF…'" :detail="fileType === 'docx' ? 'Word 试卷首次预览需要转换，约需十几秒' : ''" />
       <div v-else-if="error" class="error" role="alert">
         <span>{{ error }}</span>
         <button class="btn" @click="attempt++">重新加载</button>
       </div>
       <template v-else-if="url">
-        <p class="hint">可在预览中翻页、缩放；若浏览器无法显示，请在新窗口打开或下载查看。</p>
+        <p class="hint">
+          <template v-if="converted">{{ fileType === 'docx' ? 'Word 原卷' : '拍照原图' }}已转换为 PDF 显示，排版以原件为准。</template>
+          可在预览中翻页、缩放；若浏览器无法显示，请在新窗口打开或下载查看。
+        </p>
         <iframe :src="url" :title="`${fileName} · PDF 预览`" class="pdf-frame" />
       </template>
     </div>

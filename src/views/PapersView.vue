@@ -88,7 +88,8 @@ const tagsOf = (p: PaperSummary) =>
   [p.meta.stage && p.meta.grade ? p.meta.grade : p.meta.stage, p.meta.subject, p.meta.region, p.meta.schoolYear].filter(Boolean)
 
 // 原卷 PDF 预览：沿用解析任务的权限，普通成员不能读取整卷
-const canPreview = (p: PaperSummary) => auth.isStaff && p.fileType === 'pdf'
+// 所有原卷都可预览：Word 与拍照上传的由服务端转换为 PDF
+const canPreview = (p: PaperSummary) => auth.isStaff && !!p.fileType
 const pdfOpen = ref(false)
 const pdfPaper = ref<PaperSummary | null>(null)
 function previewPdf(p: PaperSummary) {
@@ -180,7 +181,7 @@ async function addPaper(p: PaperSummary) {
           <span class="date">{{ p.updatedAt.slice(0, 10) }}</span>
           <div class="btns">
             <RouterLink :to="`/papers/${p.id}`" class="op">查看</RouterLink>
-            <button v-if="canPreview(p)" class="op" @click="previewPdf(p)">原卷 PDF</button>
+            <button v-if="canPreview(p)" class="op" @click="previewPdf(p)">预览原卷</button>
             <button class="op primary" :disabled="!!adding[p.id]" @click="addPaper(p)">
               <LoadingState v-if="adding[p.id] === 'loading'" compact label="正在获取整卷题目…" />
               <template v-else>{{ adding[p.id] === 'done' ? '已加入试题篮' : '整卷加入试题篮' }}</template>
@@ -197,7 +198,7 @@ async function addPaper(p: PaperSummary) {
       >{{ n }}</button>
     </nav>
 
-    <PdfPreviewDialog v-model="pdfOpen" :job-id="pdfPaper?.id ?? ''" :file-name="pdfPaper?.fileName ?? ''" />
+    <PdfPreviewDialog v-model="pdfOpen" :job-id="pdfPaper?.id ?? ''" :file-name="pdfPaper?.fileName ?? ''" :file-type="pdfPaper?.fileType" />
   </main>
 </template>
 

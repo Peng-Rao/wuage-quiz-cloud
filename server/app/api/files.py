@@ -14,6 +14,7 @@ from ..services import get_job
 from fastapi.responses import FileResponse, RedirectResponse, Response
 
 from ..config import get_settings
+from ..original_pdf import NoOriginal, original_pdf
 from ..pipeline.files import kind_of
 from ..schemas import UploadRequest, UploadTicket
 from ..storage import LocalStore, get_store, new_upload_key
@@ -23,24 +24,23 @@ router = APIRouter()
 
 @router.get("/api/parse-jobs/{job_id}/pdf", response_class=Response)
 def get_job_pdf(job_id: str, user: User = Depends(staff), s: Session = Depends(get_session)) -> Response:
-    """原卷 PDF：沿用任务的学科权限，普通成员不能读取整卷。"""
+    """原卷 PDF：沿用任务的学科权限，普通成员不能读取整卷。Word 与拍照上传的试卷转换为 PDF（见 original_pdf）。
+    同步接口在线程池中执行，Word 首次转换可能需要十几秒。"""
     job = get_job(s, job_id)
-    if job.file_type != "pdf":
-        raise HTTPException(400, "这份试卷不是 PDF 文件")
-    if len(job.file_keys) != 1:
-        raise HTTPException(404, "原始 PDF 文件不存在")
-    key = job.file_keys[0]["key"]
-    store = get_store()
-    if not key.startswith("uploads/") or not store.exists(key):
-        raise HTTPException(404, "原始 PDF 文件不存在")
+    try:
+        pdf = original_pdf(job)
+    except NoOriginal as e:
+        raise HTTPException(404, str(e)) from None
     headers = {
         "Cache-Control": "private, no-store",
-        "Content-Disposition": f"inline; filename*=UTF-8''{quote(job.file_name, safe='')}",
+        "Content-Disposition": f"inline; filename*=UTF-8''{quote(pdf.file_name, safe='')}",
+        # 由 Word / 图片转换而来时提示排版以原件为准
+        "X-Converted": "1" if pdf.converted else "0",
     }
-    if isinstance(store, LocalStore):
-        return FileResponse(store.path(key), media_type="application/pdf", headers=headers)
+    if pdf.path is not None:
+        return FileResponse(pdf.path, media_type="application/pdf", headers=headers)
     # 经过本服务读取，避免对象存储的跨域配置、文件类型或下载响应头影响预览。
-    return Response(store.get(key), media_type="application/pdf", headers=headers)
+    return Response(pdf.data, media_type="application/pdf", headers=headers)
 
 
 @router.post("/api/uploads", response_model=UploadTicket)

@@ -89,7 +89,8 @@ function onEdited(q: BankQuestion) {
 const metaOpen = ref(false)
 // 原卷 PDF 预览：沿用解析任务的权限，普通成员不能读取整卷
 const pdfOpen = ref(false)
-const canPreview = computed(() => auth.isStaff && paper.value?.fileType === 'pdf')
+// 所有原卷都可预览：Word 与拍照上传的由服务端转换为 PDF
+const canPreview = computed(() => auth.isStaff && !!paper.value?.fileType)
 watch(() => props.id, () => { pdfOpen.value = false })
 function onMetaSaved(p: PaperDetail) {
   paper.value = p
@@ -236,7 +237,7 @@ function replaceAndGo() {
           <button class="btn btn-outline" :disabled="inBasket === qs.length" @click="addAll">
             {{ inBasket === qs.length ? '已全部加入试题篮' : '整卷加入试题篮' }}
           </button>
-          <button v-if="canPreview" class="btn btn-outline" @click="pdfOpen = true">预览原卷 PDF</button>
+          <button v-if="canPreview" class="btn btn-outline" @click="pdfOpen = true">预览原卷</button>
           <span class="basket-note">本卷 {{ inBasket }} / {{ qs.length }} 题在试题篮中</span>
           <div v-if="auth.isStaff" class="minor-ops">
             <button v-if="auth.isAdmin" class="btn-link" @click="metaOpen = true">编辑属性</button>
@@ -281,7 +282,7 @@ function replaceAndGo() {
 
     <BankEditDialog v-model="editOpen" :q="editing?.q ?? null" :no="editing?.no" @saved="onEdited" />
     <PaperMetaDialog v-model="metaOpen" :paper="paper" @saved="onMetaSaved" />
-    <PdfPreviewDialog v-model="pdfOpen" :job-id="canPreview ? id : ''" :file-name="paper?.fileName ?? ''" />
+    <PdfPreviewDialog v-model="pdfOpen" :job-id="canPreview ? id : ''" :file-name="paper?.fileName ?? ''" :file-type="paper?.fileType" />
 
     <ReviewPanel v-if="auth.isStaff && paper" :questions="qs" @updated="reloadPaper" />
 

@@ -214,7 +214,7 @@ async function forceCommit() {
         <span>上传整份试卷，自动识别学科与试卷类型，拆分为单题，并评估每题难度。</span>
       </div>
       <nav class="tools">
-        <button v-if="job?.fileType === 'pdf'" type="button" class="btn" @click="pdfOpen = true">预览 PDF</button>
+        <button v-if="job?.fileType === 'pdf' || (job && job.status === 'done')" type="button" class="btn" @click="pdfOpen = true">预览原卷</button>
         <RouterLink to="/upload/knowledge">知识树管理</RouterLink>
         <RouterLink v-if="auth.isAdmin" to="/upload/eval">解析评测</RouterLink>
       </nav>
@@ -369,7 +369,7 @@ async function forceCommit() {
 
     <EditQuestionDialog v-model="editOpen" :job-id="job?.id ?? ''" :q="editing" :saving="!!editing && busy.has(editing.id)" @save="saveEdit" />
     <SourceImageDialog v-model="sourceOpen" :title="sourceTitle" :images="sourceImages" />
-    <PdfPreviewDialog v-model="pdfOpen" :job-id="job?.id ?? ''" :file-name="job?.fileName ?? ''" />
+    <PdfPreviewDialog v-model="pdfOpen" :job-id="job?.id ?? ''" :file-name="job?.fileName ?? ''" :file-type="job?.fileType" />
     <SimilarDialog v-model="similarOpen" :title="similarTitle" :items="similarItems" :error="similarError" />
     <ModalDialog v-model="dupOpen" title="这份试卷已在试卷库中" :width="460">
       <div v-if="dupPaper" class="dup-body">

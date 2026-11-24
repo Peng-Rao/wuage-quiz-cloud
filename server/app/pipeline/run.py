@@ -16,6 +16,7 @@ from ..usage import current_job
 from . import difficulty
 from .classify import classify
 from .docx_pdf import docx_to_pdf, locate_blocks
+from ..original_pdf import cache_key as original_cache_key
 from .files import normalize, pdf_page_count, render_pages
 from .knowledge import tag_job
 from .ir import Block
@@ -148,6 +149,8 @@ async def run_job(job_id: str) -> None:
             if pdf:
                 await asyncio.to_thread(locate_blocks, pdf, doc.blocks)
                 doc.pdf, doc.page_count = pdf, await asyncio.to_thread(pdf_page_count, pdf)
+                # 保存转换后的 PDF，试卷库中预览原卷时直接使用
+                await put_all(store, [(original_cache_key(job_id), pdf)])
         page_count = doc.page_count or (pdf_page_count(doc.pdf) if doc.pdf else 0)
 
         block_ids = [f"b{job_id}_{b.seq}" for b in doc.blocks]
