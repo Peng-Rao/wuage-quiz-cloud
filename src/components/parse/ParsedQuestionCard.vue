@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import LazyImg from '@/components/LazyImg.vue'
 import { computed, ref, watch } from 'vue'
 import type { DraftQuestion } from '@/api/parse'
 import { coefToDiff, type Difficulty } from '@/data/mock'
@@ -68,7 +69,7 @@ watch(() => props.q.answerSource, (src, prev) => {
         <MaterialText v-if="q.material" :text="q.material" initial="collapsed" />
         <div v-if="q.stem" class="pq-stem serif" :class="`lay-${layout}`"><MathText :text="q.stem" /></div>
         <div v-if="q.images.length" class="figs">
-          <img v-for="src in q.images" :key="src" :src="src" alt="题目配图" loading="lazy">
+          <LazyImg v-for="src in q.images" :key="src" :src="src" alt="题目配图" />
         </div>
         <div v-if="q.options.length" class="opts serif" :class="[`lay-${layout}`, layout !== 'plain' && ['opt-fixed', `cols-${cols}`]]">
           <span v-for="(o, i) in q.options" :key="i"><b>{{ optionLabel(layout, i) }}</b><MathText :text="o" /></span>

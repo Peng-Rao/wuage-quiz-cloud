@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import LazyImg from '@/components/LazyImg.vue'
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import type { BasketQuestion } from '@/stores/basket'
 import { useBasketStore } from '@/stores/basket'
@@ -78,7 +79,7 @@ onBeforeUnmount(() => optObs.disconnect())
       {{ block.no }}{{ noSep(layout) }}{{ block.scoreMark }}<MathText :text="block.q.stem" />
     </div>
     <div v-if="block.q.images.length" class="images">
-      <img v-for="src in block.q.images" :key="src" :src="src" alt="题目配图">
+      <LazyImg v-for="src in block.q.images" :key="src" :src="src" alt="题目配图" eager />
     </div>
     <div v-if="block.q.options.length" ref="optEl" class="options opt-fixed" :class="`cols-${cols}`">
       <span v-for="(o, i) in block.q.options" :key="i">{{ optionLabel(layout, i) }}<MathText :text="o" /></span>

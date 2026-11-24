@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import LazyImg from '@/components/LazyImg.vue'
 import { computed, ref } from 'vue'
 import { coefToDiff } from '@/data/mock'
 import type { BankQuestion } from '@/api/bank'
@@ -51,7 +52,7 @@ const paperTitle = computed(() => props.q.source?.title || props.q.source?.fileN
       <div class="stem" :class="{ folded: foldable && !unfolded }"><span class="no">{{ no }}{{ noSep(layout) }}</span><MathText :text="q.stem" /></div>
       <button v-if="foldable" class="fold" @click="unfolded = !unfolded">{{ unfolded ? '收起材料 ▴' : '展开全文 ▾' }}</button>
       <div v-if="q.images.length" class="images">
-        <img v-for="src in q.images" :key="src" :src="src" alt="题目配图" loading="lazy">
+        <LazyImg v-for="src in q.images" :key="src" :src="src" alt="题目配图" />
       </div>
       <div v-if="q.options.length" class="options" :class="layout !== 'plain' && ['opt-fixed', `cols-${cols}`]">
         <span v-for="(o, i) in q.options" :key="i"><b>{{ optionLabel(layout, i) }}</b><MathText :text="o" /></span>

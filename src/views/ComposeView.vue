@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import LazyImg from '@/components/LazyImg.vue'
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useRouter } from 'vue-router'
@@ -309,7 +310,7 @@ function toBasket() {
               <span class="no">{{ it.no }}{{ noSep(layout) }}</span><span class="score">（{{ it.score }} 分）</span><MathText :text="it.question.stem" />
             </div>
             <div v-if="it.question.images.length" class="images">
-              <img v-for="src in it.question.images" :key="src" :src="src" alt="题目配图" loading="lazy">
+              <LazyImg v-for="src in it.question.images" :key="src" :src="src" alt="题目配图" />
             </div>
             <div
               v-if="it.question.options.length" class="options serif"
