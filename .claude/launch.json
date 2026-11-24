@@ -2,6 +2,15 @@
   "version": "0.0.1",
   "configurations": [
     {
+      "name": "app-8000",
+      "runtimeExecutable": "env",
+      "runtimeArgs": [
+        "STATIC_DIR=../dist",
+        "uv", "run", "--directory", "server", "uvicorn", "app.main:app", "--port", "8000"
+      ],
+      "port": 8000
+    },
+    {
       "name": "web",
       "runtimeExecutable": "npm",
       "runtimeArgs": [
