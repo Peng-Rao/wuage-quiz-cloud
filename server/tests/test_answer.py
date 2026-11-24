@@ -7,10 +7,10 @@ from sqlalchemy import select, text
 
 from app.config import get_settings
 from app.db import AiUsage, BankQuestion, DraftQuestion, SessionLocal, add_missing_columns
-from app.pipeline import llm
 from app.pipeline.answer import _normalize
 
 from .test_api import client, parsed, upload, wait_done  # noqa: F401  复用已解析的试卷
+from .llm_fakes import mock_llm
 
 
 def q(type_: str, options=None, images=None) -> DraftQuestion:  # noqa: ANN001
@@ -62,7 +62,7 @@ def llm_on(monkeypatch):
               "data: [DONE]\n\n"
         return httpx.Response(200, headers={"content-type": "text/event-stream"}, content=sse.encode())
 
-    monkeypatch.setattr(llm, "transport", httpx.MockTransport(handler))
+    mock_llm(monkeypatch, handler)
     return prompts
 
 
@@ -95,7 +95,8 @@ def test_generate_answers_flow(client, parsed, llm_on):  # noqa: F811
     assert r.json()["questionIds"] == [qs[1]["id"], qs[7]["id"]]
     task = wait_answers(client, job_id)
     assert (task["status"], task["done"], task["failed"]) == ("done", 2, 0)
-    assert len(llm_on) == 2 and "选项：\nA．" in llm_on[0]
+    # 两题并发请求，顺序不固定
+    assert len(llm_on) == 2 and any("选项：\nA．" in x for x in llm_on)
 
     after = {x["id"]: x for x in client.get(f"/api/parse-jobs/{job_id}/questions").json()}
     q2, q8 = after[qs[1]["id"]], after[qs[7]["id"]]

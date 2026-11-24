@@ -16,6 +16,7 @@ from app.storage import CosStore, OssStore
 
 from .test_answer import llm_on, wait_answers  # noqa: F401
 from .test_api import client, parsed, upload, wait_done  # noqa: F401
+from .llm_fakes import mock_llm
 
 
 class FakeOss:
@@ -254,7 +255,7 @@ async def test_chat_json_with_images_uses_vision_model(monkeypatch):
         seen.append((str(req.url), json.loads(req.content)))
         return httpx.Response(200, json={"choices": [{"message": {"content": '说明：{"answer": "B"}'}}]})
 
-    monkeypatch.setattr(llm, "transport", httpx.MockTransport(handler))
+    mock_llm(monkeypatch, handler)
     assert await llm.chat_json("sys", "题目", s, images=["https://img/1.jpg", "data:image/png;base64,AA=="]) == {"answer": "B"}
     url, body = seen[0]
     assert url == "https://vl.test/v1/chat/completions" and body["model"] == "vl-model"
@@ -284,7 +285,7 @@ def test_generate_answer_sends_images(client, parsed, llm_on, monkeypatch):  # n
     s = get_settings()
     monkeypatch.setattr(s, "vision_model", "vl-model")
     bodies: list[dict] = []
-    inner = llm.transport
+    inner = llm.transport.httpx_handler
 
     async def spy(req: httpx.Request) -> httpx.Response:
         body = json.loads(req.content)
@@ -292,9 +293,10 @@ def test_generate_answer_sends_images(client, parsed, llm_on, monkeypatch):  # n
         if isinstance(body["messages"][1]["content"], list):  # 看图请求：取出文字部分交给原模拟
             body["messages"][1]["content"] = body["messages"][1]["content"][0]["text"]
             req = httpx.Request(req.method, req.url, headers=req.headers, json=body)
-        return await inner.handle_async_request(req)
+        resp = inner(req)
+        return await resp if hasattr(resp, "__await__") else resp
 
-    monkeypatch.setattr(llm, "transport", httpx.MockTransport(spy))
+    mock_llm(monkeypatch, spy)
     job_id = parsed["id"]
     qid = client.get(f"/api/parse-jobs/{job_id}/questions").json()[2]["id"]
     key = f"jobs/{job_id}/blocks/test-fig.png"

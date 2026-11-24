@@ -25,6 +25,18 @@ uv run uvicorn app.main:app --port 8000 --reload
 
 `GET /api/health` 可查看当前启用了哪些引擎与在线 Worker：`{"mineru": true, "llm": true, "worker": {...}, ...}`。
 
+## 大模型调用（LangChain）
+
+所有大模型步骤（试卷分类、拆题、知识点标注、难度评估、AI 解答含看图、AI 组卷）都经过 `app/pipeline/llm.py`：
+
+- 模型为 `langchain-openai` 的 `ChatOpenAI`，接 OpenAI 兼容接口，流式输出并返回用量。
+- 失败分类：Key 无效直接报错；额度用完、请求被拒（如模型名错误）不重试；网络中断、超时、5xx、限流按指数退避重试（默认共 3 次）。
+  配置了 `LLM_FALLBACK_MODEL` 时，之后改用备用模型（看图请求不切换）。
+- `structured()`：提示词模板（`ChatPromptTemplate`）→ 模型 → 宽松解析 JSON → Pydantic 校验（`app/pipeline/outputs.py`）→ 各步骤与输入相关的检查。
+  不合格时把错误发给模型重答一次，仍不合格才降级（规则拆题、跳过标注等）。
+- 每次请求（含重试、重答、备用模型）都写入 `ai_usage`，记在实际作答的模型名下；DeepSeek 的 `prompt_cache_hit_tokens` 计为缓存命中。
+- 不接入 LangSmith 等第三方追踪，试卷内容只发给配置的模型服务。
+
 ## 认证和权限
 
 除健康检查、登录、退出外，业务接口均要求登录 Cookie。管理员通过 `/api/users` 管理账号；组长限授权学科，普通用户限本人已分配且审核通过的题目。请求级数据库会话统一过滤题目、任务、知识树和聚合统计；文件接口另校验题目配图权限，普通用户不能读取整页原图。\
@@ -70,6 +82,7 @@ uv run python -m app.create_root root@example.com   # 创建 root 账号，交�
 | `MINERU_MODEL_VERSION` | `vlm`（默认，公式更准）或 `pipeline` |
 | `LLM_BASE_URL` / `LLM_API_KEY` / `LLM_MODEL` | OpenAI 兼容接口，三项齐全才启用；未配置时只用规则拆题 |
 | `LLM_EXTRA_BODY` | 附加到请求体的厂商参数（JSON），如 `{"enable_thinking": false}` |
+| `LLM_FALLBACK_MODEL` | 备用模型（可选，沿用大模型的地址与 Key）：重试后仍失败、额度用完或拒绝请求时改用 |
 | `WORKER_CONCURRENCY` | 每个进程同时执行的任务数（解析、生成答案等），其余排队，默认 2 |
 | `REDIS_URL` | 任务队列，如 `redis://localhost:6379/0`。配置后网页服务只负责入队，由 `python -m app.worker` 启动的独立进程执行（可运行多个）；未配置时在网页服务进程内执行 |
 | `REDIS_PREFIX` | Redis 键前缀，多套环境共用一个 Redis 时区分，默认 `fg-quiz` |

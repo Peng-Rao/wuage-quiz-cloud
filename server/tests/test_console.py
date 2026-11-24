@@ -148,6 +148,7 @@ def test_runtime_settings_override_env_and_mask_secrets(root_client):
     assert root_client.put("/api/admin/settings", json={"values": {"llm_base_url": "ftp://x"}}).status_code == 422
     assert root_client.put("/api/admin/settings", json={"values": {"database_url": "x"}}).status_code == 422
     assert root_client.post("/api/admin/settings/test", json={"target": "vision"}).json()["ok"] is False
+    assert root_client.post("/api/admin/settings/test", json={"target": "fallback"}).json()["ok"] is False
 
 
 def test_exam_management(root_client):

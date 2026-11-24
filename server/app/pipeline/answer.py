@@ -19,7 +19,8 @@ from sqlalchemy.orm import Session
 from ..config import get_settings
 from ..db import BankQuestion, DraftQuestion, ParseJob, SessionLocal
 from ..usage import current_job
-from .llm import LLMError, chat_json, describe
+from .llm import LLMError, describe, prompt, structured
+from .outputs import AnswerOutput
 from .vision import image_inputs
 
 log = logging.getLogger(__name__)
@@ -37,6 +38,9 @@ SYSTEM = """你是经验丰富的中国中小学{subject}教师，请为下面�
 5. 题目的配图（如有）按顺序附在题目文字之后，请结合图片作答。题目依赖你看不到的图片、表格或材料，或题目文字不完整导致无法确定答案时，仍给出最可能的答案，
    并将 uncertain 设为 true，在 reason 中用一句话说明原因。
 6. 不要编造题目中没有给出的条件。"""
+
+
+ANSWER_PROMPT = prompt(SYSTEM)
 
 
 def _question_payload(q: DraftQuestion | BankQuestion, with_images: int = 0) -> str:
@@ -113,8 +117,8 @@ async def _answer_one(qid: str, meta: dict, overwrite: bool, sem: asyncio.Semaph
             q = s.get(model, qid)
             if q is None or ((q.answer or "").strip() and not overwrite):
                 return True  # 已被删除（合并 / 拆分）或期间已有答案，跳过
-            system = SYSTEM.format(subject=meta.get("subject") or "", stage=meta.get("stage") or "",
-                                   grade=meta.get("grade") or "")
+            values = {"subject": meta.get("subject") or "", "stage": meta.get("stage") or "",
+                      "grade": meta.get("grade") or ""}
             keys = list(q.images) if settings.vision_enabled else []
         images: list[str] = []
         if keys:
@@ -122,10 +126,12 @@ async def _answer_one(qid: str, meta: dict, overwrite: bool, sem: asyncio.Semaph
                 images = await asyncio.to_thread(image_inputs, keys, settings)
             except Exception as e:  # noqa: BLE001  读图失败时退回纯文字作答
                 log.warning("第 %s 题配图读取失败，按纯文字作答：%s", qid, describe(e))
-        payload = _question_payload(q, len(images))
+        values["input"] = _question_payload(q, len(images))
         try:
-            data = await chat_json(system, payload, settings, purpose="answer", images=images or None)
-            answer, analysis, note = _normalize(q, data, saw_images=bool(images))
+            # 没有答案等不合格的输出会请大模型重答一次
+            answer, analysis, note = await structured(
+                ANSWER_PROMPT, values, AnswerOutput, settings, purpose="answer", images=images or None,
+                check=lambda out: _normalize(q, out.model_dump(), saw_images=bool(images)))
         except (LLMError, ValueError) as e:
             log.warning("AI 解答第 %s 题失败：%s", qid, describe(e))
             return False

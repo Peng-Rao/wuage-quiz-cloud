@@ -8,12 +8,13 @@ import pytest
 from app.config import get_settings
 import re
 
-from app.pipeline import difficulty, knowledge, llm
+from app.pipeline import difficulty, knowledge
 from app.pipeline.classify import rule_title
 from app.pipeline.knowledge import _clean, kp_id
 
 from .fixtures import TITLE, make_exam_pdf
 from .test_api import client, upload, wait_done  # noqa: F401
+from .llm_fakes import mock_llm
 
 
 def test_title_and_kp_helpers():
@@ -81,7 +82,7 @@ def _llm_on(monkeypatch, handler):  # noqa: ANN001
         sse = f'data: {json.dumps({"choices": [{"delta": {"content": content}}]})}\n\ndata: [DONE]\n\n'
         return httpx.Response(200, headers={"content-type": "text/event-stream"}, content=sse.encode())
 
-    monkeypatch.setattr(llm, "transport", httpx.MockTransport(wrapped))
+    mock_llm(monkeypatch, wrapped)
 
 
 def _catalog_id(system: str, suffix: str) -> str:

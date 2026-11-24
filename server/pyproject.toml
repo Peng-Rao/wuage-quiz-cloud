@@ -16,6 +16,8 @@ dependencies = [
   "cos-python-sdk-v5>=1.9.44",
   "olefile>=0.47",
   "pgvector>=0.4",
+  "langchain-core>=1,<2",
+  "langchain-openai>=1,<2",
 ]
 
 [project.optional-dependencies]

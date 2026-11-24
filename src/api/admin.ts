@@ -141,7 +141,7 @@ export const adminApi = {
 
   settings: () => request<SettingField[]>('GET', `${A}/settings`),
   saveSettings: (values: Record<string, unknown>) => request<SettingField[]>('PUT', `${A}/settings`, { values }),
-  testSettings: (target: 'llm' | 'vision' | 'embedding') =>
+  testSettings: (target: 'llm' | 'fallback' | 'vision' | 'embedding') =>
     request<{ ok: boolean; status?: number; latencyMs?: number; model?: string; message: string }>('POST', `${A}/settings/test`, { target }),
 
   usage: {

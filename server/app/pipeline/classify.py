@@ -7,7 +7,7 @@ from pathlib import Path
 
 from ..config import Settings
 from ..schemas import PaperMeta
-from .llm import LLMError, chat_json
+from .llm import LLMError, prompt, structured
 
 log = logging.getLogger(__name__)
 
@@ -192,6 +192,16 @@ LLM_SYSTEM = f"""你是中国中小学试卷分类助手。根据试卷开头的
 - 无法判断的字段留空字符串，不要猜测。"""
 
 
+CLASSIFY_PROMPT = prompt(LLM_SYSTEM, template=False)
+
+
+def _to_meta(data: object) -> PaperMeta:
+    """大模型输出 → 试卷属性：各字段按字符串处理，再按学段、学科等的合法取值校正。"""
+    if not isinstance(data, dict):
+        raise ValueError("应输出一个 JSON 对象")
+    return _valid(PaperMeta.model_validate({k: str(v or "").strip() for k, v in data.items()}))
+
+
 def _valid(meta: PaperMeta) -> PaperMeta:
     if meta.stage not in STAGES:
         meta.stage = ""
@@ -214,8 +224,7 @@ async def classify(head_text: str, settings: Settings, *, file_name: str = "") -
         return meta, warnings
     try:
         user = (f"文件名：{hint}\n\n" if hint else "") + head_text[:3000]
-        data = await chat_json(LLM_SYSTEM, user, settings, purpose="classify")
-        llm = _valid(PaperMeta.model_validate({k: str(v or "").strip() for k, v in (data or {}).items()}))
+        llm = await structured(CLASSIFY_PROMPT, {"input": user}, None, settings, purpose="classify", check=_to_meta)
     except (LLMError, ValueError) as e:
         log.warning("大模型分类失败：%s", e)
         warnings.append(f"大模型分类失败，已使用规则结果：{e}")

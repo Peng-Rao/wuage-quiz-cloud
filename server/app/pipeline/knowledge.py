@@ -18,7 +18,8 @@ from sqlalchemy import select
 from ..config import get_settings
 from ..db import DraftQuestion, KnowledgeNode, KnowledgeTree, ParseJob, SessionLocal
 from ..knowledge_tree import leaves, pick_tree, search_nodes
-from .llm import LLMError, chat_json, describe, items_of
+from .llm import LLMError, describe, prompt, structured
+from .outputs import QuestionItem, QuestionItems
 
 log = logging.getLogger(__name__)
 
@@ -74,14 +75,6 @@ def _clean(name: Any) -> str:
     return name[:30]
 
 
-def _difficulty(v: Any) -> float | None:
-    try:
-        d = float(v)
-    except (TypeError, ValueError):
-        return None
-    return round(d, 2) if 0 <= d <= 1 else None
-
-
 def _payload(qs: list[DraftQuestion]) -> str:
     rows = []
     for q in qs:
@@ -100,8 +93,28 @@ def _free_ref(subject: str, name: str) -> dict[str, Any]:
     return {"id": kp_id(subject, name), "name": name, "path": None, "inTree": False}
 
 
-def _items(data: Any) -> list[dict[str, Any]]:
-    return [x for x in items_of(data, "questions") or [] if isinstance(x, dict)]
+FREE_PROMPT = prompt(FREE_SYSTEM)
+TREE_PROMPT = prompt(TREE_SYSTEM)
+CHOOSE_PROMPT = prompt(CHOOSE_SYSTEM)
+
+
+def covers(chunk: list[DraftQuestion]):  # noqa: ANN201
+    """check：输出至少要对应到一道输入的题，否则请大模型重答；返回题号 → 结果。"""
+    nos = {q.no for q in chunk}
+
+    def check(out: QuestionItems) -> dict[int, QuestionItem]:
+        found = {it.no: it for it in out.questions if it.no in nos}
+        if not found:
+            raise ValueError(f"输出的题号与输入不符，输入的题号为：{'、'.join(str(n) for n in sorted(nos))}")
+        return found
+
+    return check
+
+
+async def ask_items(template, values: dict[str, Any], chunk: list[DraftQuestion], settings, purpose: str):  # noqa: ANN001, ANN201
+    """按题批量提问，返回 [(题, 结果)]。"""
+    found = await structured(template, values, QuestionItems, settings, purpose=purpose, check=covers(chunk))
+    return [(q, found[q.no]) for q in chunk if q.no in found]
 
 
 class Tagger:
@@ -142,42 +155,33 @@ class Tagger:
         return out
 
     async def _free(self, chunk: list[DraftQuestion]):
-        data = await chat_json(FREE_SYSTEM.format(**self.fmt), _payload(chunk), self.s, purpose="knowledge")
-        by_no = {q.no: q for q in chunk}
         kps, diff = {}, {}
-        for it in _items(data):
-            q = by_no.get(it.get("no"))
-            if not q:
-                continue
-            names = self._names(it.get("kps"))[:MAX_KPS]
+        for q, it in await ask_items(FREE_PROMPT, {**self.fmt, "input": _payload(chunk)}, chunk, self.s, "knowledge"):
+            names = self._names(it.kps)[:MAX_KPS]
             if names:
                 kps[q.id] = [_free_ref(self.subject, n) for n in names]
-            if (d := _difficulty(it.get("difficulty"))) is not None:
-                diff[q.id] = d
+            if it.difficulty is not None:
+                diff[q.id] = it.difficulty
         return kps, diff
 
     async def _full_list(self, chunk: list[DraftQuestion]):
         catalog = "\n".join(f"k{i}：{n.path}" for i, n in enumerate(self.nodes))
-        data = await chat_json(TREE_SYSTEM.format(catalog=catalog, **self.fmt), _payload(chunk), self.s, purpose="knowledge")
-        by_no = {q.no: q for q in chunk}
+        values = {**self.fmt, "catalog": catalog, "input": _payload(chunk)}
         kps, diff = {}, {}
-        for it in _items(data):
-            q = by_no.get(it.get("no"))
-            if not q:
-                continue
+        for q, it in await ask_items(TREE_PROMPT, values, chunk, self.s, "knowledge"):
             refs: list[dict] = []
-            for raw in it.get("ids") or []:
+            for raw in it.ids:
                 m = re.fullmatch(r"k(\d+)", str(raw).strip())
                 if m and int(m.group(1)) < len(self.nodes):
                     ref = _node_ref(self.nodes[int(m.group(1))])
                     if all(r["id"] != ref["id"] for r in refs):
                         refs.append(ref)
-            for name in self._names(it.get("other"))[:1]:
+            for name in self._names(it.other)[:1]:
                 refs.append(self._resolve_name(name))
             if refs:
                 kps[q.id] = refs[:MAX_KPS]
-            if (d := _difficulty(it.get("difficulty"))) is not None:
-                diff[q.id] = d
+            if it.difficulty is not None:
+                diff[q.id] = it.difficulty
         return kps, diff
 
     def _resolve_name(self, name: str) -> dict[str, Any]:
@@ -207,14 +211,11 @@ class Tagger:
         chosen: dict[str, list[dict]] = {}
         if index:
             try:
-                data = await chat_json(CHOOSE_SYSTEM.format(**self.fmt), "\n".join(lines), self.s, purpose="knowledge")
-                by_no = {q.no: q for q in chunk}
-                for it in _items(data):
-                    q = by_no.get(it.get("no"))
-                    if not q:
-                        continue
+                asked = [q for q in chunk if cands[q.id]]
+                values = {**self.fmt, "input": "\n".join(lines)}
+                for q, it in await ask_items(CHOOSE_PROMPT, values, asked, self.s, "knowledge"):
                     allowed = {n.id for n in cands[q.id]}
-                    refs = [_node_ref(index[c]) for c in it.get("ids") or [] if c in index and index[c].id in allowed]
+                    refs = [_node_ref(index[c]) for c in it.ids if c in index and index[c].id in allowed]
                     if refs:
                         chosen[q.id] = list({r["id"]: r for r in refs}.values())[:MAX_KPS]
             except LLMError as e:

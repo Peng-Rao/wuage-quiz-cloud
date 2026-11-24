@@ -20,7 +20,7 @@ from .bank import bank_out
 from .config import get_settings
 from .db import BankQuestion
 from .knowledge_tree import PATH_SEP
-from .pipeline.llm import LLMError, chat_json, describe
+from .pipeline.llm import LLMError, describe, prompt, structured
 from .schemas import (
     QUESTION_TYPES, ComposeFocus, ComposeItem, ComposeMessage, ComposeRequest, ComposeResult, ComposeSection,
 )
@@ -262,6 +262,16 @@ def assign_scores(sections: list[tuple[str, list[BankQuestion]]], total: int) ->
 
 # ---------------- 入口 ----------------
 
+BLUEPRINT_PROMPT = prompt(
+    SYSTEM, human="老师的当前设置：总分 {total} 分，平均难度 {difficulty:.2f}。\n\n对话：\n{conversation}")
+
+
+def _blueprint_object(raw: Any) -> dict[str, Any]:
+    if not isinstance(raw, dict):
+        raise ValueError("应输出一个 JSON 对象")
+    return raw
+
+
 def _conversation(messages: list[ComposeMessage]) -> str:
     return "\n".join(f"{'老师' if m.role == 'user' else '你'}：{m.content}" for m in messages)
 
@@ -290,14 +300,15 @@ async def compose(s: Session, school_id: str, req: ComposeRequest) -> ComposeRes
     bp: Blueprint | None = None
     note = ""
     if settings.llm_enabled:
-        system = SYSTEM.format(
-            stage=req.stage, subject=req.subject, max_questions=MAX_QUESTIONS,
-            catalog="\n".join(f"{t.code}：{t.key}（{t.count}）" for t in catalog) or "（题目尚未标注知识点）",
-            types="，".join(f"{t} {available[t]} 道" for t in QUESTION_TYPES if available[t]),
-        )
-        user = f"老师的当前设置：总分 {req.total} 分，平均难度 {req.difficulty:.2f}。\n\n对话：\n{_conversation(req.messages)}"
+        values = {
+            "stage": req.stage, "subject": req.subject, "max_questions": MAX_QUESTIONS,
+            "catalog": "\n".join(f"{t.code}：{t.key}（{t.count}）" for t in catalog) or "（题目尚未标注知识点）",
+            "types": "，".join(f"{t} {available[t]} 道" for t in QUESTION_TYPES if available[t]),
+            "total": req.total, "difficulty": req.difficulty, "conversation": _conversation(req.messages),
+        }
         try:
-            bp = parse_blueprint(await chat_json(system, user, settings, purpose="compose"), req, catalog, available)
+            bp = await structured(BLUEPRINT_PROMPT, values, None, settings, purpose="compose",
+                                  check=lambda raw: parse_blueprint(_blueprint_object(raw), req, catalog, available))
         except LLMError as e:
             log.warning("AI 组卷：大模型调用失败，改用关键词匹配：%s", describe(e))
             note = "大模型暂时不可用，"

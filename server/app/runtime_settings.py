@@ -41,6 +41,8 @@ EDITABLE: tuple[Editable, ...] = (
     Editable("llm_api_key", "大模型", "API Key", "secret"),
     Editable("llm_model", "大模型", "模型", help="如 deepseek-chat、qwen-plus；地址、Key、模型都填写后才启用"),
     Editable("llm_extra_body", "大模型", "附加请求参数", "json", help='JSON 对象，如 {"enable_thinking": false}'),
+    Editable("llm_fallback_model", "大模型", "备用模型",
+             help="可选，沿用上面的地址与 Key：大模型重试后仍失败、额度用完或拒绝请求时改用它"),
     Editable("vision_base_url", "看图模型", "接口地址", help="留空沿用大模型地址"),
     Editable("vision_api_key", "看图模型", "API Key", "secret", help="留空沿用大模型 Key"),
     Editable("vision_model", "看图模型", "模型", help="留空则大模型看不到题目配图"),

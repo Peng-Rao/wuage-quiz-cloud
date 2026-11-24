@@ -24,6 +24,7 @@ function reset(list: SettingField[]) {
 onMounted(async () => {
   try { reset(await adminApi.settings()) } catch (e) { error.value = (e as Error).message }
 })
+const hasFallback = computed(() => !!fields.value?.find(f => f.key === 'llm_fallback_model')?.value)
 const groups = computed(() => {
   const out: Record<string, SettingField[]> = {}
   for (const f of fields.value ?? []) (out[f.group] ??= []).push(f)
@@ -54,10 +55,10 @@ async function revert(f: SettingField) {
   catch (e) { notes[f.group] = { ok: false, text: (e as Error).message } }
   finally { busy.value = '' }
 }
-async function test(group: string) {
+async function test(group: string, target: 'llm' | 'fallback' | 'vision' | 'embedding' = TESTS[group]) {
   busy.value = group; delete notes[group]
   try {
-    const r = await adminApi.testSettings(TESTS[group])
+    const r = await adminApi.testSettings(target)
     notes[group] = { ok: r.ok, text: r.ok ? `连接正常 · ${r.model} · ${r.latencyMs} ms` : r.message }
   } catch (e) { notes[group] = { ok: false, text: (e as Error).message } }
   finally { busy.value = '' }
@@ -91,6 +92,7 @@ async function test(group: string) {
       <div class="adm-actions foot">
         <button class="btn btn-primary btn-sm" :disabled="busy === group">{{ busy === group ? '处理中…' : '保存' }}</button>
         <button v-if="TESTS[group]" type="button" class="btn btn-sm" :disabled="busy === group" @click="test(group)">测试连接</button>
+        <button v-if="TESTS[group] === 'llm' && hasFallback" type="button" class="btn btn-sm" :disabled="busy === group" @click="test(group, 'fallback')">测试备用模型</button>
         <span v-if="notes[group]" :class="notes[group].ok ? 'adm-ok' : 'adm-error'" role="status">{{ notes[group].text }}</span>
       </div>
     </form>

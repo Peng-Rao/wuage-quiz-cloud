@@ -13,8 +13,8 @@ from app.compose import apportion, assign_scores
 from app.config import get_settings
 from app.db import BankQuestion, SessionLocal
 from app.main import app
-from app.pipeline import llm
 from app.services import current_school
+from .llm_fakes import mock_llm
 
 META = {"title": "组卷测试高二生物卷", "stage": "高中", "subject": "生物", "grade": "高二"}
 ROOT = "必修"
@@ -74,7 +74,7 @@ def llm_reply(monkeypatch):
             seen["system"], seen["user"] = body["messages"][0]["content"], body["messages"][1]["content"]
             content = json.dumps(reply(seen["system"]), ensure_ascii=False)
             return httpx.Response(200, json={"choices": [{"message": {"content": content}}]})
-        monkeypatch.setattr(llm, "transport", httpx.MockTransport(handler))
+        mock_llm(monkeypatch, handler)
         return seen
     return install
 
@@ -176,7 +176,7 @@ def test_compose_llm_failure_falls_back(client, monkeypatch):
     monkeypatch.setattr(s, "llm_base_url", "https://llm.test/v1")
     monkeypatch.setattr(s, "llm_api_key", "k")
     monkeypatch.setattr(s, "llm_model", "qwen-test")
-    monkeypatch.setattr(llm, "transport", httpx.MockTransport(lambda _: httpx.Response(500)))
+    mock_llm(monkeypatch, lambda _: httpx.Response(500))
     res = _post(client, "光合作用").json()
     assert res["ai"] is False and res["reply"].startswith("大模型暂时不可用")
     assert res["model"] is None

@@ -14,6 +14,7 @@ from app.pipeline.parsers.mineru_cloud import MinerUCloudParser
 from app.usage import cost_of, current_job, estimate_tokens, summarize
 
 from .test_parsers import BASE, UPLOAD, ZIP, _zip
+from .llm_fakes import mock_llm
 
 JOB = "usagejob0000001"
 
@@ -68,7 +69,7 @@ async def test_llm_usage_recorded_from_stream(monkeypatch):
         seen.update(json.loads(req.content))
         return sse('{"ok": 1}', QWEN_USAGE)
 
-    monkeypatch.setattr(llm, "transport", httpx.MockTransport(handler))
+    mock_llm(monkeypatch, handler)
     assert await llm.chat_json("系统", "用户", settings(), purpose="segment") == {"ok": 1}
     assert seen["stream_options"] == {"include_usage": True}
     [r] = rows()
@@ -77,7 +78,7 @@ async def test_llm_usage_recorded_from_stream(monkeypatch):
 
 
 async def test_llm_usage_estimated_when_missing(monkeypatch):
-    monkeypatch.setattr(llm, "transport", httpx.MockTransport(lambda _: sse('{"ok": 1}', None)))
+    mock_llm(monkeypatch, lambda _: sse('{"ok": 1}', None))
     await llm.chat_json("系统提示", "用户输入", settings(), purpose="classify")
     [r] = rows()
     assert r.estimated and r.prompt_tokens == estimate_tokens("系统提示用户输入") and r.completion_tokens > 0
@@ -87,11 +88,11 @@ async def test_failed_attempts_are_recorded(monkeypatch):
     def handler(req: httpx.Request) -> httpx.Response:
         raise httpx.RemoteProtocolError("Server disconnected", request=req)
 
-    monkeypatch.setattr(llm, "transport", httpx.MockTransport(handler))
+    mock_llm(monkeypatch, handler)
     with pytest.raises(llm.LLMError):
         await llm.chat_json("系统", "用户", settings(), purpose="segment")
     rs = rows()
-    assert len(rs) == 2 and all(r.status == "error" and r.estimated and r.prompt_tokens > 0 for r in rs)
+    assert len(rs) == 1 + llm.RETRIES and all(r.status == "error" and r.estimated and r.prompt_tokens > 0 for r in rs)
 
 
 def _row(**kw) -> AiUsage:  # noqa: ANN003

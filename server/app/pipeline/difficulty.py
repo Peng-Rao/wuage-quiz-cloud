@@ -14,7 +14,7 @@ from sqlalchemy import select, text
 
 from ..config import get_settings
 from ..db import AppMeta, DraftQuestion, SessionLocal, engine
-from .llm import LLMError, chat_json, describe
+from .llm import LLMError, describe, prompt
 from .segment import Question
 
 log = logging.getLogger(__name__)
@@ -79,26 +79,24 @@ DIFF_SYSTEM = """你是经验丰富的中国中小学{subject}教师。请评估
 
 
 async def estimate_ai(job_id: str, meta: dict[str, Any]) -> dict[str, float]:
-    from .knowledge import BATCH, DIFFICULTY_RUBRIC, _difficulty, _items, _payload
+    from .knowledge import BATCH, DIFFICULTY_RUBRIC, _payload, ask_items
 
     settings = get_settings()
     with SessionLocal() as s:
         qs = list(s.scalars(select(DraftQuestion).where(DraftQuestion.job_id == job_id).order_by(DraftQuestion.no)))
-    system = DIFF_SYSTEM.format(subject=meta.get("subject") or "学科", stage=meta.get("stage") or "",
-                                grade=meta.get("grade") or "") + DIFFICULTY_RUBRIC
+    template = prompt(DIFF_SYSTEM + DIFFICULTY_RUBRIC)
+    values = {"subject": meta.get("subject") or "学科", "stage": meta.get("stage") or "", "grade": meta.get("grade") or ""}
     out: dict[str, float] = {}
     for i in range(0, len(qs), BATCH):
         chunk = qs[i:i + BATCH]
         try:
-            data = await chat_json(system, _payload(chunk), settings, purpose="difficulty")
+            items = await ask_items(template, {**values, "input": _payload(chunk)}, chunk, settings, "difficulty")
         except LLMError as e:
             log.warning("难度评估失败（第 %d 批）：%s", i // BATCH + 1, describe(e))
             continue
-        by_no = {q.no: q for q in chunk}
-        for it in _items(data):
-            q = by_no.get(it.get("no"))
-            if q and (d := _difficulty(it.get("difficulty"))) is not None:
-                out[q.id] = d
+        for q, it in items:
+            if it.difficulty is not None:
+                out[q.id] = it.difficulty
     return out
 
 

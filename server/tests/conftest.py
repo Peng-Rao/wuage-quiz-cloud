@@ -77,6 +77,13 @@ def _db():
         s.commit()
 
 
+@pytest.fixture(autouse=True)
+def _no_llm_retry_wait(monkeypatch):
+    # 大模型重试的指数退避在测试中不等待
+    from app.pipeline import llm
+    monkeypatch.setattr(llm, "RETRY_WAIT", {"initial": 0, "max": 0, "jitter": 0})
+
+
 @pytest.fixture
 def scratch_engine():
     """临时新建的空库（如模拟升级前的旧表结构），用完删除。"""

@@ -13,7 +13,8 @@ from dataclasses import dataclass, field
 
 from ..config import Settings
 from .ir import Block
-from .llm import LLMError, chat_json, items_of
+from .llm import LLMError, items_of, prompt, structured
+from .outputs import SegmentOutput
 
 log = logging.getLogger(__name__)
 
@@ -636,6 +637,9 @@ LLM_SYSTEM = """你是中国中小学试卷的结构化助手。输入是一份�
 {"questions":[{"no":1,"type":"单选题","score":5,"units":["u3","u4"],"answer_units":["u80"]}]}"""
 
 
+SEGMENT_PROMPT = prompt(LLM_SYSTEM, template=False)
+
+
 def _llm_payload(units: list[Unit]) -> str:
     rows = [{"id": u.id, "p": u.page, "t": u.text[:300]} for u in units]
     return json.dumps(rows, ensure_ascii=False)
@@ -926,12 +930,18 @@ async def _segment(units: list[Unit], settings: Settings, *, with_answer: bool) 
 
     known = {u.id: u for u in units}
     try:
-        data = await chat_json(LLM_SYSTEM, _llm_payload(units), settings, purpose="segment")
-        groups, repairs = _validate_llm(data, known)
         rule_ids = {i for q in rule.questions for i in q.unit_ids}
-        got = {i for g in groups for i in g["units"] + g["answer_units"]}
-        if rule_ids and len(rule_ids & got) < MIN_LLM_COVERAGE * len(rule_ids):
-            raise ValueError("分组遗漏了大部分题目内容")
+
+        def check(out: SegmentOutput) -> tuple[list[dict], int]:
+            # 不合格时错误说明会发给大模型重新分组一次
+            groups, repairs = _validate_llm(out.questions, known)
+            got = {i for g in groups for i in g["units"] + g["answer_units"]}
+            if rule_ids and len(rule_ids & got) < MIN_LLM_COVERAGE * len(rule_ids):
+                raise ValueError("分组遗漏了大部分题目内容，请覆盖所有题目的单元")
+            return groups, repairs
+
+        groups, repairs = await structured(SEGMENT_PROMPT, {"input": _llm_payload(units)}, SegmentOutput, settings,
+                                           purpose="segment", check=check)
     except (LLMError, ValueError) as e:
         log.warning("大模型拆题结果不可用：%s", e)
         rule.warnings.append(f"大模型拆题失败，已使用规则结果：{e}")

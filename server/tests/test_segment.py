@@ -13,6 +13,7 @@ from app.pipeline.segment import (
 )
 
 from .fixtures import EXPECTED, TITLE, make_exam_pdf
+from .llm_fakes import mock_llm
 
 
 @pytest.fixture
@@ -102,7 +103,7 @@ def _llm_settings() -> Settings:
 
 
 def _mock_llm(monkeypatch, handler):  # noqa: ANN001
-    monkeypatch.setattr(llm, "transport", httpx.MockTransport(handler))
+    mock_llm(monkeypatch, handler)
 
 
 def _sse(content: str) -> httpx.Response:
@@ -208,7 +209,7 @@ async def test_llm_disconnect_retried_then_reported(monkeypatch):
     _mock_llm(monkeypatch, handler)
     with pytest.raises(llm.LLMError, match="RemoteProtocolError"):
         await llm.chat_json("s", "u", _llm_settings())
-    assert len(calls) == 2
+    assert len(calls) == 1 + llm.RETRIES
 
 
 async def test_llm_extra_body_is_sent(monkeypatch):

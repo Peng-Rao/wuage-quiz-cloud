@@ -71,6 +71,8 @@ class Settings(BaseSettings):
     llm_timeout: float = 300.0
     # 附加到请求体的厂商参数（JSON），如通义千问关闭思考：{"enable_thinking": false}
     llm_extra_body: dict[str, Any] = {}
+    # 备用模型（可选，沿用大模型的地址、Key 与附加参数）：大模型重试后仍失败、额度用完或拒绝请求时改用它
+    llm_fallback_model: str = ""
     # AI 组卷可选的其他模型：模型 ID → 请求参数，沿用大模型的地址和 Key。
     compose_models: dict[str, dict[str, Any]] = {}
     # 看图模型（可选）：题目含配图时改用该模型并附上图片，如通义千问 qwen3-vl-plus；留空则大模型看不到图片。
