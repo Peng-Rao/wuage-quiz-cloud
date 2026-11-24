@@ -345,6 +345,31 @@ class KnowledgeNode(Base):
     embedding_model: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
 
+class ComposeSession(Base):
+    """AI 组卷记录：每位老师各自的多轮对话、组卷设置与最近一次组出的试卷。
+    result 只保存题目编号与分值，打开时按老师当前的数据权限重新读取题目（题目被删除或无权查看时提示）。"""
+
+    __tablename__ = "compose_session"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    school_id: Mapped[str] = mapped_column(String(64))
+    user_id: Mapped[str] = mapped_column(ForeignKey("app_user.id", ondelete="CASCADE"))
+    stage: Mapped[str] = mapped_column(String(16))
+    subject: Mapped[str] = mapped_column(String(16))
+    title: Mapped[str] = mapped_column(String(128))
+    model: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    total: Mapped[int] = mapped_column(Integer)
+    difficulty: Mapped[float] = mapped_column(Float)
+    # [{role, content}]：完整对话（老师与 AI 交替）
+    messages: Mapped[list[Any]] = mapped_column(JSON, default=list)
+    result: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+Index("ix_compose_session_user_updated", ComposeSession.user_id, ComposeSession.updated_at)
+
+
 class EvalSample(Base):
     """评测样本：老师核对后的结果作为标准答案（设为样本时的快照）。"""
 

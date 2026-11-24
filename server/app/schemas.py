@@ -677,6 +677,8 @@ class ComposeRequest(Model):
     difficulty: float = Field(default=0.45, ge=0.05, le=0.95)
     # 完整对话，最后一条为老师本次的要求
     messages: list[ComposeMessage] = Field(min_length=1, max_length=20)
+    # 继续已有的组卷记录；为空时新建一条记录
+    session_id: str | None = Field(default=None, max_length=32)
 
 
 class ComposeModels(Model):
@@ -720,3 +722,40 @@ class ComposeResult(Model):
     # 需求是否由大模型理解；未配置或调用失败时为 false（按关键词匹配知识点）
     ai: bool
     model: str | None = None
+    # 保存到的组卷记录
+    session_id: str | None = None
+
+
+class ComposeSessionItem(Model):
+    """组卷记录列表中的一条。"""
+
+    id: str
+    title: str
+    stage: str
+    subject: str
+    # 老师提出要求的次数
+    turns: int
+    question_count: int
+    total: int
+    # 最近一次要求的摘要
+    preview: str
+    created_at: UtcDatetime
+    updated_at: UtcDatetime
+
+
+class ComposeSessionDetail(Model):
+    id: str
+    title: str
+    stage: str
+    subject: str
+    model: str | None
+    total: int
+    difficulty: float
+    messages: list[ComposeMessage]
+    result: ComposeResult | None
+    created_at: UtcDatetime
+    updated_at: UtcDatetime
+
+
+class ComposeSessionRename(Model):
+    title: str = Field(min_length=1, max_length=128)

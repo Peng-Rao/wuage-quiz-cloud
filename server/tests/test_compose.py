@@ -9,9 +9,10 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import delete
 
+from app.auth import hash_password
 from app.compose import apportion, assign_scores
 from app.config import get_settings
-from app.db import BankQuestion, SessionLocal
+from app.db import BankQuestion, ComposeSession, SessionLocal, User
 from app.main import app
 from app.services import current_school
 from .llm_fakes import mock_llm
@@ -222,3 +223,88 @@ def test_compose_errors(client):
     r = client.post("/api/compose", json={"stage": "小学", "subject": "科学", "messages": [{"role": "user", "content": "出卷"}]})
     assert r.status_code == 400 and "还没有小学科学的题目" in r.json()["message"]
     assert client.post("/api/compose", json={"stage": "高中", "subject": "生物", "messages": []}).status_code == 422
+
+
+# ---------------- 组卷记录 ----------------
+
+def _leader_client():
+    uid, name = uuid.uuid4().hex, f"bio-{uuid.uuid4().hex[:6]}"
+    with SessionLocal() as s:
+        s.add(User(id=uid, username=name, display_name="生物组长", role="leader", subjects=["生物"], active=True,
+                   password_hash=hash_password("Leader-pass-123")))
+        s.commit()
+    c = TestClient(app)
+    assert c.post("/api/auth/login", json={"username": name, "password": "Leader-pass-123"}).status_code == 200
+    return uid, c
+
+
+def test_compose_sessions_are_saved_and_resumed(client):
+    first = _post(client, "高二学生，细胞呼吸比较薄弱，期中复习")
+    assert first.status_code == 200, first.text
+    sid = first.json()["sessionId"]
+    assert sid
+
+    history = [{"role": "user", "content": "高二学生，细胞呼吸比较薄弱，期中复习"},
+               {"role": "assistant", "content": first.json()["reply"]},
+               {"role": "user", "content": "总分改成 80 分"}]
+    second = client.post("/api/compose", json={"stage": "高中", "subject": "生物", "total": 80, "difficulty": 0.45,
+                                               "messages": history, "sessionId": sid})
+    assert second.status_code == 200, second.text
+    assert second.json()["sessionId"] == sid
+
+    listed = client.get("/api/compose/sessions", params={"stage": "高中", "subject": "生物"}).json()
+    item = next(i for i in listed if i["id"] == sid)
+    assert (item["turns"], item["total"], item["questionCount"]) == (2, 80, len(_ids(second.json())))
+    assert item["preview"] == "总分改成 80 分"
+    assert listed[0]["id"] == sid  # 最近使用的在前
+    assert all(i["subject"] == "数学" for i in client.get("/api/compose/sessions", params={"subject": "数学"}).json())
+
+    detail = client.get(f"/api/compose/sessions/{sid}").json()
+    assert [m["role"] for m in detail["messages"]] == ["user", "assistant", "user", "assistant"]
+    assert detail["messages"][2]["content"] == "总分改成 80 分"
+    assert _ids(detail["result"]) == _ids(second.json()) and detail["result"]["sessionId"] == sid
+    assert detail["total"] == 80
+
+    r = client.patch(f"/api/compose/sessions/{sid}", json={"title": "高二生物期中复习卷"})
+    assert r.status_code == 200 and r.json()["title"] == "高二生物期中复习卷"
+
+    # 题目被删除后：打开记录时不显示并提示
+    with SessionLocal() as s:
+        row = s.get(ComposeSession, sid)
+        result = dict(row.result)
+        result["sections"] = [dict(result["sections"][0], items=[*result["sections"][0]["items"], {"id": "gone", "score": 5}]),
+                              *result["sections"][1:]]
+        row.result = result
+        s.commit()
+    detail = client.get(f"/api/compose/sessions/{sid}").json()
+    assert "1 道题已从题库删除" in detail["result"]["gaps"][0] and "gone" not in _ids(detail["result"])
+
+    assert client.delete(f"/api/compose/sessions/{sid}").status_code == 204
+    assert client.get(f"/api/compose/sessions/{sid}").status_code == 404
+    assert all(i["id"] != sid for i in client.get("/api/compose/sessions").json())
+
+
+def test_compose_sessions_are_private_and_removed_with_user(client):
+    admin_sid = _post(client).json()["sessionId"]
+    uid, leader = _leader_client()
+    assert all(i["id"] != admin_sid for i in leader.get("/api/compose/sessions").json())
+    assert leader.get(f"/api/compose/sessions/{admin_sid}").status_code == 404
+    assert leader.patch(f"/api/compose/sessions/{admin_sid}", json={"title": "x"}).status_code == 404
+    assert leader.delete(f"/api/compose/sessions/{admin_sid}").status_code == 404
+    r = leader.post("/api/compose", json={"stage": "高中", "subject": "生物", "total": 100, "difficulty": 0.45,
+                                          "messages": [{"role": "user", "content": "继续"}], "sessionId": admin_sid})
+    assert r.status_code == 404
+
+    own = leader.post("/api/compose", json={"stage": "高中", "subject": "生物", "total": 100, "difficulty": 0.45,
+                                            "messages": [{"role": "user", "content": "基础练习"}]})
+    assert own.status_code == 200, own.text
+    leader_sid = own.json()["sessionId"]
+    assert [i["id"] for i in leader.get("/api/compose/sessions").json()] == [leader_sid]
+    assert all(i["id"] != leader_sid for i in client.get("/api/compose/sessions").json())
+
+    assert client.delete(f"/api/users/{uid}").status_code == 204
+    with SessionLocal() as s:
+        assert s.get(ComposeSession, leader_sid) is None
+        assert s.get(ComposeSession, admin_sid) is not None
+        s.delete(s.get(ComposeSession, admin_sid))
+        s.commit()

@@ -10,7 +10,7 @@ from sqlalchemy.exc import IntegrityError
 
 from ..auth import COOKIE, admin, check_origin, current_user, hash_password, staff, token_hash, verify_password
 from ..config import get_settings
-from ..db import BankQuestion, LoginSession, LoginThrottle, ParseJob, SessionLocal, UploadOwner, User, utcnow
+from ..db import BankQuestion, ComposeSession, LoginSession, LoginThrottle, ParseJob, SessionLocal, UploadOwner, User, utcnow
 from ..pipeline.classify import ALL_SUBJECTS
 from ..schemas import Model, UtcDatetime
 
@@ -228,6 +228,7 @@ def remove_user(s, user: User) -> None:
     """删除账号（调用方提交事务）：保留共享的试卷、题目与审核记录，只解除个人归属。"""
     s.execute(delete(LoginSession).where(LoginSession.user_id == user.id))
     s.execute(delete(UploadOwner).where(UploadOwner.user_id == user.id))
+    s.execute(delete(ComposeSession).where(ComposeSession.user_id == user.id))
     s.execute(update(ParseJob).where(ParseJob.owner_id == user.id).values(owner_id=None))
     s.execute(update(BankQuestion).where(BankQuestion.owner_id == user.id).values(owner_id=None))
     s.delete(user)

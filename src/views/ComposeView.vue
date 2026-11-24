@@ -2,7 +2,7 @@
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useRouter } from 'vue-router'
-import { bankApi, type ComposeMessage, type ComposeModels, type ComposeResult } from '@/api/bank'
+import { bankApi, type ComposeMessage, type ComposeModels, type ComposeResult, type ComposeSessionItem } from '@/api/bank'
 import MathText from '@/components/MathText.vue'
 import MaterialText from '@/components/MaterialText.vue'
 import LoadingState from '@/components/LoadingState.vue'
@@ -36,9 +36,73 @@ const result = ref<ComposeResult | null>(null)
 const chatBox = ref<HTMLElement>()
 let requestSeq = 0
 
+// 组卷记录：每次组卷自动保存为本人的记录，可继续对话、重新打开或删除
+const sessionId = ref<string | null>(null)
+const sessions = ref<ComposeSessionItem[]>([])
+const showHistory = ref(false)
+const opening = ref('')
+const current = computed(() => sessions.value.find((s) => s.id === sessionId.value))
+
+async function loadSessions() {
+  const [st, sub] = [stage.value, subject.value]
+  try {
+    const list = await bankApi.listComposeSessions(st, sub)
+    if (st === stage.value && sub === subject.value) sessions.value = list
+  } catch { /* 记录列表加载失败不影响组卷 */ }
+}
+
 onMounted(async () => {
+  void loadSessions()
   models.value = await bankApi.listComposeModels().catch(() => null)
 })
+
+const when = (s: string) => new Date(s).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false })
+
+async function openSession(id: string) {
+  if (busy.value || opening.value) return
+  opening.value = id
+  error.value = ''
+  try {
+    const d = await bankApi.getComposeSession(id)
+    requestSeq++
+    sessionId.value = d.id
+    messages.value = d.messages
+    result.value = d.result
+    total.value = d.total
+    difficulty.value = d.difficulty
+    // 记录所用模型仍可选时沿用，否则用默认模型
+    model.value = d.model && d.model !== models.value?.defaultModel && models.value?.models.includes(d.model) ? d.model : ''
+    showHistory.value = false
+    scrollToEnd()
+  } catch (e) {
+    error.value = (e as Error).message
+  } finally {
+    opening.value = ''
+  }
+}
+
+async function renameSession(s: ComposeSessionItem) {
+  const title = window.prompt('重命名组卷记录', s.title)?.trim()
+  if (!title || title === s.title) return
+  try {
+    const updated = await bankApi.renameComposeSession(s.id, title)
+    sessions.value = sessions.value.map((x) => (x.id === s.id ? updated : x))
+  } catch (e) { error.value = (e as Error).message }
+}
+
+async function removeSession(s: ComposeSessionItem) {
+  if (!confirm(`删除组卷记录「${s.title}」？删除后无法恢复。`)) return
+  try {
+    await bankApi.deleteComposeSession(s.id)
+    sessions.value = sessions.value.filter((x) => x.id !== s.id)
+    if (sessionId.value === s.id) restart()
+  } catch (e) { error.value = (e as Error).message }
+}
+
+function newSession() {
+  restart()
+  showHistory.value = false
+}
 
 const alternateModels = computed(() => models.value?.models.filter((id) => id !== models.value?.defaultModel) ?? [])
 const count = computed(() => result.value?.sections.reduce((a, s) => a + s.items.length, 0) ?? 0)
@@ -69,10 +133,12 @@ async function send(text = input.value) {
   try {
     const r = await bankApi.compose({
       stage: stage.value, subject: subject.value, total: total.value, difficulty: difficulty.value, messages: history.slice(-20),
-      model: model.value || undefined,
+      model: model.value || undefined, sessionId: sessionId.value ?? undefined,
     })
     if (seq !== requestSeq) return
     result.value = r
+    sessionId.value = r.sessionId ?? sessionId.value
+    void loadSessions()
     messages.value = [...history, { role: 'assistant', content: r.reply }]
     // 对话中调整了总分、难度时同步到设置
     if (r.total) total.value = r.total
@@ -105,10 +171,16 @@ function restart() {
   messages.value = []
   result.value = null
   error.value = ''
+  sessionId.value = null
 }
 
-// 切换学段学科后，此前的对话与试卷不再适用
-watch([stage, subject], restart)
+// 切换学段学科后，此前的对话与试卷不再适用；记录列表换成该学科的
+watch([stage, subject], () => {
+  restart()
+  showHistory.value = false
+  sessions.value = []
+  void loadSessions()
+})
 
 function toBasket() {
   const r = result.value
@@ -126,14 +198,43 @@ function toBasket() {
     <section class="card chat sticky-side">
       <div class="chat-head">
         <span class="card-title">AI 组卷 · {{ stage }}{{ subject }}</span>
-        <button v-if="messages.length" class="btn-link" :disabled="busy" @click="restart">重新开始</button>
+        <span class="head-actions">
+          <button class="btn-link" :class="{ 'is-primary': showHistory }" :disabled="busy" :aria-expanded="showHistory" @click="showHistory = !showHistory">
+            历史记录{{ sessions.length ? `（${sessions.length}）` : '' }}
+          </button>
+          <button v-if="messages.length || showHistory" class="btn-link" :disabled="busy" @click="newSession">新建组卷</button>
+        </span>
+      </div>
+      <p v-if="current && !showHistory" class="session-title" :title="current.title">当前记录：{{ current.title }}</p>
+
+      <div v-if="showHistory" class="history">
+        <p v-if="!sessions.length" class="history-empty">还没有{{ stage }}{{ subject }}的组卷记录。组卷后会自动保存在这里，只有你自己能看到。</p>
+        <div v-for="s in sessions" :key="s.id" class="session" :class="{ current: s.id === sessionId }">
+          <button class="session-main" :disabled="!!opening" @click="openSession(s.id)">
+            <b>{{ s.title }}</b>
+            <span v-if="s.preview">{{ s.preview }}</span>
+            <small>{{ s.turns }} 轮对话 · {{ s.questionCount }} 题 · {{ s.total }} 分 · {{ when(s.updatedAt) }}</small>
+            <LoadingState v-if="opening === s.id" compact label="正在打开…" />
+          </button>
+          <span class="session-ops">
+            <button class="btn-link" @click="renameSession(s)">重命名</button>
+            <button class="btn-link danger" @click="removeSession(s)">删除</button>
+          </span>
+        </div>
       </div>
 
-      <div ref="chatBox" class="chat-body">
+      <div v-else ref="chatBox" class="chat-body">
         <div v-if="!messages.length" class="intro">
           <p>描述学生情况和组卷要求，AI 会从校本题库中选题并赋分。生成后可以继续提出修改，如「再简单一点」「多出两道解答题」。</p>
           <div class="examples">
             <button v-for="ex in EXAMPLES" :key="ex" class="example" @click="send(ex)">{{ ex }}</button>
+          </div>
+          <div v-if="sessions.length" class="recent">
+            <span class="recent-label">继续最近的组卷</span>
+            <button v-for="s in sessions.slice(0, 3)" :key="s.id" class="recent-item" :disabled="!!opening" @click="openSession(s.id)">
+              <span>{{ s.title }}</span><small>{{ when(s.updatedAt) }}</small>
+            </button>
+            <button v-if="sessions.length > 3" class="btn-link is-primary" @click="showHistory = true">查看全部 {{ sessions.length }} 条 →</button>
           </div>
         </div>
         <div v-for="(m, i) in messages" :key="i" class="msg" :class="m.role">{{ m.content }}</div>
@@ -164,7 +265,7 @@ function toBasket() {
         />
         <button class="btn btn-primary" :disabled="busy || !input.trim()" @click="send()"><LoadingState v-if="busy" compact label="组卷中…" /><template v-else>发送</template></button>
       </div>
-      <p class="hint">请勿输入学生姓名等身份信息。Enter 发送，Shift + Enter 换行。</p>
+      <p class="hint">请勿输入学生姓名等身份信息。Enter 发送，Shift + Enter 换行。组卷记录自动保存，仅本人可见。</p>
     </section>
 
     <section class="card result" :aria-busy="busy">
@@ -236,6 +337,26 @@ function toBasket() {
 .chat-head { display: flex; align-items: baseline; justify-content: space-between; }
 .chat-body { flex: 1; overflow: auto; display: flex; flex-direction: column; gap: 10px; margin: 0 -6px; padding: 0 6px; }
 .intro p { margin: 0 0 12px; font-size: 13px; line-height: 1.7; color: var(--c-text-3); }
+.head-actions { display: flex; gap: 14px; }
+.session-title { margin: -6px 0 0; font-size: 12px; color: var(--c-text-4); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.recent { margin-top: 18px; display: flex; flex-direction: column; gap: 6px; }
+.recent-label { font-size: 12px; color: var(--c-text-4); }
+.recent-item { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; text-align: left; border: 1px solid var(--c-border); background: var(--c-surface); border-radius: var(--r-md); padding: 8px 10px; font-size: 13px; color: var(--c-text-2); }
+.recent-item span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.recent-item small { flex-shrink: 0; color: var(--c-text-4); font-size: 12px; }
+.recent-item:hover { border-color: var(--c-primary-line); color: var(--c-primary); }
+.recent .btn-link { align-self: flex-start; }
+.history { flex: 1; overflow: auto; display: flex; flex-direction: column; gap: 8px; margin: 0 -6px; padding: 0 6px; }
+.history-empty { margin: 8px 0; font-size: 13px; line-height: 1.7; color: var(--c-text-3); }
+.session { border: 1px solid var(--c-border); border-radius: var(--r-md); background: var(--c-surface); }
+.session.current { border-color: var(--c-primary-line); background: var(--c-primary-tint); }
+.session-main { width: 100%; display: flex; flex-direction: column; gap: 3px; text-align: left; border: none; background: transparent; padding: 10px 12px 4px; color: var(--c-ink); }
+.session-main b { font-size: 14px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.session-main span { font-size: 12px; color: var(--c-text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.session-main small { font-size: 12px; color: var(--c-text-4); }
+.session-main:hover b { color: var(--c-primary); }
+.session-ops { display: flex; justify-content: flex-end; gap: 14px; padding: 0 12px 8px; }
+.session-ops .danger { color: var(--c-danger); }
 .examples { display: flex; flex-direction: column; gap: 8px; }
 .example {
   text-align: left; border: 1px dashed var(--c-primary-line); background: var(--c-surface-2); color: var(--c-text-2);

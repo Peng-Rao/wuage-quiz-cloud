@@ -277,4 +277,14 @@ export const mockBankApi: BankApi = {
     await sleep(300)
     throw new Error('AI 组卷需要连接后端：请用 npm run dev:api 启动（演示数据题量太少，无法组卷）')
   },
+  async listComposeSessions() {
+    return []
+  },
+  async getComposeSession() {
+    throw new Error('演示数据没有组卷记录')
+  },
+  async renameComposeSession() {
+    throw new Error('演示数据没有组卷记录')
+  },
+  async deleteComposeSession() {},
 }

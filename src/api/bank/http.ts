@@ -1,7 +1,7 @@
 import { query, request } from '../request'
 import type { AnswerTask } from '../parse/types'
 import type {
-  BankApi, BankQuestion, ComposeModels, ComposeResult, Page, PaperDetail, PaperPage, QuestionFacets, TextbookVersion,
+  BankApi, BankQuestion, ComposeModels, ComposeResult, ComposeSessionDetail, ComposeSessionItem, Page, PaperDetail, PaperPage, QuestionFacets, TextbookVersion,
 } from './types'
 
 export const httpBankApi: BankApi = {
@@ -27,4 +27,10 @@ export const httpBankApi: BankApi = {
   answerTask: (id) => request<AnswerTask | null>('GET', `/api/papers/${encodeURIComponent(id)}/answer-task`),
   listComposeModels: () => request<ComposeModels>('GET', '/api/compose/models'),
   compose: (req) => request<ComposeResult>('POST', '/api/compose', req),
+  listComposeSessions: (stage, subject) =>
+    request<ComposeSessionItem[]>('GET', `/api/compose/sessions?${query({ stage, subject })}`),
+  getComposeSession: (id) => request<ComposeSessionDetail>('GET', `/api/compose/sessions/${encodeURIComponent(id)}`),
+  renameComposeSession: (id, title) =>
+    request<ComposeSessionItem>('PATCH', `/api/compose/sessions/${encodeURIComponent(id)}`, { title }),
+  deleteComposeSession: (id) => request<void>('DELETE', `/api/compose/sessions/${encodeURIComponent(id)}`),
 }

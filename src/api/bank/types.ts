@@ -177,6 +177,8 @@ export interface ComposeRequest {
   difficulty: number
   /** 完整对话，最后一条为本次的要求 */
   messages: ComposeMessage[]
+  /** 继续已有的组卷记录；为空时新建 */
+  sessionId?: string
 }
 
 export interface ComposeModels {
@@ -207,6 +209,39 @@ export interface ComposeResult {
   /** 需求是否由大模型理解；否则为按关键词匹配 */
   ai: boolean
   model: string | null
+  /** 保存到的组卷记录 */
+  sessionId?: string | null
+}
+
+/** 本人的一条组卷记录 */
+export interface ComposeSessionItem {
+  id: string
+  title: string
+  stage: string
+  subject: string
+  /** 提出要求的次数 */
+  turns: number
+  questionCount: number
+  total: number
+  /** 最近一次要求的摘要 */
+  preview: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface ComposeSessionDetail {
+  id: string
+  title: string
+  stage: string
+  subject: string
+  model: string | null
+  total: number
+  difficulty: number
+  messages: ComposeMessage[]
+  /** 题目按当前数据权限重新读取，被删除的题不再显示 */
+  result: ComposeResult | null
+  createdAt: string
+  updatedAt: string
 }
 
 export interface BankApi {
@@ -234,4 +269,9 @@ export interface BankApi {
   listComposeModels(): Promise<ComposeModels>
   /** AI 组卷：按学生情况与要求从题库选题并赋分；多轮修改时传入完整对话，整份试卷重新生成 */
   compose(req: ComposeRequest): Promise<ComposeResult>
+  /** 本人的组卷记录，最近使用的在前 */
+  listComposeSessions(stage: string, subject: string): Promise<ComposeSessionItem[]>
+  getComposeSession(id: string): Promise<ComposeSessionDetail>
+  renameComposeSession(id: string, title: string): Promise<ComposeSessionItem>
+  deleteComposeSession(id: string): Promise<void>
 }
